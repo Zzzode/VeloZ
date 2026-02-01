@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VeloZ UI</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+        margin: 24px;
+        max-width: 960px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 16px;
+        margin-top: 14px;
+      }
+      input,
+      select,
+      button {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        font-size: 14px;
+      }
+      button {
+        background: #111827;
+        color: white;
+        border: 0;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #f1f5f9;
+        padding: 8px 6px;
+        text-align: left;
+        font-size: 13px;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>VeloZ</h1>
+    <div class="muted">最小可用 UI（通过网关 HTTP API 联动引擎 stdio 模式）</div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="muted">API Base</div>
+          <input id="apiBase" style="min-width: 320px" placeholder="例如 http://127.0.0.1:8080" />
+        </div>
+        <div>
+          <div class="muted">连接状态</div>
+          <div class="mono" id="conn">-</div>
+        </div>
+        <div>
+          <div class="muted">传输</div>
+          <div class="mono" id="transport">-</div>
+        </div>
+        <div>
+          <div class="muted">Execution</div>
+          <div class="mono" id="execMode">-</div>
+        </div>
+        <div>
+          <div class="muted">User Stream</div>
+          <div class="mono" id="userStream">-</div>
+        </div>
+        <div style="flex: 1"></div>
+        <button id="execPing">Ping</button>
+        <button id="saveApi">应用</button>
+      </div>
+      <div id="lastError" class="muted" style="margin-top: 10px"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="muted">Symbol</div>
+          <div class="mono" id="symbol">-</div>
+        </div>
+        <div>
+          <div class="muted">Source</div>
+          <div class="mono" id="marketSource">-</div>
+        </div>
+        <div>
+          <div class="muted">Price</div>
+          <div class="mono" id="price">-</div>
+        </div>
+        <div>
+          <div class="muted">ts_ns</div>
+          <div class="mono" id="ts">-</div>
+        </div>
+        <div style="flex: 1"></div>
+        <button id="refresh">刷新</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0">下单</h2>
+      <div class="row">
+        <select id="side">
+          <option value="BUY">BUY</option>
+          <option value="SELL">SELL</option>
+        </select>
+        <input id="orderSymbol" value="BTCUSDT" placeholder="symbol" />
+        <input id="qty" value="0.001" placeholder="qty" />
+        <input id="orderPrice" value="42000" placeholder="price" />
+        <input id="clientId" value="" placeholder="client_order_id (可选)" />
+        <button id="submit">提交</button>
+      </div>
+      <div id="submitResult" class="muted" style="margin-top: 10px"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top: 0">取消单</h2>
+      <div class="row">
+        <input id="cancelClientId" value="" placeholder="client_order_id" />
+        <button id="cancel">取消</button>
+      </div>
+      <div id="cancelResult" class="muted" style="margin-top: 10px"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h2 style="margin: 0">账户</h2>
+        <div style="flex: 1"></div>
+        <button id="reloadAccount">刷新</button>
+      </div>
+      <div class="muted" style="margin-top: 6px">展示 /api/account（Binance 模式下来自用户数据流）</div>
+      <div style="overflow: auto; margin-top: 10px">
+        <table>
+          <thead>
+            <tr>
+              <th>asset</th>
+              <th>free</th>
+              <th>locked</th>
+            </tr>
+          </thead>
+          <tbody id="accountBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h2 style="margin: 0">订单状态</h2>
+        <div style="flex: 1"></div>
+        <button id="reloadState">刷新</button>
+      </div>
+      <div class="muted" style="margin-top: 6px">展示 /api/orders_state 归并后的订单状态视图</div>
+      <div style="overflow: auto; margin-top: 10px">
+        <table>
+          <thead>
+            <tr>
+              <th>client_order_id</th>
+              <th>status</th>
+              <th>symbol</th>
+              <th>side</th>
+              <th>order_qty</th>
+              <th>executed_qty</th>
+              <th>avg_price</th>
+              <th>venue_order_id</th>
+              <th>reason</th>
+            </tr>
+          </thead>
+          <tbody id="stateBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <h2 style="margin: 0">事件</h2>
+        <div style="flex: 1"></div>
+        <button id="reloadOrders">刷新</button>
+      </div>
+      <div class="muted" style="margin-top: 6px">展示 /api/orders 最近事件（order_update/fill/error）</div>
+      <div style="overflow: auto; margin-top: 10px">
+        <table>
+          <thead>
+            <tr>
+              <th>type</th>
+              <th>ts_ns</th>
+              <th>client_order_id</th>
+              <th>status</th>
+              <th>symbol</th>
+              <th>qty</th>
+              <th>price</th>
+              <th>reason</th>
+            </tr>
+          </thead>
+          <tbody id="ordersBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const defaultApiBase = (() => {
+        const url = new URL(window.location.href);
+        const fromQuery = url.searchParams.get("api");
+        if (fromQuery) return fromQuery.replace(/\/$/, "");
+        if (url.protocol === "file:") return "http://127.0.0.1:8080";
+        return "";
+      })();
+
+      let apiBase = defaultApiBase;
+
+      function setConn(ok, msg) {
+        const el = document.getElementById("conn");
+        el.textContent = ok ? "connected" : "disconnected";
+        el.style.color = ok ? "#059669" : "#dc2626";
+        document.getElementById("lastError").textContent = msg || "";
+      }
+
+      async function fetchJson(path) {
+        const res = await fetch(apiBase + path, { cache: "no-store" });
+        if (!res.ok) throw new Error("http " + res.status);
+        return await res.json();
+      }
+
+      function setText(id, v) {
+        document.getElementById(id).textContent = v == null ? "-" : String(v);
+      }
+
+      async function refreshMarket() {
+        try {
+          const m = await fetchJson("/api/market");
+          setText("symbol", m.symbol);
+          setText("price", m.price);
+          setText("ts", m.ts_ns);
+          setConn(true, "");
+        } catch (e) {
+          setConn(false, String(e && e.message ? e.message : e));
+        }
+      }
+
+      async function refreshConfig() {
+        try {
+          const c = await fetchJson("/api/config");
+          setText("marketSource", c.market_source || "-");
+          if (c.market_symbol) setText("symbol", c.market_symbol);
+          setText("execMode", c.execution_mode || "-");
+          setText("userStream", c.binance_user_stream_connected ? "connected" : "disconnected");
+        } catch {}
+      }
+
+      function renderOrders(items) {
+        const body = document.getElementById("ordersBody");
+        body.innerHTML = "";
+        for (const e of items.slice().reverse()) {
+          const tr = document.createElement("tr");
+          const fields = [
+            e.type,
+            e.ts_ns,
+            e.client_order_id,
+            e.status,
+            e.symbol,
+            e.qty,
+            e.price,
+            e.reason,
+          ];
+          for (const f of fields) {
+            const td = document.createElement("td");
+            td.textContent = f == null ? "" : String(f);
+            td.className = "mono";
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+      }
+
+      async function refreshOrders() {
+        try {
+          const r = await fetchJson("/api/orders");
+          renderOrders(r.items || []);
+          setConn(true, "");
+        } catch (e) {
+          setConn(false, String(e && e.message ? e.message : e));
+        }
+      }
+
+      function renderAccount(items) {
+        const body = document.getElementById("accountBody");
+        body.innerHTML = "";
+        const sorted = (items || []).slice().sort((a, b) => (a.asset || "").localeCompare(b.asset || ""));
+        for (const b of sorted) {
+          const tr = document.createElement("tr");
+          for (const f of [b.asset, b.free, b.locked]) {
+            const td = document.createElement("td");
+            td.textContent = f == null ? "" : String(f);
+            td.className = "mono";
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+      }
+
+      async function refreshAccount() {
+        try {
+          const r = await fetchJson("/api/account");
+          renderAccount(r.balances || []);
+        } catch {}
+      }
+
+      function renderState(items) {
+        const body = document.getElementById("stateBody");
+        body.innerHTML = "";
+        const sorted = (items || []).slice().sort((a, b) => {
+          const ta = a.last_ts_ns || 0;
+          const tb = b.last_ts_ns || 0;
+          return tb - ta;
+        });
+        for (const s of sorted) {
+          const tr = document.createElement("tr");
+          const fields = [
+            s.client_order_id,
+            s.status,
+            s.symbol,
+            s.side,
+            s.order_qty,
+            s.executed_qty,
+            s.avg_price,
+            s.venue_order_id,
+            s.reason,
+          ];
+          for (const f of fields) {
+            const td = document.createElement("td");
+            td.textContent = f == null ? "" : String(f);
+            td.className = "mono";
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+      }
+
+      async function refreshState() {
+        try {
+          const r = await fetchJson("/api/orders_state");
+          renderState(r.items || []);
+        } catch {}
+      }
+
+      function attachSse() {
+        const transport = document.getElementById("transport");
+        transport.textContent = "sse";
+
+        if (!("EventSource" in window)) {
+          transport.textContent = "poll";
+          return null;
+        }
+
+        let lastId = localStorage.getItem("veloz_last_id");
+        const url = apiBase + "/api/stream" + (lastId ? `?last_id=${encodeURIComponent(lastId)}` : "");
+        const es = new EventSource(url);
+
+        es.onopen = () => {
+          setConn(true, "");
+        };
+
+        es.onerror = () => {
+          setConn(false, "sse_error");
+        };
+
+        es.addEventListener("market", (ev) => {
+          try {
+            const m = JSON.parse(ev.data);
+            setText("symbol", m.symbol);
+            setText("price", m.price);
+            setText("ts", m.ts_ns);
+          } catch {}
+          if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
+        });
+
+        es.addEventListener("order_update", (ev) => {
+          if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
+          refreshOrders().catch(() => {});
+          refreshState().catch(() => {});
+        });
+
+        es.addEventListener("fill", (ev) => {
+          if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
+          refreshOrders().catch(() => {});
+          refreshState().catch(() => {});
+        });
+
+        es.addEventListener("account", (ev) => {
+          if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
+          refreshAccount().catch(() => {});
+        });
+
+        es.addEventListener("error", (ev) => {
+          if (ev && ev.data) setConn(false, ev.data);
+          if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
+        });
+
+        return es;
+      }
+
+      async function submitOrder() {
+        const side = document.getElementById("side").value;
+        const symbol = document.getElementById("orderSymbol").value.trim();
+        const qty = parseFloat(document.getElementById("qty").value);
+        const price = parseFloat(document.getElementById("orderPrice").value);
+        const clientId = document.getElementById("clientId").value.trim();
+
+        const payload = {
+          side,
+          symbol,
+          qty,
+          price,
+        };
+        if (clientId) payload.client_order_id = clientId;
+
+        const btn = document.getElementById("submit");
+        const out = document.getElementById("submitResult");
+        btn.disabled = true;
+        out.textContent = "提交中...";
+        try {
+          const res = await fetch(apiBase + "/api/order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            out.textContent = "失败: " + (json.error || "http " + res.status);
+            setConn(false, out.textContent);
+            return;
+          }
+          out.textContent = "成功: " + JSON.stringify(json);
+          setConn(true, "");
+          await new Promise((r) => setTimeout(r, 250));
+          await refreshOrders();
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      async function execPing() {
+        const out = document.getElementById("lastError");
+        out.textContent = "ping...";
+        try {
+          const r = await fetchJson("/api/execution/ping");
+          out.textContent = JSON.stringify(r);
+        } catch (e) {
+          out.textContent = String(e && e.message ? e.message : e);
+        }
+      }
+
+      async function cancelOrder() {
+        const client_order_id = document.getElementById("cancelClientId").value.trim();
+        const btn = document.getElementById("cancel");
+        const out = document.getElementById("cancelResult");
+        if (!client_order_id) {
+          out.textContent = "请输入 client_order_id";
+          return;
+        }
+        btn.disabled = true;
+        out.textContent = "提交中...";
+        try {
+          const res = await fetch(apiBase + "/api/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ client_order_id }),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            out.textContent = "失败: " + (json.error || "http " + res.status);
+            setConn(false, out.textContent);
+            return;
+          }
+          out.textContent = "成功: client_order_id=" + json.client_order_id;
+          setConn(true, "");
+          await new Promise((r) => setTimeout(r, 200));
+          await refreshOrders();
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      document.getElementById("refresh").addEventListener("click", () => refreshMarket().catch(console.error));
+      document.getElementById("reloadOrders").addEventListener("click", () => refreshOrders().catch(console.error));
+      document.getElementById("reloadState").addEventListener("click", () => refreshState().catch(console.error));
+      document.getElementById("reloadAccount").addEventListener("click", () => refreshAccount().catch(console.error));
+      document.getElementById("submit").addEventListener("click", () => submitOrder().catch(console.error));
+      document.getElementById("cancel").addEventListener("click", () => cancelOrder().catch(console.error));
+      document.getElementById("execPing").addEventListener("click", () => execPing().catch(console.error));
+
+      document.getElementById("apiBase").value = apiBase;
+      document.getElementById("saveApi").addEventListener("click", () => {
+        const v = document.getElementById("apiBase").value.trim().replace(/\/$/, "");
+        apiBase = v;
+        localStorage.setItem("veloz_api_base", apiBase);
+        refreshMarket().catch(() => {});
+        refreshOrders().catch(() => {});
+      });
+
+      const savedBase = localStorage.getItem("veloz_api_base");
+      if (savedBase && !apiBase) {
+        apiBase = savedBase;
+        document.getElementById("apiBase").value = apiBase;
+      }
+
+      let sse = null;
+      try {
+        sse = attachSse();
+      } catch {
+        sse = null;
+      }
+
+      if (!sse) {
+        document.getElementById("transport").textContent = "poll";
+        refreshConfig().catch(() => {});
+        refreshMarket().catch(() => {});
+        refreshOrders().catch(() => {});
+        refreshState().catch(() => {});
+        refreshAccount().catch(() => {});
+        setInterval(() => refreshMarket().catch(() => {}), 1000);
+        setInterval(() => refreshOrders().catch(() => {}), 1500);
+      } else {
+        document.getElementById("transport").textContent = "sse";
+        refreshConfig().catch(() => {});
+        refreshOrders().catch(() => {});
+        refreshState().catch(() => {});
+        refreshAccount().catch(() => {});
+      }
+    </script>
+  </body>
+</html>

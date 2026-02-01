@@ -1,0 +1,6 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: VeloZ
+
+Files: *
+Copyright: 2026 VeloZ Contributors
+License: Apache-2.0
