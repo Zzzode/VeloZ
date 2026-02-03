@@ -1,113 +1,113 @@
-# VeloZ 构建与运行
+# VeloZ Build and Run
 
-本文件提供 VeloZ 的本地构建、运行、格式化与 CI 行为说明。仓库目前以 C++23 引擎骨架为主，后续模块会逐步落地。
+This document describes local build, run, formatting, and CI behavior for VeloZ. The repository currently focuses on a C++23 engine skeleton, with more modules to be added incrementally.
 
-## 1. 环境要求
+## 1. Environment Requirements
 
-### 1.1 必备
+### 1.1 Required
 
-- Linux / macOS（Windows 也可，但本文以类 Unix 为例）
+- Linux / macOS (Windows works too, but this doc uses Unix-like examples)
 - CMake >= 3.24
-- 支持 C++23 的编译器
-  - Linux：Clang 16+ 或 GCC 13+（以系统实际可用为准）
+- A C++23-capable compiler
+  - Linux: Clang 16+ or GCC 13+ (depending on what is available on your system)
 
-### 1.2 可选
+### 1.2 Optional
 
-- clang-format（用于 `./scripts/format.sh`）
+- clang-format (for `./scripts/format.sh`)
 
-## 2. 使用 CMake Presets 构建（推荐）
+## 2. Build with CMake Presets (Recommended)
 
-仓库提供 [CMakePresets.json](../CMakePresets.json)：
+The repository provides [CMakePresets.json](../CMakePresets.json):
 
-- dev：Debug + 生成 compile_commands.json
-- release：Release + 生成 compile_commands.json
-- asan：Clang + ASan/UBSan（用于本地自检）
+- dev: Debug + generate compile_commands.json
+- release: Release + generate compile_commands.json
+- asan: Clang + ASan/UBSan (local self-check)
 
-### 2.1 Dev 构建
+### 2.1 Dev Build
 
 ```bash
 cmake --preset dev
 cmake --build --preset dev -j
 ```
 
-构建产物默认位于：
+Build outputs are located by default at:
 
 - `build/dev/`
-- 引擎可执行文件：`build/dev/apps/engine/veloz_engine`
+- Engine executable: `build/dev/apps/engine/veloz_engine`
 
-### 2.2 Release 构建
+### 2.2 Release Build
 
 ```bash
 cmake --preset release
 cmake --build --preset release -j
 ```
 
-### 2.3 ASan 自检构建（可选）
+### 2.3 ASan Self-Check Build (Optional)
 
 ```bash
 cmake --preset asan
 cmake --build --preset asan -j
 ```
 
-## 3. 运行
+## 3. Run
 
-### 3.1 直接运行引擎
+### 3.1 Run Engine Directly
 
 ```bash
 ./build/dev/apps/engine/veloz_engine
 ```
 
-当前引擎为冒烟骨架：会周期性输出 heartbeat，并响应 SIGINT/SIGTERM 优雅退出。
+The engine is currently a smoke-test skeleton: it periodically prints heartbeat and exits gracefully on SIGINT/SIGTERM.
 
-### 3.2 使用脚本运行（推荐）
+### 3.2 Run via Script (Recommended)
 
 ```bash
 ./scripts/run_engine.sh dev
 ```
 
-该脚本会：
+The script does the following:
 
-- 先调用 `./scripts/build.sh <preset>` 构建
-- 再运行引擎，并使用 `timeout` 做短时冒烟
+- Calls `./scripts/build.sh <preset>` first
+- Runs the engine and uses `timeout` for a short smoke test
 
-### 3.3 运行网关与 UI（最小联动）
+### 3.3 Run Gateway and UI (Minimal Integration)
 
-网关使用 Python 标准库启动 HTTP 服务，并通过 stdio 桥接到引擎：
+The gateway uses Python stdlib to start an HTTP service and bridges to the engine via stdio:
 
 ```bash
 ./scripts/run_gateway.sh dev
 ```
 
-默认监听地址：
+Default listen address:
 
 - `http://127.0.0.1:8080/`
 
-如果你直接用 `file://` 打开 `apps/ui/index.html`（例如 IDE 里直接预览文件），页面顶部的 `API Base` 需要填入 `http://127.0.0.1:8080`，或通过 URL 参数指定：
+If you open `apps/ui/index.html` directly via `file://` (e.g. IDE preview), set `API Base` at the top of the page to `http://127.0.0.1:8080`, or set it via URL params:
 
 - `.../index.html?api=http://127.0.0.1:8080`
 
-提供的接口：
+Available endpoints:
 
 - `GET /health`
 - `GET /api/config`
 - `GET /api/market`
 - `GET /api/orders`
-- `GET /api/orders_state`（订单状态视图）
+- `GET /api/orders_state` (order state view)
 - `GET /api/order_state?client_order_id=...`
-- `GET /api/stream`（SSE：实时事件流）
+- `GET /api/stream` (SSE: realtime event stream)
 - `GET /api/execution/ping`
 - `GET /api/account`
-- `POST /api/order`（JSON 或 x-www-form-urlencoded）
-- `POST /api/cancel`（取消单）
+- `POST /api/order` (JSON or x-www-form-urlencoded)
+- `POST /api/cancel` (cancel order)
 
-订单状态视图说明：
+Order state view notes:
 
-- `orders` 为事件列表（便于调试与回放）
-- `orders_state` 为状态归并视图（便于 UI/策略查询），会根据 `fill` 推导 `PARTIALLY_FILLED/FILLED`
+- `orders` is an event list (useful for debugging and replay)
+- `orders_state` is a merged state view (for UI/strategy queries), derived from `fill` into `PARTIALLY_FILLED/FILLED`
 
-### 3.4 行情源切换（可选：Binance REST 轮询）
+### 3.4 Switch Market Source (Optional: Binance REST Polling)
 
-默认行情由引擎模拟产生（`sim`）。你也可以在启动网关前通过环境变量切换为 Binance 公共 REST 轮询：
+Market data is simulated by the engine by default (`sim`). You can switch to Binance public REST polling via env vars before starting the gateway:
 
 ```bash
 export VELOZ_MARKET_SOURCE=binance_rest
@@ -116,9 +116,9 @@ export VELOZ_BINANCE_BASE_URL=https://api.binance.com
 ./scripts/run_gateway.sh dev
 ```
 
-### 3.5 执行通道切换（可选：Binance Spot Testnet REST + 用户数据流）
+### 3.5 Switch Execution Channel (Optional: Binance Spot Testnet REST + User Stream)
 
-默认下单/撤单会走本地引擎模拟执行（`sim_engine`）。你也可以切换为 Binance 现货 Testnet 的 REST 下单/撤单（需要 API key/secret）：
+Order placement/cancel goes through local engine simulation by default (`sim_engine`). You can switch to Binance Spot Testnet REST (requires API key/secret):
 
 ```bash
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
@@ -128,21 +128,21 @@ export VELOZ_BINANCE_API_SECRET=...
 ./scripts/run_gateway.sh dev
 ```
 
-说明：
+Notes:
 
-- 出于安全考虑，网关不会打印/回显 API secret
-- 网关会自动申请 listenKey 并连接用户数据流（WS），用于获取 `executionReport`（订单/成交回报）与 `outboundAccountPosition`（余额变化），并对外提供：
+- For security, the gateway does not print or echo the API secret
+- The gateway automatically obtains a listenKey and connects to the user data stream (WS) to receive `executionReport` (order/fill reports) and `outboundAccountPosition` (balance updates), and exposes:
   - `GET /api/account`
-  - SSE：`event: account`
-- 如需覆盖默认 WS 地址，可设置：
+- SSE: `event: account`
+To override the default WS URL, set:
 
 ```bash
 export VELOZ_BINANCE_WS_BASE_URL=wss://testnet.binance.vision/ws
 ```
 
-## 4. 常用脚本
+## 4. Common Scripts
 
-### 4.1 构建脚本
+### 4.1 Build Scripts
 
 ```bash
 ./scripts/build.sh dev
@@ -150,37 +150,37 @@ export VELOZ_BINANCE_WS_BASE_URL=wss://testnet.binance.vision/ws
 ./scripts/build.sh asan
 ```
 
-对应脚本：[build.sh](../scripts/build.sh)
+Script: [build.sh](../scripts/build.sh)
 
-### 4.2 格式化脚本
+### 4.2 Format Script
 
 ```bash
 ./scripts/format.sh
 ```
 
-对应脚本：[format.sh](../scripts/format.sh)
+Script: [format.sh](../scripts/format.sh)
 
-说明：
+Notes:
 
-- 默认扫描 `apps/`、`libs/` 下的 `*.h/*.hpp/*.cc/*.cpp/*.cxx`
-- 直接原地格式化（`clang-format -i`）
+- Scans `*.h/*.hpp/*.cc/*.cpp/*.cxx` under `apps/` and `libs/` by default
+- Formats in place (`clang-format -i`)
 
-## 5. CI 行为
+## 5. CI Behavior
 
-GitHub Actions 工作流位于：[ci.yml](../.github/workflows/ci.yml)
+GitHub Actions workflow: [ci.yml](../.github/workflows/ci.yml)
 
-当前 CI 做三件事：
+Current CI does three things:
 
-- 使用 `cmake --preset dev` 配置
-- 使用 `cmake --build --preset dev -j` 构建
-- 运行引擎冒烟（timeout 3s）
+- Configure with `cmake --preset dev`
+- Build with `cmake --build --preset dev -j`
+- Run engine smoke test (`timeout 3s`)
 
-## 6. 常见问题
+## 6. FAQ
 
-### 6.1 找不到 `cmake --preset`
+### 6.1 `cmake --preset` Not Found
 
-请确认本机 CMake 版本 >= 3.19（本仓库要求 >= 3.24）。
+Make sure your local CMake version is >= 3.19 (this repo requires >= 3.24).
 
-### 6.2 没有 `clang-format`
+### 6.2 `clang-format` Missing
 
-格式化脚本会直接报错退出。你可以安装 clang-format，或先暂时不执行格式化脚本。
+The format script exits with an error. Install clang-format or skip the formatting script for now.

@@ -18,7 +18,15 @@ from dataclasses import dataclass, asdict
 
 
 class EngineBridge:
-    def __init__(self, engine_cmd, market_source, market_symbol, binance_base_url, order_store):
+    def __init__(
+        self,
+        engine_cmd,
+        market_source,
+        market_symbol,
+        binance_base_url,
+        order_store,
+        account_store,
+    ):
         self._proc = subprocess.Popen(
             engine_cmd,
             stdin=subprocess.PIPE,
@@ -40,6 +48,7 @@ class EngineBridge:
         self._market_thread = None
         self._external_market_last_ok_ns = 0
         self._order_store = order_store
+        self._account_store = account_store
 
         self._stdout_thread = threading.Thread(target=self._read_stdout, daemon=True)
         self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
@@ -47,7 +56,9 @@ class EngineBridge:
         self._stderr_thread.start()
 
         if self._market_source == "binance_rest":
-            self._market_thread = threading.Thread(target=self._poll_binance_price, daemon=True)
+            self._market_thread = threading.Thread(
+                target=self._poll_binance_price, daemon=True
+            )
             self._market_thread.start()
 
     def stop(self):
@@ -69,7 +80,11 @@ class EngineBridge:
         return {
             "market_source": self._market_source,
             "market_symbol": self._market_symbol,
-            "binance_base_url": self._binance_base_url if self._market_source == "binance_rest" else None,
+            "binance_base_url": (
+                self._binance_base_url
+                if self._market_source == "binance_rest"
+                else None
+            ),
         }
 
     def pop_events(self, last_id):
@@ -129,7 +144,8 @@ class EngineBridge:
                 if (
                     t == "market"
                     and self._market_source == "binance_rest"
-                    and (time.time_ns() - self._external_market_last_ok_ns) < 5_000_000_000
+                    and (time.time_ns() - self._external_market_last_ok_ns)
+                    < 5_000_000_000
                 ):
                     continue
                 self._next_event_id += 1
@@ -145,8 +161,17 @@ class EngineBridge:
                     self._orders.append(evt)
                     if len(self._orders) > self._max_orders:
                         self._orders = self._orders[-self._max_orders :]
-                if t in ("order_update", "fill") and self._order_store is not None:
-                    self._order_store.apply_event({k: v for k, v in evt.items() if k != "_id"})
+                if (
+                    t in ("order_update", "fill", "order_state")
+                    and self._order_store is not None
+                ):
+                    self._order_store.apply_event(
+                        {k: v for k, v in evt.items() if k != "_id"}
+                    )
+                if t == "account" and self._account_store is not None:
+                    self._account_store.apply_event(
+                        {k: v for k, v in evt.items() if k != "_id"}
+                    )
                 self._cv.notify_all()
 
     def _drain_stderr(self):
@@ -183,12 +208,25 @@ class EngineBridge:
                 data = json.loads(raw)
                 price = float(data["price"])
                 self._external_market_last_ok_ns = time.time_ns()
-                self._emit_event({"type": "market", "symbol": symbol, "ts_ns": time.time_ns(), "price": price})
+                self._emit_event(
+                    {
+                        "type": "market",
+                        "symbol": symbol,
+                        "ts_ns": time.time_ns(),
+                        "price": price,
+                    }
+                )
             except Exception:
                 now = time.time()
                 if now - last_error_emit > 5.0:
                     last_error_emit = now
-                    self._emit_event({"type": "error", "ts_ns": time.time_ns(), "message": "market_source_error"})
+                    self._emit_event(
+                        {
+                            "type": "error",
+                            "ts_ns": time.time_ns(),
+                            "message": "market_source_error",
+                        }
+                    )
             time.sleep(0.5)
 
     def emit_event(self, evt):
@@ -209,6 +247,7 @@ class EngineBridge:
                     self._orders = self._orders[-self._max_orders :]
             self._cv.notify_all()
 
+
 @dataclass
 class BalanceState:
     asset: str
@@ -226,6 +265,38 @@ class AccountStore:
         with self._mu:
             self._balances = {b.asset: b for b in balances}
             self._last_ts_ns = ts_ns
+
+    def apply_event(self, evt: dict):
+        if evt.get("type") != "account":
+            return
+        ts_ns = evt.get("ts_ns")
+        balances = evt.get("balances")
+        if not isinstance(balances, list):
+            if ts_ns is not None:
+                with self._mu:
+                    self._last_ts_ns = ts_ns
+            return
+        items = []
+        for b in balances:
+            if not isinstance(b, dict):
+                continue
+            asset = b.get("asset")
+            if not asset:
+                continue
+            try:
+                free = float(b.get("free", 0.0))
+            except Exception:
+                free = 0.0
+            try:
+                locked = float(b.get("locked", 0.0))
+            except Exception:
+                locked = 0.0
+            items.append(BalanceState(asset=str(asset), free=free, locked=locked))
+        if items:
+            self.set_balances(items, ts_ns)
+        elif ts_ns is not None:
+            with self._mu:
+                self._last_ts_ns = ts_ns
 
     def snapshot(self):
         with self._mu:
@@ -280,7 +351,7 @@ class OrderStore:
 
     def apply_event(self, evt: dict):
         t = evt.get("type")
-        if t not in ("order_update", "fill"):
+        if t not in ("order_update", "fill", "order_state"):
             return
 
         cid = evt.get("client_order_id")
@@ -292,6 +363,41 @@ class OrderStore:
             if st is None:
                 st = OrderState(client_order_id=str(cid))
                 self._orders[cid] = st
+
+            if t == "order_state":
+                if evt.get("symbol"):
+                    st.symbol = evt.get("symbol")
+                if evt.get("side"):
+                    st.side = evt.get("side")
+                if evt.get("order_qty") is not None:
+                    try:
+                        st.order_qty = float(evt.get("order_qty"))
+                    except Exception:
+                        pass
+                if evt.get("limit_price") is not None:
+                    try:
+                        st.limit_price = float(evt.get("limit_price"))
+                    except Exception:
+                        pass
+                if evt.get("venue_order_id"):
+                    st.venue_order_id = evt.get("venue_order_id")
+                if evt.get("status"):
+                    st.status = evt.get("status")
+                if evt.get("reason"):
+                    st.reason = evt.get("reason")
+                if evt.get("executed_qty") is not None:
+                    try:
+                        st.executed_qty = float(evt.get("executed_qty"))
+                    except Exception:
+                        pass
+                if evt.get("avg_price") is not None:
+                    try:
+                        st.avg_price = float(evt.get("avg_price"))
+                    except Exception:
+                        pass
+                if evt.get("last_ts_ns"):
+                    st.last_ts_ns = evt.get("last_ts_ns")
+                return
 
             if t == "order_update":
                 if evt.get("symbol"):
@@ -363,7 +469,11 @@ class BinanceSpotRestClient:
         return bool(self._base_url and self._api_key and self._api_secret)
 
     def _sign(self, query_string):
-        mac = hmac.new(self._api_secret.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256)
+        mac = hmac.new(
+            self._api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256,
+        )
         return mac.hexdigest()
 
     def _request(self, method, path, params, signed, api_key_only=False):
@@ -425,13 +535,27 @@ class BinanceSpotRestClient:
         return self._request("GET", "/api/v3/order", params, signed=True)
 
     def new_listen_key(self):
-        return self._request("POST", "/api/v3/userDataStream", {}, signed=False, api_key_only=True)
+        return self._request(
+            "POST", "/api/v3/userDataStream", {}, signed=False, api_key_only=True
+        )
 
     def keepalive_listen_key(self, listen_key):
-        return self._request("PUT", "/api/v3/userDataStream", {"listenKey": listen_key}, signed=False, api_key_only=True)
+        return self._request(
+            "PUT",
+            "/api/v3/userDataStream",
+            {"listenKey": listen_key},
+            signed=False,
+            api_key_only=True,
+        )
 
     def close_listen_key(self, listen_key):
-        return self._request("DELETE", "/api/v3/userDataStream", {"listenKey": listen_key}, signed=False, api_key_only=True)
+        return self._request(
+            "DELETE",
+            "/api/v3/userDataStream",
+            {"listenKey": listen_key},
+            signed=False,
+            api_key_only=True,
+        )
 
 
 class SimpleWebSocketClient:
@@ -597,22 +721,32 @@ class SimpleWebSocketClient:
 
 
 class ExecutionRouter:
-    def __init__(self, *, bridge, execution_mode, binance_client, order_store):
+    def __init__(
+        self, *, bridge, execution_mode, binance_client, order_store, account_store=None
+    ):
         self._bridge = bridge
         self._execution_mode = execution_mode
         self._binance = binance_client
         self._orders = order_store
-        self._account = AccountStore()
+        self._account = account_store or AccountStore()
         self._poll_mu = threading.Lock()
         self._poll: dict[str, dict] = {}
         self._poll_thread = None
         self._user_stream_mu = threading.Lock()
         self._user_stream_connected = False
         self._user_stream_thread = None
-        if self._execution_mode == "binance_testnet_spot" and self._binance and self._binance.enabled():
-            self._poll_thread = threading.Thread(target=self._poll_binance_orders, daemon=True)
+        if (
+            self._execution_mode == "binance_testnet_spot"
+            and self._binance
+            and self._binance.enabled()
+        ):
+            self._poll_thread = threading.Thread(
+                target=self._poll_binance_orders, daemon=True
+            )
             self._poll_thread.start()
-            self._user_stream_thread = threading.Thread(target=self._run_binance_user_stream, daemon=True)
+            self._user_stream_thread = threading.Thread(
+                target=self._run_binance_user_stream, daemon=True
+            )
             self._user_stream_thread.start()
 
     def config(self):
@@ -621,8 +755,16 @@ class ExecutionRouter:
         return {
             "execution_mode": self._execution_mode,
             "binance_trade_enabled": bool(self._binance and self._binance.enabled()),
-            "binance_trade_base_url": self._binance._base_url if self._execution_mode == "binance_testnet_spot" else None,
-            "binance_user_stream_connected": ws_connected if self._execution_mode == "binance_testnet_spot" else False,
+            "binance_trade_base_url": (
+                self._binance._base_url
+                if self._execution_mode == "binance_testnet_spot"
+                else None
+            ),
+            "binance_user_stream_connected": (
+                ws_connected
+                if self._execution_mode == "binance_testnet_spot"
+                else False
+            ),
         }
 
     def orders_state(self):
@@ -644,26 +786,62 @@ class ExecutionRouter:
         return {"ok": True}
 
     def place_order(self, side, symbol, qty, price, client_order_id):
-        self._orders.note_order_params(client_order_id=client_order_id, symbol=symbol, side=side, qty=qty, price=price)
+        self._orders.note_order_params(
+            client_order_id=client_order_id,
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            price=price,
+        )
         if self._execution_mode == "binance_testnet_spot":
             if not (self._binance and self._binance.enabled()):
                 raise RuntimeError("binance_not_configured")
             r = self._binance.place_order(
-                symbol=symbol, side=side, qty=qty, price=price, client_order_id=client_order_id
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                price=price,
+                client_order_id=client_order_id,
             )
             if isinstance(r, dict) and (r.get("_error") or r.get("_http_error")):
-                evt = {"type": "order_update", "ts_ns": time.time_ns(), "client_order_id": client_order_id, "status": "REJECTED", "reason": "binance_error", "symbol": symbol}
+                evt = {
+                    "type": "order_update",
+                    "ts_ns": time.time_ns(),
+                    "client_order_id": client_order_id,
+                    "status": "REJECTED",
+                    "reason": "binance_error",
+                    "symbol": symbol,
+                }
                 self._bridge.emit_event(evt)
                 self._orders.apply_event(evt)
                 return {"ok": False, "error": "binance_error", "details": r}
 
-            venue_order_id = str(r.get("orderId")) if isinstance(r, dict) and "orderId" in r else None
-            evt = {"type": "order_update", "ts_ns": time.time_ns(), "client_order_id": client_order_id, "venue_order_id": venue_order_id, "status": "ACCEPTED", "symbol": symbol}
+            venue_order_id = (
+                str(r.get("orderId"))
+                if isinstance(r, dict) and "orderId" in r
+                else None
+            )
+            evt = {
+                "type": "order_update",
+                "ts_ns": time.time_ns(),
+                "client_order_id": client_order_id,
+                "venue_order_id": venue_order_id,
+                "status": "ACCEPTED",
+                "symbol": symbol,
+            }
             self._bridge.emit_event(evt)
             self._orders.apply_event(evt)
             with self._poll_mu:
-                self._poll[client_order_id] = {"symbol": symbol, "last_exec_qty": 0.0, "last_status": "ACCEPTED"}
-            return {"ok": True, "client_order_id": client_order_id, "venue_order_id": venue_order_id}
+                self._poll[client_order_id] = {
+                    "symbol": symbol,
+                    "last_exec_qty": 0.0,
+                    "last_status": "ACCEPTED",
+                }
+            return {
+                "ok": True,
+                "client_order_id": client_order_id,
+                "venue_order_id": venue_order_id,
+            }
 
         self._bridge.place_order(side, symbol, qty, price, client_order_id)
         return {"ok": True, "client_order_id": client_order_id}
@@ -672,14 +850,31 @@ class ExecutionRouter:
         if self._execution_mode == "binance_testnet_spot":
             if not (self._binance and self._binance.enabled()):
                 raise RuntimeError("binance_not_configured")
-            market_symbol = (symbol or self._bridge.config().get("market_symbol") or "BTCUSDT").strip().upper()
-            r = self._binance.cancel_order(symbol=market_symbol, client_order_id=client_order_id)
+            market_symbol = (
+                (symbol or self._bridge.config().get("market_symbol") or "BTCUSDT")
+                .strip()
+                .upper()
+            )
+            r = self._binance.cancel_order(
+                symbol=market_symbol, client_order_id=client_order_id
+            )
             if isinstance(r, dict) and (r.get("_error") or r.get("_http_error")):
-                evt = {"type": "order_update", "ts_ns": time.time_ns(), "client_order_id": client_order_id, "status": "REJECTED", "reason": "binance_error"}
+                evt = {
+                    "type": "order_update",
+                    "ts_ns": time.time_ns(),
+                    "client_order_id": client_order_id,
+                    "status": "REJECTED",
+                    "reason": "binance_error",
+                }
                 self._bridge.emit_event(evt)
                 self._orders.apply_event(evt)
                 return {"ok": False, "error": "binance_error", "details": r}
-            evt = {"type": "order_update", "ts_ns": time.time_ns(), "client_order_id": client_order_id, "status": "CANCELLED"}
+            evt = {
+                "type": "order_update",
+                "ts_ns": time.time_ns(),
+                "client_order_id": client_order_id,
+                "status": "CANCELLED",
+            }
             self._bridge.emit_event(evt)
             self._orders.apply_event(evt)
             with self._poll_mu:
@@ -719,16 +914,26 @@ class ExecutionRouter:
                 items = list(self._poll.items())
 
             for cid, meta in items:
-                symbol = meta.get("symbol") or (self._bridge.config().get("market_symbol") or "BTCUSDT")
+                symbol = meta.get("symbol") or (
+                    self._bridge.config().get("market_symbol") or "BTCUSDT"
+                )
                 r = self._binance.get_order(symbol=symbol, client_order_id=cid)
                 if isinstance(r, dict) and (r.get("_error") or r.get("_http_error")):
                     now = time.time()
                     if now - last_error_emit > 5.0:
                         last_error_emit = now
-                        self._bridge.emit_event({"type": "error", "ts_ns": time.time_ns(), "message": "binance_poll_error"})
+                        self._bridge.emit_event(
+                            {
+                                "type": "error",
+                                "ts_ns": time.time_ns(),
+                                "message": "binance_poll_error",
+                            }
+                        )
                     continue
 
-                status = self._map_binance_status(r.get("status") if isinstance(r, dict) else None)
+                status = self._map_binance_status(
+                    r.get("status") if isinstance(r, dict) else None
+                )
                 try:
                     exec_qty = float(r.get("executedQty", 0.0))
                 except Exception:
@@ -743,19 +948,38 @@ class ExecutionRouter:
                     cq = 0.0
                 avg_price = (cq / exec_qty) if exec_qty > 0 else None
                 if orig_qty > 0:
-                    self._orders.note_order_params(client_order_id=cid, symbol=symbol, side=None, qty=orig_qty, price=None)
+                    self._orders.note_order_params(
+                        client_order_id=cid,
+                        symbol=symbol,
+                        side=None,
+                        qty=orig_qty,
+                        price=None,
+                    )
 
                 last_exec = float(meta.get("last_exec_qty", 0.0) or 0.0)
                 if exec_qty > last_exec:
                     delta = exec_qty - last_exec
-                    fill_evt = {"type": "fill", "ts_ns": time.time_ns(), "client_order_id": cid, "symbol": symbol, "qty": delta, "price": avg_price}
+                    fill_evt = {
+                        "type": "fill",
+                        "ts_ns": time.time_ns(),
+                        "client_order_id": cid,
+                        "symbol": symbol,
+                        "qty": delta,
+                        "price": avg_price,
+                    }
                     self._bridge.emit_event(fill_evt)
                     self._orders.apply_event(fill_evt)
                     meta["last_exec_qty"] = exec_qty
 
                 last_status = meta.get("last_status")
                 if status and status != last_status:
-                    upd = {"type": "order_update", "ts_ns": time.time_ns(), "client_order_id": cid, "symbol": symbol, "status": status}
+                    upd = {
+                        "type": "order_update",
+                        "ts_ns": time.time_ns(),
+                        "client_order_id": cid,
+                        "symbol": symbol,
+                        "status": status,
+                    }
                     self._bridge.emit_event(upd)
                     self._orders.apply_event(upd)
                     meta["last_status"] = status
@@ -777,7 +1001,11 @@ class ExecutionRouter:
             side = str(msg.get("S") or "")
             venue_order_id = str(msg.get("i")) if msg.get("i") is not None else None
             status = self._map_binance_status(msg.get("X"))
-            ts_ns = int(msg.get("E", 0)) * 1_000_000 if msg.get("E") is not None else time.time_ns()
+            ts_ns = (
+                int(msg.get("E", 0)) * 1_000_000
+                if msg.get("E") is not None
+                else time.time_ns()
+            )
 
             try:
                 orig_qty = float(msg.get("q", 0.0))
@@ -788,7 +1016,13 @@ class ExecutionRouter:
             except Exception:
                 limit_price = 0.0
             if orig_qty > 0:
-                self._orders.note_order_params(client_order_id=cid, symbol=symbol, side=side, qty=orig_qty, price=limit_price)
+                self._orders.note_order_params(
+                    client_order_id=cid,
+                    symbol=symbol,
+                    side=side,
+                    qty=orig_qty,
+                    price=limit_price,
+                )
 
             upd = {
                 "type": "order_update",
@@ -813,15 +1047,28 @@ class ExecutionRouter:
                     last_fill_price = float(msg.get("L", 0.0))
                 except Exception:
                     last_fill_price = 0.0
-                fill_evt = {"type": "fill", "ts_ns": ts_ns, "client_order_id": cid, "symbol": symbol, "qty": last_fill_qty, "price": last_fill_price if last_fill_price > 0 else None}
+                fill_evt = {
+                    "type": "fill",
+                    "ts_ns": ts_ns,
+                    "client_order_id": cid,
+                    "symbol": symbol,
+                    "qty": last_fill_qty,
+                    "price": last_fill_price if last_fill_price > 0 else None,
+                }
                 self._bridge.emit_event(fill_evt)
-                self._orders.apply_event({k: v for k, v in fill_evt.items() if v is not None})
+                self._orders.apply_event(
+                    {k: v for k, v in fill_evt.items() if v is not None}
+                )
         except Exception:
             return
 
     def _handle_binance_account_update(self, msg: dict):
         try:
-            ts_ns = int(msg.get("E", 0)) * 1_000_000 if msg.get("E") is not None else time.time_ns()
+            ts_ns = (
+                int(msg.get("E", 0)) * 1_000_000
+                if msg.get("E") is not None
+                else time.time_ns()
+            )
             balances = []
             for b in msg.get("B", []) or []:
                 asset = str(b.get("a") or "")
@@ -842,7 +1089,12 @@ class ExecutionRouter:
             return
 
     def _run_binance_user_stream(self):
-        ws_base = os.environ.get("VELOZ_BINANCE_WS_BASE_URL", "wss://testnet.binance.vision/ws").strip() or "wss://testnet.binance.vision/ws"
+        ws_base = (
+            os.environ.get(
+                "VELOZ_BINANCE_WS_BASE_URL", "wss://testnet.binance.vision/ws"
+            ).strip()
+            or "wss://testnet.binance.vision/ws"
+        )
         last_error_emit = 0.0
 
         while True:
@@ -858,7 +1110,13 @@ class ExecutionRouter:
                 now = time.time()
                 if now - last_error_emit > 5.0:
                     last_error_emit = now
-                    self._bridge.emit_event({"type": "error", "ts_ns": time.time_ns(), "message": "listen_key_error"})
+                    self._bridge.emit_event(
+                        {
+                            "type": "error",
+                            "ts_ns": time.time_ns(),
+                            "message": "listen_key_error",
+                        }
+                    )
                 continue
 
             stop_flag = {"stop": False}
@@ -878,7 +1136,13 @@ class ExecutionRouter:
                 now = time.time()
                 if now - last_error_emit > 5.0:
                     last_error_emit = now
-                    self._bridge.emit_event({"type": "error", "ts_ns": time.time_ns(), "message": "binance_ws_error"})
+                    self._bridge.emit_event(
+                        {
+                            "type": "error",
+                            "ts_ns": time.time_ns(),
+                            "message": "binance_ws_error",
+                        }
+                    )
 
             ws_url = ws_base.rstrip("/") + "/" + listen_key
             ws = SimpleWebSocketClient(ws_url, on_text=on_text, on_error=on_error)
@@ -1004,7 +1268,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         try:
-            r = self.server.router.place_order(side, symbol, qty, price, client_order_id)
+            r = self.server.router.place_order(
+                side, symbol, qty, price, client_order_id
+            )
         except RuntimeError as e:
             if str(e) == "binance_not_configured":
                 self._send_json(400, {"error": "binance_not_configured"})
@@ -1100,12 +1366,24 @@ def main():
     market_source = os.environ.get("VELOZ_MARKET_SOURCE", "sim").strip().lower()
     if market_source not in ("sim", "binance_rest"):
         market_source = "sim"
-    market_symbol = os.environ.get("VELOZ_MARKET_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
-    binance_base_url = os.environ.get("VELOZ_BINANCE_BASE_URL", "https://api.binance.com").strip() or "https://api.binance.com"
-    execution_mode = os.environ.get("VELOZ_EXECUTION_MODE", "sim_engine").strip().lower()
+    market_symbol = (
+        os.environ.get("VELOZ_MARKET_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
+    )
+    binance_base_url = (
+        os.environ.get("VELOZ_BINANCE_BASE_URL", "https://api.binance.com").strip()
+        or "https://api.binance.com"
+    )
+    execution_mode = (
+        os.environ.get("VELOZ_EXECUTION_MODE", "sim_engine").strip().lower()
+    )
     if execution_mode not in ("sim_engine", "binance_testnet_spot"):
         execution_mode = "sim_engine"
-    binance_trade_base_url = os.environ.get("VELOZ_BINANCE_TRADE_BASE_URL", "https://testnet.binance.vision").strip() or "https://testnet.binance.vision"
+    binance_trade_base_url = (
+        os.environ.get(
+            "VELOZ_BINANCE_TRADE_BASE_URL", "https://testnet.binance.vision"
+        ).strip()
+        or "https://testnet.binance.vision"
+    )
     binance_api_key = os.environ.get("VELOZ_BINANCE_API_KEY", "")
     binance_api_secret = os.environ.get("VELOZ_BINANCE_API_SECRET", "")
     engine_path = os.path.join(
@@ -1115,9 +1393,25 @@ def main():
         raise SystemExit(f"engine not found: {engine_path}")
 
     order_store = OrderStore()
-    bridge = EngineBridge([engine_path, "--stdio"], market_source, market_symbol, binance_base_url, order_store)
-    binance_client = BinanceSpotRestClient(binance_trade_base_url, binance_api_key, binance_api_secret)
-    router = ExecutionRouter(bridge=bridge, execution_mode=execution_mode, binance_client=binance_client, order_store=order_store)
+    account_store = AccountStore()
+    bridge = EngineBridge(
+        [engine_path, "--stdio"],
+        market_source,
+        market_symbol,
+        binance_base_url,
+        order_store,
+        account_store,
+    )
+    binance_client = BinanceSpotRestClient(
+        binance_trade_base_url, binance_api_key, binance_api_secret
+    )
+    router = ExecutionRouter(
+        bridge=bridge,
+        execution_mode=execution_mode,
+        binance_client=binance_client,
+        order_store=order_store,
+        account_store=account_store,
+    )
 
     host = os.environ.get("VELOZ_HOST", "0.0.0.0")
     port = int(os.environ.get("VELOZ_PORT", "8080"))
