@@ -35,3 +35,7 @@ dist/
 .nuxt/
 .cache/
 
+## Git worktrees (Claude Code)
+/.worktrees/
+/worktrees/
+
