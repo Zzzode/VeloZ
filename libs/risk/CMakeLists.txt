@@ -1,5 +1,6 @@
 add_library(veloz_risk
   src/risk_engine.cpp
+  src/circuit_breaker.cpp
 )
 
 target_include_directories(veloz_risk
@@ -9,4 +10,23 @@ target_include_directories(veloz_risk
 
 target_link_libraries(veloz_risk PUBLIC veloz_common veloz_core veloz_exec)
 target_compile_features(veloz_risk PUBLIC cxx_std_23)
+
+# Tests
+if(VELOZ_BUILD_TESTS)
+  add_executable(veloz_risk_tests
+    tests/test_risk_engine.cpp
+    tests/test_circuit_breaker.cpp
+  )
+
+  target_link_libraries(veloz_risk_tests
+    PRIVATE
+      veloz_risk
+      veloz_exec
+      veloz_oms
+      GTest::gtest
+      GTest::gtest_main
+  )
+
+  gtest_discover_tests(veloz_risk_tests)
+endif()
 

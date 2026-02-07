@@ -21,6 +21,20 @@ enum class MarketKind : std::uint8_t {
 
 struct SymbolId final {
   std::string value;
+
+  SymbolId() = default;
+  SymbolId(const char* v) : value(v) {}
+  explicit SymbolId(std::string v) : value(std::move(v)) {}
+
+  SymbolId& operator=(const std::string& v) {
+    value = v;
+    return *this;
+  }
+
+  SymbolId& operator=(const char* v) {
+    value = v;
+    return *this;
+  }
 };
 
 } // namespace veloz::common

@@ -80,8 +80,8 @@ OrderDecision EngineState::place_order(const veloz::exec::PlaceOrderRequest& req
                                        std::int64_t ts_ns) {
   OrderDecision decision;
   order_store_.note_order_params(request);
-  const auto risk = risk_engine_.check(request);
-  if (!risk.ok) {
+  const auto risk = risk_engine_.check_pre_trade(request);
+  if (!risk.allowed) {
     decision.accepted = false;
     decision.reason = risk.reason;
     order_store_.apply_order_update(request.client_order_id, request.symbol.value,
