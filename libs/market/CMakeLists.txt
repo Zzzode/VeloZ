@@ -10,3 +10,19 @@ target_include_directories(veloz_market
 target_link_libraries(veloz_market PUBLIC veloz_common veloz_core)
 target_compile_features(veloz_market PUBLIC cxx_std_23)
 
+# Tests
+if(VELOZ_BUILD_TESTS)
+  add_executable(veloz_market_tests
+    tests/test_market_event.cpp
+  )
+
+  target_link_libraries(veloz_market_tests
+    PRIVATE
+      veloz_market
+      GTest::gtest
+      GTest::gtest_main
+  )
+
+  gtest_discover_tests(veloz_market_tests)
+endif()
+
