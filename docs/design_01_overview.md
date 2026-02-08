@@ -97,6 +97,17 @@ Directories can be adjusted per team preference, but keep three hard boundaries:
 - Reusable libraries live in libs/
 - Contracts live in proto/ as the single source of truth
 
+### 2.3.6 Documentation Structure
+
+The project includes comprehensive documentation to help users get started and maintain the system:
+
+- `product_requirements.md`: Detailed product requirements and feature specifications
+- `strategy_development_guide.md`: Comprehensive guide for developing strategies
+- `API.md`: Complete API documentation with examples
+- `deployment_operations.md`: Deployment and operations documentation
+- `build_and_run.md`: Instructions for building and running the system
+- `design_*.md`: Architecture and design documentation
+
 #### 2.3.2 Dependency Rules (Strongly Recommended)
 
 - apps/ and services/ may depend on libs/ and proto/; libs/ depend only in one direction (e.g., market → core, exec → core, oms → core) to avoid cycles

@@ -2,6 +2,7 @@ add_library(veloz_exec
   src/order_api.cpp
   src/order_router.cpp
   src/client_order_id.cpp
+  src/binance_adapter.cpp
 )
 
 target_include_directories(veloz_exec
@@ -9,8 +10,18 @@ target_include_directories(veloz_exec
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(veloz_exec PUBLIC veloz_common veloz_core)
+target_link_libraries(veloz_exec PUBLIC veloz_common veloz_core nlohmann_json::nlohmann_json)
 target_compile_features(veloz_exec PUBLIC cxx_std_23)
+
+# Try to find system libcurl first
+find_package(CURL)
+
+if(CURL_FOUND)
+  target_link_libraries(veloz_exec PUBLIC CURL::libcurl)
+else()
+  message(WARNING "libcurl not found on system - disabling curl support")
+  add_compile_definitions(VELOZ_NO_CURL)
+endif()
 
 # Tests
 if(VELOZ_BUILD_TESTS)

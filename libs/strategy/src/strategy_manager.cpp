@@ -47,9 +47,48 @@ std::shared_ptr<IStrategy> StrategyManager::create_strategy(const StrategyConfig
 
     std::string strategy_id = "strat-" + std::to_string(dis(gen));
 
-    // Currently return nullptr temporarily because specific strategy implementation is needed
-    logger_->error("Strategy creation not implemented yet");
-    return nullptr;
+    // Convert StrategyType to string for factory lookup
+    std::string type_name;
+    switch (config.type) {
+        case StrategyType::TrendFollowing:
+            type_name = "TrendFollowing";
+            break;
+        case StrategyType::MeanReversion:
+            type_name = "MeanReversion";
+            break;
+        case StrategyType::Momentum:
+            type_name = "Momentum";
+            break;
+        case StrategyType::Arbitrage:
+            type_name = "Arbitrage";
+            break;
+        case StrategyType::MarketMaking:
+            type_name = "MarketMaking";
+            break;
+        case StrategyType::Grid:
+            type_name = "Grid";
+            break;
+        case StrategyType::Custom:
+        default:
+            type_name = "Custom";
+            break;
+    }
+
+    // Lookup strategy factory
+    auto factory_it = factories_.find(type_name);
+    if (factory_it == factories_.end()) {
+        logger_->error("Strategy type not registered: " + type_name);
+        return nullptr;
+    }
+
+    // Create strategy instance
+    auto strategy = factory_it->second->create_strategy(config);
+    if (strategy) {
+        strategies_[strategy_id] = strategy;
+        logger_->info("Strategy created: " + strategy_id + " (" + config.name + ")");
+    }
+
+    return strategy;
 }
 
 bool StrategyManager::start_strategy(const std::string& strategy_id) {

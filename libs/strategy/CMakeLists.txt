@@ -1,5 +1,7 @@
 add_library(veloz_strategy
     src/strategy_manager.cpp
+    src/advanced_strategies.cpp
+    src/test_strategy.cpp
 )
 
 target_include_directories(veloz_strategy
@@ -22,6 +24,7 @@ target_compile_features(veloz_strategy PUBLIC cxx_std_23)
 if(VELOZ_BUILD_TESTS)
     add_executable(veloz_strategy_tests
         tests/test_strategy_manager.cpp
+        tests/test_advanced_strategies.cpp
     )
 
     target_link_libraries(veloz_strategy_tests

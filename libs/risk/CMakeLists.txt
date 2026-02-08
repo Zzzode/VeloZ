@@ -1,6 +1,7 @@
 add_library(veloz_risk
   src/risk_engine.cpp
   src/circuit_breaker.cpp
+  src/risk_metrics.cpp
 )
 
 target_include_directories(veloz_risk

@@ -1,0 +1,56 @@
+#include "veloz/core/memory.h"
+
+#include <cstdlib>
+
+namespace veloz::core {
+
+void* aligned_alloc(size_t size, size_t alignment) {
+  void* ptr;
+#if defined(__POSIX__) || defined(__linux__)
+  int result = posix_memalign(&ptr, alignment, size);
+  if (result != 0) {
+    return nullptr;
+  }
+#elif defined(_WIN32)
+  ptr = _aligned_malloc(size, alignment);
+#else
+  // 通用实现
+  ptr = malloc(size + alignment + sizeof(void*));
+  if (ptr == nullptr) {
+    return nullptr;
+  }
+  void** aligned_ptr = reinterpret_cast<void**>(
+      (reinterpret_cast<uintptr_t>(ptr) + alignment + sizeof(void*)) &
+      ~(static_cast<uintptr_t>(alignment) - 1));
+  aligned_ptr[-1] = ptr;
+  ptr = aligned_ptr;
+#endif
+  return ptr;
+}
+
+void aligned_free(void* ptr) {
+  if (ptr == nullptr) {
+    return;
+  }
+#if defined(__POSIX__) || defined(__linux__)
+  free(ptr);
+#elif defined(_WIN32)
+  _aligned_free(ptr);
+#else
+  // 通用实现
+  void* real_ptr = reinterpret_cast<void**>(ptr)[-1];
+  free(real_ptr);
+#endif
+}
+
+// 全局内存统计实例
+static MemoryStats* g_memory_stats = nullptr;
+
+MemoryStats& global_memory_stats() {
+  if (g_memory_stats == nullptr) {
+    g_memory_stats = new MemoryStats();
+  }
+  return *g_memory_stats;
+}
+
+} // namespace veloz::core

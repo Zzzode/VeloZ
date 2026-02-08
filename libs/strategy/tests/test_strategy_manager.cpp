@@ -3,7 +3,34 @@
 
 namespace veloz::strategy::tests {
 
-// Simple strategy implementation for testing
+// Forward declaration of TestStrategy
+class TestStrategy;
+
+// Test strategy factory
+class TestStrategyFactory : public StrategyFactory<TestStrategy> {
+public:
+    std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config) override;
+    std::string get_strategy_type() const override;
+};
+
+// Strategy manager test class
+class StrategyManagerTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        manager_ = std::make_unique<StrategyManager>();
+        // Register test strategy factory
+        auto factory = std::make_shared<TestStrategyFactory>();
+        manager_->register_strategy_factory(factory);
+    }
+
+    void TearDown() override {
+        manager_.reset();
+    }
+
+    std::unique_ptr<StrategyManager> manager_;
+};
+
+// Test strategy implementation for testing
 class TestStrategy : public IStrategy {
 public:
     explicit TestStrategy(const StrategyConfig& config) : config_(config) {}
@@ -80,49 +107,101 @@ private:
     bool running_ = false;
 };
 
-// Test strategy factory
-class TestStrategyFactory : public StrategyFactory<TestStrategy> {
-public:
-    std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config) override {
-        return std::make_shared<TestStrategy>(config);
-    }
+// Test strategy factory implementation
+std::shared_ptr<IStrategy> TestStrategyFactory::create_strategy(const StrategyConfig& config) {
+    return std::make_shared<TestStrategy>(config);
+}
 
-    std::string get_strategy_type() const override {
-        return TestStrategy::get_strategy_type();
-    }
-};
-
-class StrategyManagerTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        manager_ = std::make_unique<StrategyManager>();
-    }
-
-    void TearDown() override {
-        manager_.reset();
-    }
-
-    std::unique_ptr<StrategyManager> manager_;
-};
+std::string TestStrategyFactory::get_strategy_type() const {
+    return TestStrategy::get_strategy_type();
+}
 
 // Test strategy registration
 TEST_F(StrategyManagerTest, TestStrategyRegistration) {
-    auto factory = std::make_shared<TestStrategyFactory>();
-    manager_->register_strategy_factory(factory);
+    // Verify that the test strategy factory is registered
+    StrategyConfig config{
+        .name = "Test Strategy",
+        .type = StrategyType::Custom,
+        .risk_per_trade = 0.01,
+        .max_position_size = 1.0,
+        .stop_loss = 0.05,
+        .take_profit = 0.1,
+        .symbols = {"BTCUSDT"},
+        .parameters = {}
+    };
 
-    // Temporarily comment out this test because create_strategy is not yet implemented
-    // auto strategy = manager_->create_strategy(StrategyConfig{});
-    // EXPECT_TRUE(strategy);
+    auto strategy = manager_->create_strategy(config);
+    EXPECT_TRUE(strategy);
+    EXPECT_EQ(strategy->get_name(), config.name);
 }
 
 // Test strategy lifecycle management
 TEST_F(StrategyManagerTest, TestStrategyLifecycle) {
-    // This test is temporarily empty because create_strategy is not yet implemented
+    StrategyConfig config{
+        .name = "Test Strategy",
+        .type = StrategyType::Custom,
+        .risk_per_trade = 0.01,
+        .max_position_size = 1.0,
+        .stop_loss = 0.05,
+        .take_profit = 0.1,
+        .symbols = {"BTCUSDT"},
+        .parameters = {}
+    };
+
+    auto strategy = manager_->create_strategy(config);
+    EXPECT_TRUE(strategy);
+
+    // Test start and stop
+    std::string strategy_id = manager_->get_all_strategy_ids()[0];
+    EXPECT_TRUE(manager_->start_strategy(strategy_id));
+    EXPECT_TRUE(manager_->stop_strategy(strategy_id));
 }
 
 // Test strategy state query
 TEST_F(StrategyManagerTest, TestStrategyStateQuery) {
-    // This test is temporarily empty because create_strategy is not yet implemented
+    StrategyConfig config{
+        .name = "Test Strategy",
+        .type = StrategyType::Custom,
+        .risk_per_trade = 0.01,
+        .max_position_size = 1.0,
+        .stop_loss = 0.05,
+        .take_profit = 0.1,
+        .symbols = {"BTCUSDT"},
+        .parameters = {}
+    };
+
+    manager_->create_strategy(config);
+
+    // Get all strategy states
+    auto states = manager_->get_all_strategy_states();
+    EXPECT_EQ(states.size(), 1);
+    EXPECT_EQ(states[0].strategy_name, config.name);
+    EXPECT_FALSE(states[0].is_running);
+}
+
+// Test strategy event dispatch
+TEST_F(StrategyManagerTest, TestStrategyEventDispatch) {
+    StrategyConfig config{
+        .name = "Test Strategy",
+        .type = StrategyType::Custom,
+        .risk_per_trade = 0.01,
+        .max_position_size = 1.0,
+        .stop_loss = 0.05,
+        .take_profit = 0.1,
+        .symbols = {"BTCUSDT"},
+        .parameters = {}
+    };
+
+    manager_->create_strategy(config);
+
+    // Create a test market event
+    market::MarketEvent event{
+        .type = market::MarketEventType::Ticker,
+        .symbol = "BTCUSDT",
+    };
+
+    // Dispatch event (should not throw exception)
+    manager_->on_market_event(event);
 }
 
 } // namespace veloz::strategy::tests

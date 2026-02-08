@@ -3,6 +3,7 @@ add_library(veloz_market
   src/order_book.cpp
   src/subscription_manager.cpp
   src/metrics.cpp
+  src/binance_websocket.cpp
 )
 
 target_include_directories(veloz_market
@@ -10,7 +11,7 @@ target_include_directories(veloz_market
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(veloz_market PUBLIC veloz_common veloz_core)
+target_link_libraries(veloz_market PUBLIC veloz_common veloz_core nlohmann_json::nlohmann_json)
 target_compile_features(veloz_market PUBLIC cxx_std_23)
 
 # Tests
