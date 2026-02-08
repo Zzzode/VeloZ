@@ -18,18 +18,63 @@ Additional path-scoped Claude Code rules live in `.claude/rules/`.
 
 ### Build (CMake Presets)
 
+#### Configure and Build All Targets
+
 ```bash
+# Development build (Debug)
 cmake --preset dev
-cmake --build --preset dev -j
+cmake --build --preset dev-all -j$(nproc)
+
+# Release build
+cmake --preset release
+cmake --build --preset release-all -j$(nproc)
+
+# ASan build (for memory error detection)
+cmake --preset asan
+cmake --build --preset asan-all -j$(nproc)
 ```
 
-Other presets (see `CMakePresets.json`): `release`, `asan`.
+#### Build Specific Targets
 
-Convenience wrapper:
+```bash
+# Build only the engine executable
+cmake --preset dev
+cmake --build --preset dev-engine -j$(nproc)
+
+# Build only libraries
+cmake --preset dev
+cmake --build --preset dev-libs -j$(nproc)
+
+# Build only tests
+cmake --preset dev
+cmake --build --preset dev-tests -j$(nproc)
+
+# Release and ASan presets have similar target-specific presets
+# e.g., release-engine, release-libs, release-tests, asan-engine, etc.
+```
+
+#### Convenience Wrapper
 
 ```bash
 ./scripts/build.sh dev
 ```
+
+#### Available Presets and Targets
+
+| Preset Type | Configure Preset | Build Preset | Targets | Description |
+|-------------|-----------------|--------------|---------|-------------|
+| Development | `dev` | `dev-all` | all | Build everything in Debug mode |
+| Development | `dev` | `dev-engine` | veloz_engine | Build only engine executable |
+| Development | `dev` | `dev-libs` | core, common, market, exec, oms, risk, strategy | Build all libraries |
+| Development | `dev` | `dev-tests` | market_tests, exec_tests, oms_tests, risk_tests, strategy_tests | Build all tests |
+| Release | `release` | `release-all` | all | Build everything in Release mode |
+| Release | `release` | `release-engine` | veloz_engine | Build only engine executable |
+| Release | `release` | `release-libs` | core, common, market, exec, oms, risk, strategy | Build all libraries |
+| Release | `release` | `release-tests` | market_tests, exec_tests, oms_tests, risk_tests, strategy_tests | Build all tests |
+| ASan (Clang) | `asan` | `asan-all` | all | Build with AddressSanitizer for debugging |
+| ASan (Clang) | `asan` | `asan-engine` | veloz_engine | Build engine with AddressSanitizer |
+| ASan (Clang) | `asan` | `asan-libs` | core, common, market, exec, oms, risk, strategy | Build libraries with AddressSanitizer |
+| ASan (Clang) | `asan` | `asan-tests` | market_tests, exec_tests, oms_tests, risk_tests, strategy_tests | Build tests with AddressSanitizer |
 
 ### Run (smoke tests)
 
@@ -61,14 +106,32 @@ Gateway listens on `http://127.0.0.1:8080/`. If opening `apps/ui/index.html` via
 
 ### Tests / CI
 
-There are currently **no CTest-based unit tests** (no `ctest`, `enable_testing()`, or `add_test()` usage).
+#### Run Tests
 
-CI runs a configure/build + engine smoke run:
+```bash
+# Configure and build first (if not already done)
+cmake --preset dev
+cmake --build --preset dev-all -j$(nproc)
+
+# Run all tests with CTest
+ctest --preset dev -j$(nproc)
+
+# Or run tests directly (after building)
+./build/dev/libs/market/veloz_market_tests
+./build/dev/libs/exec/veloz_exec_tests
+./build/dev/libs/oms/veloz_oms_tests
+./build/dev/libs/risk/veloz_risk_tests
+./build/dev/libs/strategy/veloz_strategy_tests
+```
+
+#### CI Configuration
+
+CI runs all tests using the `dev` preset:
 
 ```bash
 cmake --preset dev
-cmake --build --preset dev -j
-timeout 3s ./build/dev/apps/engine/veloz_engine || true
+cmake --build --preset dev-all -j
+ctest --preset dev -j$(nproc)
 ```
 
 (See `.github/workflows/ci.yml`.)

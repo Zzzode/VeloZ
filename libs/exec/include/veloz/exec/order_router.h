@@ -7,6 +7,10 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <vector>
+#include <functional>
+#include <chrono>
+#include <mutex>
 
 namespace veloz::exec {
 
@@ -39,9 +43,27 @@ public:
     // Get adapter for venue
     [[nodiscard]] std::shared_ptr<ExchangeAdapter> get_adapter(veloz::common::Venue venue) const;
 
+    // Get all registered venues
+    [[nodiscard]] std::vector<veloz::common::Venue> get_registered_venues() const;
+
+    // Set order timeout
+    void set_order_timeout(std::chrono::milliseconds timeout);
+
+    // Get order timeout
+    [[nodiscard]] std::chrono::milliseconds get_order_timeout() const;
+
+    // Enable/disable automatic failover
+    void set_failover_enabled(bool enabled);
+
+    // Get failover status
+    [[nodiscard]] bool is_failover_enabled() const;
+
 private:
     std::unordered_map<veloz::common::Venue, std::shared_ptr<ExchangeAdapter>> adapters_;
     std::optional<veloz::common::Venue> default_venue_;
+    std::chrono::milliseconds order_timeout_{std::chrono::seconds(30)};
+    bool failover_enabled_{true};
+    mutable std::mutex mu_;
 };
 
 } // namespace veloz::exec

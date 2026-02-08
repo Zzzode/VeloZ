@@ -8,7 +8,7 @@ target_include_directories(veloz_risk
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(veloz_risk PUBLIC veloz_common veloz_core veloz_exec)
+target_link_libraries(veloz_risk PUBLIC veloz_common veloz_core veloz_exec veloz_oms)
 target_compile_features(veloz_risk PUBLIC cxx_std_23)
 
 # Tests

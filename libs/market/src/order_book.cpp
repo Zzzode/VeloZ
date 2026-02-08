@@ -94,6 +94,157 @@ std::vector<BookLevel> OrderBook::top_asks(std::size_t n) const {
     return std::vector<BookLevel>(asks_cache_.begin(), asks_cache_.begin() + n);
 }
 
+double OrderBook::depth_at_price(double price, bool is_bid) const {
+    if (is_bid) {
+        auto it = bids_.find(price);
+        return (it != bids_.end()) ? it->second : 0.0;
+    } else {
+        auto it = asks_.find(price);
+        return (it != asks_.end()) ? it->second : 0.0;
+    }
+}
+
+double OrderBook::total_depth(bool is_bid) const {
+    double total = 0.0;
+    if (is_bid) {
+        for (const auto& [_, qty] : bids_) {
+            total += qty;
+        }
+    } else {
+        for (const auto& [_, qty] : asks_) {
+            total += qty;
+        }
+    }
+    return total;
+}
+
+double OrderBook::cumulative_depth(double price, bool is_bid) const {
+    double cumulative = 0.0;
+
+    if (is_bid) {
+        for (const auto& [level_price, qty] : bids_) {
+            if (level_price >= price) {
+                cumulative += qty;
+            } else {
+                break;
+            }
+        }
+    } else {
+        for (const auto& [level_price, qty] : asks_) {
+            if (level_price <= price) {
+                cumulative += qty;
+            } else {
+                break;
+            }
+        }
+    }
+
+    return cumulative;
+}
+
+std::vector<std::pair<double, double>> OrderBook::liquidity_profile(
+    bool is_bid, double price_range, double step) const {
+
+    std::vector<std::pair<double, double>> profile;
+    auto ref_price = is_bid ? best_bid() : best_ask();
+
+    if (!ref_price) {
+        return profile;
+    }
+
+    double start_price = is_bid ? (ref_price->price - price_range) : ref_price->price;
+    double end_price = is_bid ? ref_price->price : (ref_price->price + price_range);
+
+    for (double price = start_price; price <= end_price; price += step) {
+        double depth = cumulative_depth(price, is_bid);
+        profile.emplace_back(price, depth);
+    }
+
+    return profile;
+}
+
+double OrderBook::market_impact(double qty, bool is_bid) const {
+    double cumulative_qty = 0.0;
+    double avg_price = 0.0;
+
+    const auto& cache = is_bid ? bids_cache_ : asks_cache_;
+
+    for (const auto& level : cache) {
+        if (cumulative_qty >= qty) {
+            break;
+        }
+
+        double available_qty = level.qty;
+        if (cumulative_qty + available_qty > qty) {
+            available_qty = qty - cumulative_qty;
+        }
+
+        avg_price = (avg_price * cumulative_qty + level.price * available_qty) /
+                  (cumulative_qty + available_qty);
+        cumulative_qty += available_qty;
+    }
+
+    if (cumulative_qty < qty) {
+        return 0.0; // Not enough liquidity
+    }
+
+    return avg_price;
+}
+
+double OrderBook::volume_weighted_average_price(bool is_bid, double depth) const {
+    double total_qty = 0.0;
+    double total_notional = 0.0;
+
+    const auto& cache = is_bid ? bids_cache_ : asks_cache_;
+
+    for (const auto& level : cache) {
+        if (total_qty >= depth) {
+            break;
+        }
+
+        double available_qty = level.qty;
+        if (total_qty + available_qty > depth) {
+            available_qty = depth - total_qty;
+        }
+
+        total_qty += available_qty;
+        total_notional += level.price * available_qty;
+    }
+
+    if (total_qty == 0.0) {
+        return 0.0;
+    }
+
+    return total_notional / total_qty;
+}
+
+std::size_t OrderBook::level_count(bool is_bid) const {
+    return is_bid ? bids_.size() : asks_.size();
+}
+
+double OrderBook::average_level_size(bool is_bid) const {
+    double total_depth = this->total_depth(is_bid);
+    std::size_t levels = level_count(is_bid);
+
+    if (levels == 0) {
+        return 0.0;
+    }
+
+    return total_depth / static_cast<double>(levels);
+}
+
+void OrderBook::clear() {
+    bids_.clear();
+    asks_.clear();
+    bids_cache_.clear();
+    asks_cache_.clear();
+    sequence_ = 0;
+}
+
+bool OrderBook::empty() const {
+    return bids_.empty() && asks_.empty();
+}
+
 void OrderBook::rebuild_cache() {
     bids_cache_.clear();
     bids_cache_.reserve(bids_.size());

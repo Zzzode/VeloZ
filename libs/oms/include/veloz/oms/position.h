@@ -15,6 +15,7 @@ enum class PositionSide : std::uint8_t {
 
 class Position final {
 public:
+  Position() = default;
   explicit Position(veloz::common::SymbolId symbol);
 
   [[nodiscard]] const veloz::common::SymbolId& symbol() const;

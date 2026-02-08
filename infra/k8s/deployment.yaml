@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: veloz-engine
+  namespace: veloz
+  labels:
+    app: veloz-engine
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: veloz-engine
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: veloz-engine
+        version: v1
+    spec:
+      containers:
+      - name: veloz-engine
+        image: veloz-engine:latest
+        ports:
+        - containerPort: 8080
+          name: api
+        env:
+        - name: VELOZ_PRESET
+          value: "dev"
+        - name: VELOZ_HOST
+          value: "0.0.0.0"
+        - name: VELOZ_PORT
+          value: "8080"
+        - name: VELOZ_MARKET_SOURCE
+          value: "binance_rest"
+        - name: VELOZ_MARKET_SYMBOL
+          value: "BTCUSDT"
+        - name: VELOZ_EXECUTION_MODE
+          value: "sim_engine"
+        - name: VELOZ_BINANCE_BASE_URL
+          value: "https://api.binance.com"
+        - name: VELOZ_BINANCE_TRADE_BASE_URL
+          value: "https://testnet.binance.vision"
+        - name: VELOZ_BINANCE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: veloz-api-keys
+              key: binance-api-key
+        - name: VELOZ_BINANCE_API_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: veloz-api-keys
+              key: binance-api-secret
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "0.5"
+          limits:
+            memory: "512Mi"
+            cpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          failureThreshold: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: veloz-engine
+  namespace: veloz
+  labels:
+    app: veloz-engine
+    version: v1
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: api
+  selector:
+    app: veloz-engine
+    version: v1
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: veloz-engine
+  namespace: veloz
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+  - host: veloz.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: veloz-engine
+            port:
+              number: 8080
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: veloz
+  labels:
+    name: veloz
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: veloz-api-keys
+  namespace: veloz
+type: Opaque
+data:
+  binance-api-key: ""
+  binance-api-secret: ""

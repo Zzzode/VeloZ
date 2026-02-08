@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  veloz-engine:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile
+      target: production
+    image: veloz-engine:latest
+    container_name: veloz-engine
+    ports:
+      - "8080:8080"
+    environment:
+      - VELOZ_PRESET=dev
+      - VELOZ_HOST=0.0.0.0
+      - VELOZ_PORT=8080
+      - VELOZ_MARKET_SOURCE=binance_rest
+      - VELOZ_MARKET_SYMBOL=BTCUSDT
+      - VELOZ_EXECUTION_MODE=sim_engine
+      - VELOZ_BINANCE_BASE_URL=https://api.binance.com
+      - VELOZ_BINANCE_TRADE_BASE_URL=https://testnet.binance.vision
+      - VELOZ_BINANCE_API_KEY=${VELOZ_BINANCE_API_KEY:-}
+      - VELOZ_BINANCE_API_SECRET=${VELOZ_BINANCE_API_SECRET:-}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  veloz-engine-dev:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile
+      target: builder
+    image: veloz-engine:dev
+    container_name: veloz-engine-dev
+    volumes:
+      - ../../:/app
+      - ./build:/app/build
+    environment:
+      - VELOZ_PRESET=dev
+    entrypoint: ["bash"]
+    command: ["-c", "cmake --preset dev && cmake --build --preset dev -j && ./build/dev/apps/engine/veloz_engine"]
+    restart: no
+
+networks:
+  default:
+    name: veloz-network
+
+volumes:
+  logs:
+    driver: local

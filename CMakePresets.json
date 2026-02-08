@@ -46,12 +46,126 @@
       "configurePreset": "dev"
     },
     {
+      "name": "dev-engine",
+      "configurePreset": "dev",
+      "targets": [
+        "veloz_engine"
+      ]
+    },
+    {
+      "name": "dev-libs",
+      "configurePreset": "dev",
+      "targets": [
+        "veloz_core",
+        "veloz_common",
+        "veloz_market",
+        "veloz_exec",
+        "veloz_oms",
+        "veloz_risk",
+        "veloz_strategy"
+      ]
+    },
+    {
+      "name": "dev-tests",
+      "configurePreset": "dev",
+      "targets": [
+        "veloz_market_tests",
+        "veloz_exec_tests",
+        "veloz_oms_tests",
+        "veloz_risk_tests",
+        "veloz_strategy_tests"
+      ]
+    },
+    {
+      "name": "dev-all",
+      "configurePreset": "dev",
+      "targets": [
+        "all"
+      ]
+    },
+    {
       "name": "release",
       "configurePreset": "release"
     },
     {
+      "name": "release-engine",
+      "configurePreset": "release",
+      "targets": [
+        "veloz_engine"
+      ]
+    },
+    {
+      "name": "release-libs",
+      "configurePreset": "release",
+      "targets": [
+        "veloz_core",
+        "veloz_common",
+        "veloz_market",
+        "veloz_exec",
+        "veloz_oms",
+        "veloz_risk",
+        "veloz_strategy"
+      ]
+    },
+    {
+      "name": "release-tests",
+      "configurePreset": "release",
+      "targets": [
+        "veloz_market_tests",
+        "veloz_exec_tests",
+        "veloz_oms_tests",
+        "veloz_risk_tests",
+        "veloz_strategy_tests"
+      ]
+    },
+    {
+      "name": "release-all",
+      "configurePreset": "release",
+      "targets": [
+        "all"
+      ]
+    },
+    {
       "name": "asan",
       "configurePreset": "asan"
+    },
+    {
+      "name": "asan-engine",
+      "configurePreset": "asan",
+      "targets": [
+        "veloz_engine"
+      ]
+    },
+    {
+      "name": "asan-libs",
+      "configurePreset": "asan",
+      "targets": [
+        "veloz_core",
+        "veloz_common",
+        "veloz_market",
+        "veloz_exec",
+        "veloz_oms",
+        "veloz_risk",
+        "veloz_strategy"
+      ]
+    },
+    {
+      "name": "asan-tests",
+      "configurePreset": "asan",
+      "targets": [
+        "veloz_market_tests",
+        "veloz_exec_tests",
+        "veloz_oms_tests",
+        "veloz_risk_tests",
+        "veloz_strategy_tests"
+      ]
+    },
+    {
+      "name": "asan-all",
+      "configurePreset": "asan",
+      "targets": [
+        "all"
+      ]
     }
   ],
   "testPresets": [

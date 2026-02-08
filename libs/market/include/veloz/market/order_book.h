@@ -33,6 +33,23 @@ public:
     [[nodiscard]] std::vector<BookLevel> top_bids(std::size_t n) const;
     [[nodiscard]] std::vector<BookLevel> top_asks(std::size_t n) const;
 
+    // Depth and liquidity calculations
+    [[nodiscard]] double depth_at_price(double price, bool is_bid) const;
+    [[nodiscard]] double total_depth(bool is_bid) const;
+    [[nodiscard]] double cumulative_depth(double price, bool is_bid) const;
+    [[nodiscard]] std::vector<std::pair<double, double>> liquidity_profile(
+        bool is_bid, double price_range, double step) const;
+
+    // Market impact and order book statistics
+    [[nodiscard]] double market_impact(double qty, bool is_bid) const;
+    [[nodiscard]] double volume_weighted_average_price(bool is_bid, double depth) const;
+    [[nodiscard]] std::size_t level_count(bool is_bid) const;
+    [[nodiscard]] double average_level_size(bool is_bid) const;
+
+    // Clear order book
+    void clear();
+    [[nodiscard]] bool empty() const;
+
 private:
     void rebuild_cache();
 

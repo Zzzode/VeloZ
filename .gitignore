@@ -39,3 +39,6 @@ dist/
 /.worktrees/
 /worktrees/
 
+## Testing
+/Testing/
+

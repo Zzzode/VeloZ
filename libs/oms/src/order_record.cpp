@@ -1,4 +1,5 @@
 #include "veloz/oms/order_record.h"
+#include <chrono>
 
 namespace veloz::oms {
 
@@ -8,9 +9,19 @@ namespace {
   return (side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY";
 }
 
+[[nodiscard]] bool is_terminal_status(veloz::exec::OrderStatus status) {
+  return status == veloz::exec::OrderStatus::Filled ||
+         status == veloz::exec::OrderStatus::Canceled ||
+         status == veloz::exec::OrderStatus::Rejected ||
+         status == veloz::exec::OrderStatus::Expired;
+}
+
 } // namespace
 
-OrderRecord::OrderRecord(veloz::exec::PlaceOrderRequest request) : request_(std::move(request)) {}
+OrderRecord::OrderRecord(veloz::exec::PlaceOrderRequest request)
+    : request_(std::move(request)),
+      last_update_ts_(std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count()) {}
 
 const veloz::exec::PlaceOrderRequest& OrderRecord::request() const {
   return request_;
@@ -32,6 +43,14 @@ double OrderRecord::avg_price() const {
   return avg_price_;
 }
 
+std::int64_t OrderRecord::last_update_ts() const {
+  return last_update_ts_;
+}
+
+bool OrderRecord::is_terminal() const {
+  return is_terminal_status(status_);
+}
+
 void OrderRecord::apply(const veloz::exec::ExecutionReport& report) {
   if (!report.venue_order_id.empty()) {
     venue_order_id_ = report.venue_order_id;
@@ -46,6 +65,7 @@ void OrderRecord::apply(const veloz::exec::ExecutionReport& report) {
   }
 
   status_ = report.status;
+  last_update_ts_ = report.ts_recv_ns;
 }
 
 void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request) {
@@ -65,6 +85,12 @@ void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request
   }
   if (request.price.has_value() && request.price.value() > 0.0) {
     st.limit_price = request.price.value();
+  }
+
+  // Set creation timestamp if not already set
+  if (st.created_ts_ns == 0) {
+    st.created_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
   }
 }
 
@@ -141,6 +167,89 @@ std::optional<OrderState> OrderStore::get(std::string_view client_order_id) cons
     return std::nullopt;
   }
   return it->second;
+}
+
+void OrderStore::apply_execution_report(const veloz::exec::ExecutionReport& report) {
+  if (report.client_order_id.empty()) {
+    return;
+  }
+
+  std::lock_guard<std::mutex> lk(mu_);
+  auto& st = orders_[report.client_order_id];
+  st.client_order_id = report.client_order_id;
+  st.symbol = report.symbol.value;
+
+  if (report.last_fill_qty > 0.0) {
+    const double new_cum = st.executed_qty + report.last_fill_qty;
+    const double notional = (st.avg_price * st.executed_qty) +
+                           (report.last_fill_price * report.last_fill_qty);
+    st.executed_qty = new_cum;
+    st.avg_price = (new_cum > 0.0) ? (notional / new_cum) : 0.0;
+  }
+
+  if (!report.venue_order_id.empty()) {
+    st.venue_order_id = report.venue_order_id;
+  }
+
+  st.last_ts_ns = report.ts_recv_ns;
+}
+
+std::vector<OrderState> OrderStore::list_pending() const {
+  std::lock_guard<std::mutex> lk(mu_);
+  std::vector<OrderState> out;
+  for (const auto& [_, st] : orders_) {
+    if (st.status != "FILLED" && st.status != "CANCELLED" &&
+        st.status != "REJECTED" && st.status != "EXPIRED") {
+      out.push_back(st);
+    }
+  }
+  return out;
+}
+
+std::vector<OrderState> OrderStore::list_terminal() const {
+  std::lock_guard<std::mutex> lk(mu_);
+  std::vector<OrderState> out;
+  for (const auto& [_, st] : orders_) {
+    if (st.status == "FILLED" || st.status == "CANCELLED" ||
+        st.status == "REJECTED" || st.status == "EXPIRED") {
+      out.push_back(st);
+    }
+  }
+  return out;
+}
+
+size_t OrderStore::count() const {
+  std::lock_guard<std::mutex> lk(mu_);
+  return orders_.size();
+}
+
+size_t OrderStore::count_pending() const {
+  std::lock_guard<std::mutex> lk(mu_);
+  size_t count = 0;
+  for (const auto& [_, st] : orders_) {
+    if (st.status != "FILLED" && st.status != "CANCELLED" &&
+        st.status != "REJECTED" && st.status != "EXPIRED") {
+      count++;
+    }
+  }
+  return count;
+}
+
+size_t OrderStore::count_terminal() const {
+  std::lock_guard<std::mutex> lk(mu_);
+  size_t count = 0;
+  for (const auto& [_, st] : orders_) {
+    if (st.status == "FILLED" || st.status == "CANCELLED" ||
+        st.status == "REJECTED" || st.status == "EXPIRED") {
+      count++;
+    }
+  }
+  return count;
+}
+
+void OrderStore::clear() {
+  std::lock_guard<std::mutex> lk(mu_);
+  orders_.clear();
 }
 
 std::vector<OrderState> OrderStore::list() const {
