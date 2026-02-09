@@ -14,6 +14,8 @@ The current implementation is a minimal end-to-end skeleton: buildable engine, a
 
 Additional path-scoped Claude Code rules live in `.claude/rules/`.
 
+- English only across the project
+
 ## Common commands
 
 ### Build (CMake Presets)
@@ -162,10 +164,12 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 ### Gateway/UI protocol (current)
 
 **Engine ↔ Gateway** (process boundary):
+
 - Gateway → Engine: plain-text commands over **stdin** (`ORDER ...`, `CANCEL ...`).
 - Engine → Gateway: **NDJSON** over **stdout**; each line is a JSON object with a `type` field.
 
 **Gateway ↔ UI**:
+
 - REST-style JSON endpoints (see `docs/build_and_run.md` for the list).
 - Server-Sent Events stream at `GET /api/stream` for realtime updates.
 
@@ -173,3 +177,11 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 
 - `docs/build_and_run.md`: build/run/scripts and gateway endpoints
 - `docs/crypto_quant_framework_design.md`: design series index
+
+## Documentation conventions
+
+The `docs/` directory is a collection of design and usage documents.
+
+- **Language**: English only across the project
+- **Responsibilities**: capture architectural, interface, and constraint evolution
+- **Change note**: update documentation alongside architecture or protocol changes
