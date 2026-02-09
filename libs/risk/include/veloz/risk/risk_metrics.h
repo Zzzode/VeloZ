@@ -7,47 +7,47 @@
 
 namespace veloz::risk {
 
-// 风险指标计算结果
+// Risk metrics calculation result
 struct RiskMetrics {
-  // VaR (Value at Risk) 在置信水平下的每日损失值
+  // VaR (Value at Risk) daily loss value at confidence level
   double var_95{0.0};
   double var_99{0.0};
 
-  // 最大回撤
+  // Maximum drawdown
   double max_drawdown{0.0};
 
-  // 夏普比率
+  // Sharpe ratio
   double sharpe_ratio{0.0};
 
-  // 胜率
+  // Win rate
   double win_rate{0.0};
 
-  // 盈亏比
+  // Profit factor
   double profit_factor{0.0};
 
-  // 平均每日收益率
+  // Average daily return
   double avg_daily_return{0.0};
 
-  // 收益率标准差
+  // Return standard deviation
   double return_std{0.0};
 
-  // 总交易次数
+  // Total number of trades
   int total_trades{0};
 
-  // 盈利交易次数
+  // Number of winning trades
   int winning_trades{0};
 
-  // 亏损交易次数
+  // Number of losing trades
   int losing_trades{0};
 
-  // 最大连续盈利次数
+  // Maximum consecutive wins
   int max_consecutive_wins{0};
 
-  // 最大连续亏损次数
+  // Maximum consecutive losses
   int max_consecutive_losses{0};
 };
 
-// 交易历史记录
+// Trade history record
 struct TradeHistory {
   std::string symbol;
   std::string side;
@@ -59,41 +59,41 @@ struct TradeHistory {
   std::chrono::system_clock::time_point exit_time;
 };
 
-// 风险指标计算器
+// Risk metrics calculator
 class RiskMetricsCalculator final {
 public:
   RiskMetricsCalculator() = default;
 
-  // 添加交易历史记录
+  // Add trade history record
   void add_trade(const TradeHistory& trade);
 
-  // 计算所有风险指标
+  // Calculate all risk metrics
   RiskMetrics calculate_all() const;
 
-  // 计算 VaR (Value at Risk)
+  // Calculate VaR (Value at Risk)
   void calculate_var(RiskMetrics& metrics) const;
 
-  // 计算最大回撤
+  // Calculate maximum drawdown
   void calculate_max_drawdown(RiskMetrics& metrics) const;
 
-  // 计算夏普比率
+  // Calculate Sharpe ratio
   void calculate_sharpe_ratio(RiskMetrics& metrics) const;
 
-  // 计算交易统计指标
+  // Calculate trade statistics
   void calculate_trade_statistics(RiskMetrics& metrics) const;
 
-  // 获取交易历史记录
+  // Get trade history records
   const std::vector<TradeHistory>& get_trades() const;
 
-  // 清空交易历史记录
+  // Clear trade history records
   void clear_trades();
 
-  // 设置基准收益率（用于夏普比率计算）
+  // Set risk-free rate (for Sharpe ratio calculation)
   void set_risk_free_rate(double rate);
 
 private:
   std::vector<TradeHistory> trades_;
-  double risk_free_rate_{0.0}; // 默认无风险收益率为 0%
+  double risk_free_rate_{0.0}; // Default risk-free rate is 0%
 };
 
 } // namespace veloz::risk

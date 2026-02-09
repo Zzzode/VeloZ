@@ -4,7 +4,7 @@
 class AdvancedStrategiesTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // 创建一个基础策略配置
+        // Create a basic strategy configuration
         config_ = veloz::strategy::StrategyConfig{
             "TestStrategy",
             veloz::strategy::StrategyType::Custom,
@@ -22,38 +22,38 @@ protected:
     veloz::strategy::StrategyConfig config_;
 };
 
-// 测试 RSI 策略的创建和初始化
+// Test RSI strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, RsiStrategyCreation) {
     veloz::strategy::RsiStrategy strategy(config_);
     EXPECT_EQ(strategy.get_name(), config_.name);
     EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
 }
 
-// 测试 RSI 策略的计算方法
+// Test RSI strategy calculation method
 TEST_F(AdvancedStrategiesTest, RsiStrategyCalculation) {
     veloz::strategy::RsiStrategy strategy(config_);
 
-    // 创建一些测试价格数据
+    // Create some test price data
     std::vector<double> prices = {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114};
 
-    // 测试 RSI 计算
+    // Test RSI calculation
     auto rsi = strategy.calculate_rsi(prices, 14);
     EXPECT_GT(rsi, 0.0);
     EXPECT_LT(rsi, 100.0);
 }
 
-// 测试 MACD 策略的创建和初始化
+// Test MACD strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, MacdStrategyCreation) {
     veloz::strategy::MacdStrategy strategy(config_);
     EXPECT_EQ(strategy.get_name(), config_.name);
     EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
 }
 
-// 测试 MACD 策略的计算方法
+// Test MACD strategy calculation method
 TEST_F(AdvancedStrategiesTest, MacdStrategyCalculation) {
     veloz::strategy::MacdStrategy strategy(config_);
 
-    // 创建一些测试价格数据
+    // Create some test price data
     std::vector<double> prices = {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114};
 
     double signal;
@@ -61,18 +61,18 @@ TEST_F(AdvancedStrategiesTest, MacdStrategyCalculation) {
     EXPECT_NE(macd, 0.0);
 }
 
-// 测试布林带策略的创建和初始化
+// Test Bollinger Bands strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, BollingerBandsStrategyCreation) {
     veloz::strategy::BollingerBandsStrategy strategy(config_);
     EXPECT_EQ(strategy.get_name(), config_.name);
     EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
 }
 
-// 测试布林带策略的计算方法
+// Test Bollinger Bands strategy calculation method
 TEST_F(AdvancedStrategiesTest, BollingerBandsStrategyCalculation) {
     veloz::strategy::BollingerBandsStrategy strategy(config_);
 
-    // 创建一些测试价格数据
+    // Create some test price data
     std::vector<double> prices = {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114};
 
     double upper, middle, lower;
@@ -81,18 +81,18 @@ TEST_F(AdvancedStrategiesTest, BollingerBandsStrategyCalculation) {
     EXPECT_GT(middle, lower);
 }
 
-// 测试随机振荡器策略的创建和初始化
+// Test Stochastic Oscillator strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, StochasticOscillatorStrategyCreation) {
     veloz::strategy::StochasticOscillatorStrategy strategy(config_);
     EXPECT_EQ(strategy.get_name(), config_.name);
     EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
 }
 
-// 测试随机振荡器策略的计算方法
+// Test Stochastic Oscillator strategy calculation method
 TEST_F(AdvancedStrategiesTest, StochasticOscillatorStrategyCalculation) {
     veloz::strategy::StochasticOscillatorStrategy strategy(config_);
 
-    // 创建一些测试价格数据
+    // Create some test price data
     std::vector<double> prices = {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114};
 
     double k, d;
@@ -103,46 +103,46 @@ TEST_F(AdvancedStrategiesTest, StochasticOscillatorStrategyCalculation) {
     EXPECT_LT(d, 100.0);
 }
 
-// 测试做市策略的创建和初始化
+// Test Market Making strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, MarketMakingHFTStrategyCreation) {
     veloz::strategy::MarketMakingHFTStrategy strategy(config_);
     EXPECT_EQ(strategy.get_name(), config_.name);
     EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
 }
 
-// 测试跨交易所套利策略的创建和初始化
+// Test Cross-Exchange Arbitrage strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, CrossExchangeArbitrageStrategyCreation) {
     veloz::strategy::CrossExchangeArbitrageStrategy strategy(config_);
     EXPECT_EQ(strategy.get_name(), config_.name);
     EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
 }
 
-// 测试策略组合管理功能
+// Test strategy portfolio management functionality
 TEST_F(AdvancedStrategiesTest, StrategyPortfolioManagerTest) {
     veloz::strategy::StrategyPortfolioManager portfolio;
 
-    // 创建一些策略实例
+    // Create some strategy instances
     auto rsi_strategy = std::make_shared<veloz::strategy::RsiStrategy>(config_);
     auto macd_strategy = std::make_shared<veloz::strategy::MacdStrategy>(config_);
     auto bollinger_strategy = std::make_shared<veloz::strategy::BollingerBandsStrategy>(config_);
 
-    // 向投资组合添加策略
+    // Add strategies to the portfolio
     portfolio.add_strategy(rsi_strategy, 0.4);
     portfolio.add_strategy(macd_strategy, 0.3);
     portfolio.add_strategy(bollinger_strategy, 0.3);
 
-    // 测试策略组合状态
+    // Test portfolio state
     auto state = portfolio.get_portfolio_state();
     EXPECT_EQ(state.strategy_id, "portfolio");
     EXPECT_EQ(state.strategy_name, "Portfolio");
     EXPECT_TRUE(state.is_running);
 
-    // 测试获取组合信号
+    // Test getting combined signals
     auto signals = portfolio.get_combined_signals();
-    EXPECT_TRUE(signals.empty()); // 策略尚未运行，没有信号
+    EXPECT_TRUE(signals.empty()); // Strategies not yet running, no signals
 }
 
-// 测试策略工厂创建方法
+// Test strategy factory creation methods
 TEST_F(AdvancedStrategiesTest, StrategyFactoriesTest) {
     veloz::strategy::RsiStrategyFactory rsi_factory;
     EXPECT_EQ(rsi_factory.get_strategy_type(), "RsiStrategy");

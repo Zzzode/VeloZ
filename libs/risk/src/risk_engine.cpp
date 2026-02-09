@@ -149,7 +149,7 @@ RiskMetrics RiskEngine::get_risk_metrics() const {
 }
 
 void RiskEngine::calculate_risk_metrics() {
-  // 这里可以添加计算风险指标的逻辑
+  // Logic for calculating risk metrics can be added here
 }
 
 double RiskEngine::calculate_position_size(double notional, double leverage) const {
@@ -177,10 +177,10 @@ double RiskEngine::calculate_used_margin() const {
 }
 
 void RiskEngine::assess_risk_level() {
-  // 根据风险指标和配置的阈值评估风险级别
+  // Assess risk level based on risk metrics and configured thresholds
   RiskMetrics metrics = get_risk_metrics();
 
-  // 检查VaR
+  // Check VaR
   if (metrics.var_99 > risk_level_thresholds_[RiskLevel::Critical]) {
     add_risk_alert(RiskLevel::Critical, "VaR 99% exceeds critical threshold");
   } else if (metrics.var_99 > risk_level_thresholds_[RiskLevel::High]) {
@@ -189,7 +189,7 @@ void RiskEngine::assess_risk_level() {
     add_risk_alert(RiskLevel::Medium, "VaR 99% exceeds medium threshold");
   }
 
-  // 检查最大回撤
+  // Check maximum drawdown
   if (metrics.max_drawdown > risk_level_thresholds_[RiskLevel::Critical]) {
     add_risk_alert(RiskLevel::Critical, "Max drawdown exceeds critical threshold");
   } else if (metrics.max_drawdown > risk_level_thresholds_[RiskLevel::High]) {
@@ -198,7 +198,7 @@ void RiskEngine::assess_risk_level() {
     add_risk_alert(RiskLevel::Medium, "Max drawdown exceeds medium threshold");
   }
 
-  // 检查夏普比率
+  // Check Sharpe ratio
   if (metrics.sharpe_ratio < risk_level_thresholds_[RiskLevel::Critical]) {
     add_risk_alert(RiskLevel::Critical, "Sharpe ratio below critical threshold");
   } else if (metrics.sharpe_ratio < risk_level_thresholds_[RiskLevel::High]) {

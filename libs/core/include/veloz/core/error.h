@@ -87,7 +87,7 @@ private:
   int protocol_version_;
 };
 
-// 错误码定义
+// Error code definitions
 enum class ErrorCode : int {
   Success = 0,
   UnknownError = 1,

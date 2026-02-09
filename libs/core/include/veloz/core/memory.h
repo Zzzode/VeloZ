@@ -11,7 +11,7 @@
 
 namespace veloz::core {
 
-// 内存对齐工具
+// Memory alignment utilities
 [[nodiscard]] void* aligned_alloc(size_t size, size_t alignment);
 void aligned_free(void* ptr);
 
@@ -42,7 +42,7 @@ void aligned_delete(T* ptr) {
   aligned_free(ptr);
 }
 
-// 简单的对象池实现
+// Simple object pool implementation
 template <typename T>
 class ObjectPool final {
 public:
@@ -58,7 +58,7 @@ public:
 
   ~ObjectPool() = default;
 
-  // 从池中获取对象
+  // Acquire object from pool
   template <typename... Args>
   std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     std::scoped_lock lock(mu_);
@@ -66,7 +66,7 @@ public:
     if (!pool_.empty()) {
       auto ptr = pool_.back().release();
       pool_.pop_back();
-      // 重置对象状态
+      // Reset object state
       ptr->~T();
       new (ptr) T(std::forward<Args>(args)...);
       return std::unique_ptr<T, std::function<void(T*)>>(
@@ -83,7 +83,7 @@ public:
     throw std::runtime_error("Object pool exhausted");
   }
 
-  // 释放对象回池
+  // Release object back to pool
   void release(T* ptr) {
     if (ptr == nullptr) {
       return;
@@ -99,7 +99,7 @@ public:
     }
   }
 
-  // 获取池状态信息
+  // Get pool status information
   [[nodiscard]] size_t available() const {
     std::scoped_lock lock(mu_);
     return pool_.size();
@@ -112,7 +112,7 @@ public:
 
   [[nodiscard]] size_t max_size() const noexcept { return max_size_; }
 
-  // 预分配对象
+  // Preallocate objects
   void preallocate(size_t count) {
     std::scoped_lock lock(mu_);
     const size_t needed = count > pool_.size() ? count - pool_.size() : 0;
@@ -125,7 +125,7 @@ public:
     }
   }
 
-  // 清空池
+  // Clear pool
   void clear() {
     std::scoped_lock lock(mu_);
     pool_.clear();
@@ -139,7 +139,7 @@ private:
   size_t size_;
 };
 
-// 线程本地对象池
+// Thread-local object pool
 template <typename T>
 class ThreadLocalObjectPool final {
 public:
@@ -148,7 +148,7 @@ public:
 
   ~ThreadLocalObjectPool() = default;
 
-  // 从池中获取对象
+  // Acquire object from pool
   template <typename... Args>
   std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     auto& pool = pool_;
@@ -171,7 +171,7 @@ public:
     throw std::runtime_error("Thread local object pool exhausted");
   }
 
-  // 释放对象回池
+  // Release object back to pool
   void release(T* ptr) {
     if (ptr == nullptr) {
       return;
@@ -194,7 +194,7 @@ private:
 template <typename T>
 thread_local std::vector<std::unique_ptr<T>> ThreadLocalObjectPool<T>::pool_;
 
-// 内存使用统计
+// Memory usage statistics
 class MemoryStats final {
 public:
   MemoryStats() = default;
@@ -235,7 +235,7 @@ private:
   std::atomic<uint64_t> deallocation_count_{0};
 };
 
-// 全局内存统计
+// Global memory statistics
 [[nodiscard]] MemoryStats& global_memory_stats();
 
 } // namespace veloz::core

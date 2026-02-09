@@ -1,12 +1,14 @@
 /**
  * @file order_api.h
- * @brief 订单执行模块的核心接口和实现
+ * @brief Core interfaces and implementation for the order execution module
  *
- * 该文件包含了 VeloZ 量化交易框架中订单执行模块的核心接口和实现，
- * 包括订单类型定义、订单请求结构、执行报告和订单状态管理等。
+ * This file contains the core interfaces and implementation for the order execution
+ * module in the VeloZ quantitative trading framework, including order type definitions,
+ * order request structures, execution reports, and order state management.
  *
- * 订单执行系统是框架的核心组件之一，负责处理各种类型的订单请求，
- * 与交易场所进行通信，并提供订单状态管理和执行报告功能。
+ * The order execution system is one of the core components of the framework, responsible
+ * for handling various types of order requests, communicating with trading venues, and
+ * providing order state management and execution reporting functionality.
  */
 
 #pragma once
@@ -20,98 +22,102 @@
 namespace veloz::exec {
 
 /**
- * @brief 订单方向枚举
+ * @brief Order side enumeration
  *
- * 定义了订单的买卖方向。
+ * Defines the buy/sell direction of orders.
  */
 enum class OrderSide : std::uint8_t {
-  Buy = 0,   ///< 买入订单
-  Sell = 1   ///< 卖出订单
+  Buy = 0,   ///< Buy order
+  Sell = 1   ///< Sell order
 };
 
 /**
- * @brief 订单类型枚举
+ * @brief Order type enumeration
  *
- * 定义了订单的类型，包括市价单和限价单。
+ * Defines the order types, including market and limit orders.
  */
 enum class OrderType : std::uint8_t {
-  Market = 0,  ///< 市价单
-  Limit = 1    ///< 限价单
+  Market = 0,  ///< Market order
+  Limit = 1    ///< Limit order
 };
 
 /**
- * @brief 订单有效期枚举
+ * @brief Time in force enumeration
  *
- * 定义了订单的有效期类型，包括 GTC（一直有效）、IOC（立即成交或取消）、
- * FOK（全部成交否则取消）和 GTX（成交不可取消部分）。
+ * Defines the order validity types, including GTC (Good Till Canceled),
+ * IOC (Immediate or Cancel), FOK (Fill or Kill), and GTX (Good Till Crossing).
  */
 enum class TimeInForce : std::uint8_t {
-  GTC = 0,  ///< 一直有效（Good Till Canceled）
-  IOC = 1,  ///< 立即成交或取消（Immediate or Cancel）
-  FOK = 2,  ///< 全部成交否则取消（Fill or Kill）
-  GTX = 3   ///< 成交不可取消部分（Good Till Crossing）
+  GTC = 0,  ///< Good Till Canceled
+  IOC = 1,  ///< Immediate or Cancel
+  FOK = 2,  ///< Fill or Kill
+  GTX = 3   ///< Good Till Crossing
 };
 
 /**
- * @brief 下单请求结构
+ * @brief Place order request structure
  *
- * 包含下单所需的所有信息，如交易品种、方向、类型、数量、价格等。
+ * Contains all information required for placing an order, such as symbol,
+ * side, type, quantity, price, etc.
  */
 struct PlaceOrderRequest final {
-  veloz::common::SymbolId symbol;        ///< 交易品种ID
-  OrderSide side{OrderSide::Buy};       ///< 订单方向（默认买入）
-  OrderType type{OrderType::Limit};     ///< 订单类型（默认限价单）
-  TimeInForce tif{TimeInForce::GTC};    ///< 订单有效期（默认一直有效）
+  veloz::common::SymbolId symbol;        ///< Trading symbol ID
+  OrderSide side{OrderSide::Buy};       ///< Order side (default: buy)
+  OrderType type{OrderType::Limit};     ///< Order type (default: limit)
+  TimeInForce tif{TimeInForce::GTC};    ///< Time in force (default: GTC)
 
-  double qty{0.0};                      ///< 订单数量
-  std::optional<double> price;          ///< 订单价格（市价单可选）
+  double qty{0.0};                      ///< Order quantity
+  std::optional<double> price;          ///< Order price (optional for market orders)
 
-  std::string client_order_id;          ///< 客户端订单ID（用于唯一标识订单）
-  bool reduce_only{false};              ///< 是否为减仓订单（仅在合约交易中使用）
-  bool post_only{false};                ///< 是否为只挂单（仅在限价单中使用）
+  std::string client_order_id;          ///< Client order ID (for unique identification)
+  bool reduce_only{false};              ///< Reduce-only order (for futures trading only)
+  bool post_only{false};                ///< Post-only order (for limit orders only)
 };
 
 /**
- * @brief 取消订单请求结构
+ * @brief Cancel order request structure
  *
- * 包含取消订单所需的信息，如交易品种和客户端订单ID。
+ * Contains information required for canceling an order, such as symbol
+ * and client order ID.
  */
 struct CancelOrderRequest final {
-  veloz::common::SymbolId symbol;        ///< 交易品种ID
-  std::string client_order_id;          ///< 客户端订单ID
+  veloz::common::SymbolId symbol;        ///< Trading symbol ID
+  std::string client_order_id;          ///< Client order ID
 };
 
 /**
- * @brief 订单状态枚举
+ * @brief Order status enumeration
  *
- * 定义了订单的各种状态，从新建到完成的整个生命周期。
+ * Defines the various states of an order throughout its entire lifecycle,
+ * from creation to completion.
  */
 enum class OrderStatus : std::uint8_t {
-  New = 0,              ///< 订单新建
-  Accepted = 1,         ///< 订单已接受
-  PartiallyFilled = 2,  ///< 订单部分成交
-  Filled = 3,           ///< 订单全部成交
-  Canceled = 4,         ///< 订单已取消
-  Rejected = 5,         ///< 订单已拒绝
-  Expired = 6,          ///< 订单已过期
+  New = 0,              ///< Order created
+  Accepted = 1,         ///< Order accepted
+  PartiallyFilled = 2,  ///< Order partially filled
+  Filled = 3,           ///< Order fully filled
+  Canceled = 4,         ///< Order canceled
+  Rejected = 5,         ///< Order rejected
+  Expired = 6,          ///< Order expired
 };
 
 /**
- * @brief 执行报告结构
+ * @brief Execution report structure
  *
- * 包含订单执行的详细报告信息，如订单状态、成交数量、成交价格等。
+ * Contains detailed order execution report information, such as order status,
+ * fill quantity, fill price, etc.
  */
 struct ExecutionReport final {
-  veloz::common::SymbolId symbol;        ///< 交易品种ID
-  std::string client_order_id;          ///< 客户端订单ID
-  std::string venue_order_id;           ///< 交易场所订单ID
-  OrderStatus status{OrderStatus::New}; ///< 订单状态
+  veloz::common::SymbolId symbol;        ///< Trading symbol ID
+  std::string client_order_id;          ///< Client order ID
+  std::string venue_order_id;           ///< Venue order ID
+  OrderStatus status{OrderStatus::New}; ///< Order status
 
-  double last_fill_qty{0.0};            ///< 最后一次成交数量
-  double last_fill_price{0.0};          ///< 最后一次成交价格
+  double last_fill_qty{0.0};            ///< Last fill quantity
+  double last_fill_price{0.0};          ///< Last fill price
 
-  std::int64_t ts_exchange_ns{0};      ///< 交易所时间戳（纳秒）
-  std::int64_t ts_recv_ns{0};          ///< 接收时间戳（纳秒）
+  std::int64_t ts_exchange_ns{0};      ///< Exchange timestamp (nanoseconds)
+  std::int64_t ts_recv_ns{0};          ///< Receive timestamp (nanoseconds)
 };
 
 } // namespace veloz::exec

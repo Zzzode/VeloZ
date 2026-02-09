@@ -7,7 +7,7 @@ namespace veloz::core {
 std::string MetricsRegistry::to_prometheus() const {
   std::ostringstream oss;
 
-  // 导出计数器
+  // Export counters
   for (const auto& [name, counter] : counters_) {
     if (!counter->description().empty()) {
       oss << "# HELP " << name << " " << counter->description() << "\n";
@@ -16,7 +16,7 @@ std::string MetricsRegistry::to_prometheus() const {
     oss << name << " " << counter->value() << "\n";
   }
 
-  // 导出仪表盘
+  // Export gauges
   for (const auto& [name, gauge] : gauges_) {
     if (!gauge->description().empty()) {
       oss << "# HELP " << name << " " << gauge->description() << "\n";
@@ -25,7 +25,7 @@ std::string MetricsRegistry::to_prometheus() const {
     oss << name << " " << gauge->value() << "\n";
   }
 
-  // 导出直方图
+  // Export histograms
   for (const auto& [name, histogram] : histograms_) {
     if (!histogram->description().empty()) {
       oss << "# HELP " << name << " " << histogram->description() << "\n";
@@ -44,14 +44,14 @@ std::string MetricsRegistry::to_prometheus() const {
   return oss.str();
 }
 
-// 全局指标注册表实例
+// Global metrics registry instance
 static MetricsRegistry* g_metrics_registry = nullptr;
 
 MetricsRegistry& global_metrics() {
   if (g_metrics_registry == nullptr) {
     g_metrics_registry = new MetricsRegistry();
 
-    // 注册一些系统指标
+    // Register some system metrics
     g_metrics_registry->register_counter("veloz_system_start_time", "System start time");
     g_metrics_registry->register_gauge("veloz_system_uptime", "System uptime in seconds");
     g_metrics_registry->register_gauge("veloz_event_loop_pending_tasks", "Number of pending tasks in event loop");

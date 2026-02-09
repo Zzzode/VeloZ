@@ -61,7 +61,7 @@ private:
 TEST_F(BacktestReporterTest, GenerateHTMLReport) {
     std::string html = reporter_->generate_html_report(result_);
     EXPECT_FALSE(html.empty());
-    EXPECT_NE(html.find("VeloZ 回测报告"), std::string::npos);
+    EXPECT_NE(html.find("VeloZ Backtest Report"), std::string::npos);
 }
 
 TEST_F(BacktestReporterTest, GenerateJSONReport) {

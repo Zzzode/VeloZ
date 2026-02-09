@@ -1,12 +1,14 @@
 /**
  * @file risk_engine.h
- * @brief 风险管理模块的核心接口和实现
+ * @brief Core interfaces and implementations for the risk management module
  *
- * 该文件包含了 VeloZ 量化交易框架中风险管理模块的核心接口和实现，
- * 包括风险检查、风险预警、风险指标计算和风险控制功能等。
+ * This file contains the core interfaces and implementations for the risk management module
+ * in the VeloZ quantitative trading framework, including risk checking, risk alerts,
+ * risk metrics calculation, and risk control functions.
  *
- * 风险管理系统是框架的核心组件之一，负责在交易前和交易后进行风险评估，
- * 控制风险暴露，并提供风险预警和报告功能。
+ * The risk management system is one of the core components of the framework, responsible for
+ * risk assessment before and after trades, controlling risk exposure, and providing risk
+ * alerts and reporting functionality.
  */
 
 #pragma once
@@ -22,230 +24,230 @@
 namespace veloz::risk {
 
 /**
- * @brief 风险检查结果结构
+ * @brief Risk check result structure
  *
- * 包含风险检查的结果信息，包括是否允许交易和拒绝原因。
+ * Contains the result information of risk checking, including whether trading is allowed and rejection reason.
  */
 struct RiskCheckResult {
-  bool allowed{true};      ///< 是否允许交易
-  std::string reason;      ///< 拒绝交易的原因（如果不允许）
+  bool allowed{true};      ///< Whether trading is allowed
+  std::string reason;      ///< Reason for rejection (if not allowed)
 };
 
 /**
- * @brief 风险预警级别枚举
+ * @brief Risk alert level enumeration
  *
- * 定义了风险预警的不同级别，从低风险到临界风险。
+ * Defines different levels of risk alerts, from low risk to critical risk.
  */
 enum class RiskLevel {
-  Low,     ///< 低风险
-  Medium,  ///< 中等风险
-  High,    ///< 高风险
-  Critical ///< 临界风险
+  Low,     ///< Low risk
+  Medium,  ///< Medium risk
+  High,    ///< High risk
+  Critical ///< Critical risk
 };
 
 /**
- * @brief 风险预警信息结构
+ * @brief Risk alert information structure
  *
- * 包含风险预警的详细信息，包括预警级别、消息、时间戳和交易品种。
+ * Contains detailed information about risk alerts, including alert level, message, timestamp, and trading symbol.
  */
 struct RiskAlert {
-  RiskLevel level;                                   ///< 风险预警级别
-  std::string message;                               ///< 预警消息
-  std::chrono::steady_clock::time_point timestamp;   ///< 预警时间戳
-  std::string symbol;                                ///< 关联的交易品种
+  RiskLevel level;                                   ///< Risk alert level
+  std::string message;                               ///< Alert message
+  std::chrono::steady_clock::time_point timestamp;   ///< Alert timestamp
+  std::string symbol;                                ///< Associated trading symbol
 };
 
 /**
- * @brief 风险引擎类
+ * @brief Risk engine class
  *
- * 负责管理和评估交易风险，包括交易前检查、交易后检查、
- * 风险预警、风险指标计算和风险控制功能。
+ * Responsible for managing and evaluating trading risk, including pre-trade checks, post-trade checks,
+ * risk alerts, risk metrics calculation, and risk control functionality.
  */
 class RiskEngine final {
 public:
   /**
-   * @brief 构造函数
+   * @brief Constructor
    */
   RiskEngine() = default;
 
   // Pre-trade checks
   /**
-   * @brief 交易前风险检查
-   * @param req 下单请求
-   * @return 风险检查结果
+   * @brief Pre-trade risk check
+   * @param req Place order request
+   * @return Risk check result
    */
   [[nodiscard]] RiskCheckResult check_pre_trade(const veloz::exec::PlaceOrderRequest& req);
 
   // Post-trade checks
   /**
-   * @brief 交易后风险检查
-   * @param position 持仓信息
-   * @return 风险检查结果
+   * @brief Post-trade risk check
+   * @param position Position information
+   * @return Risk check result
    */
   [[nodiscard]] RiskCheckResult check_post_trade(const veloz::oms::Position& position);
 
   // Configuration
   /**
-   * @brief 设置账户余额
-   * @param balance_usdt 账户余额（USDT）
+   * @brief Set account balance
+   * @param balance_usdt Account balance in USDT
    */
   void set_account_balance(double balance_usdt);
 
   /**
-   * @brief 设置最大持仓大小
-   * @param max_size 最大持仓大小
+   * @brief Set maximum position size
+   * @param max_size Maximum position size
    */
   void set_max_position_size(double max_size);
 
   /**
-   * @brief 设置最大杠杆
-   * @param max_leverage 最大杠杆
+   * @brief Set maximum leverage
+   * @param max_leverage Maximum leverage
    */
   void set_max_leverage(double max_leverage);
 
   /**
-   * @brief 设置参考价格
-   * @param price 参考价格
+   * @brief Set reference price
+   * @param price Reference price
    */
   void set_reference_price(double price);
 
   /**
-   * @brief 设置最大价格偏差
-   * @param deviation 最大价格偏差（比例）
+   * @brief Set maximum price deviation
+   * @param deviation Maximum price deviation (ratio)
    */
   void set_max_price_deviation(double deviation);
 
   /**
-   * @brief 设置最大订单频率
-   * @param orders_per_second 每秒最大订单数
+   * @brief Set maximum order rate
+   * @param orders_per_second Maximum orders per second
    */
   void set_max_order_rate(int orders_per_second);
 
   /**
-   * @brief 设置最大订单大小
-   * @param max_qty_per_order 单订单最大数量
+   * @brief Set maximum order size
+   * @param max_qty_per_order Maximum quantity per order
    */
   void set_max_order_size(double max_qty_per_order);
 
   /**
-   * @brief 设置止损功能是否启用
-   * @param enabled 是否启用止损
+   * @brief Set whether stop loss is enabled
+   * @param enabled Whether to enable stop loss
    */
   void set_stop_loss_enabled(bool enabled);
 
   /**
-   * @brief 设置止损比例
-   * @param percentage 止损比例（0-1）
+   * @brief Set stop loss percentage
+   * @param percentage Stop loss percentage (0-1)
    */
   void set_stop_loss_percentage(double percentage);
 
   /**
-   * @brief 设置止盈功能是否启用
-   * @param enabled 是否启用止盈
+   * @brief Set whether take profit is enabled
+   * @param enabled Whether to enable take profit
    */
   void set_take_profit_enabled(bool enabled);
 
   /**
-   * @brief 设置止盈比例
-   * @param percentage 止盈比例（0-1）
+   * @brief Set take profit percentage
+   * @param percentage Take profit percentage (0-1)
    */
   void set_take_profit_percentage(double percentage);
 
   /**
-   * @brief 设置风险级别阈值
-   * @param level 风险级别
-   * @param threshold 阈值
+   * @brief Set risk level threshold
+   * @param level Risk level
+   * @param threshold Threshold value
    */
   void set_risk_level_threshold(RiskLevel level, double threshold);
 
   // Position management
   /**
-   * @brief 更新持仓信息
-   * @param position 持仓信息
+   * @brief Update position information
+   * @param position Position information
    */
   void update_position(const veloz::oms::Position& position);
 
   /**
-   * @brief 清除所有持仓信息
+   * @brief Clear all position information
    */
   void clear_positions();
 
   // Circuit breaker
   /**
-   * @brief 检查断路器是否触发
-   * @return 断路器是否触发
+   * @brief Check if circuit breaker is tripped
+   * @return Whether circuit breaker is tripped
    */
   [[nodiscard]] bool is_circuit_breaker_tripped() const;
 
   /**
-   * @brief 重置断路器
+   * @brief Reset circuit breaker
    */
   void reset_circuit_breaker();
 
   // Risk alerts
   /**
-   * @brief 获取风险预警列表
-   * @return 风险预警列表
+   * @brief Get risk alerts list
+   * @return Risk alerts list
    */
   std::vector<RiskAlert> get_risk_alerts() const;
 
   /**
-   * @brief 清除风险预警列表
+   * @brief Clear risk alerts list
    */
   void clear_risk_alerts();
 
   /**
-   * @brief 添加风险预警
-   * @param level 风险级别
-   * @param message 预警消息
-   * @param symbol 关联的交易品种（可选）
+   * @brief Add risk alert
+   * @param level Risk level
+   * @param message Alert message
+   * @param symbol Associated trading symbol (optional)
    */
   void add_risk_alert(RiskLevel level, const std::string& message, const std::string& symbol = "");
 
   // Risk metrics
   /**
-   * @brief 设置风险指标计算器
-   * @param calculator 风险指标计算器
+   * @brief Set risk metrics calculator
+   * @param calculator Risk metrics calculator
    */
   void set_risk_metrics_calculator(const RiskMetricsCalculator& calculator);
 
   /**
-   * @brief 获取风险指标
-   * @return 风险指标
+   * @brief Get risk metrics
+   * @return Risk metrics
    */
   RiskMetrics get_risk_metrics() const;
 
   /**
-   * @brief 计算风险指标
+   * @brief Calculate risk metrics
    */
   void calculate_risk_metrics();
 
   // Position management and fund allocation
   /**
-   * @brief 计算持仓大小
-   * @param notional 名义价值
-   * @param leverage 杠杆倍数
-   * @return 持仓大小
+   * @brief Calculate position size
+   * @param notional Notional value
+   * @param leverage Leverage multiplier
+   * @return Position size
    */
   [[nodiscard]] double calculate_position_size(double notional, double leverage) const;
 
   /**
-   * @brief 计算保证金要求
-   * @param notional 名义价值
-   * @param leverage 杠杆倍数
-   * @return 保证金要求
+   * @brief Calculate margin requirement
+   * @param notional Notional value
+   * @param leverage Leverage multiplier
+   * @return Margin requirement
    */
   [[nodiscard]] double calculate_margin_requirement(double notional, double leverage) const;
 
   /**
-   * @brief 计算可用资金
-   * @return 可用资金
+   * @brief Calculate available funds
+   * @return Available funds
    */
   [[nodiscard]] double calculate_available_funds() const;
 
   /**
-   * @brief 计算已用保证金
-   * @return 已用保证金
+   * @brief Calculate used margin
+   * @return Used margin
    */
   [[nodiscard]] double calculate_used_margin() const;
 

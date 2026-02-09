@@ -134,27 +134,27 @@ int main() {
     // Print results
     std::cout << std::endl;
     std::cout << "==============================" << std::endl;
-    std::cout << "       回测结果" << std::endl;
+    std::cout << "       Backtest Results" << std::endl;
     std::cout << "==============================" << std::endl;
-    std::cout << "策略名称: " << result.strategy_name << std::endl;
-    std::cout << "交易对: " << result.symbol << std::endl;
-    std::cout << "初始资金: $" << result.initial_balance << std::endl;
-    std::cout << "最终资金: $" << result.final_balance << std::endl;
-    std::cout << "总收益率: " << result.total_return * 100 << "%" << std::endl;
-    std::cout << "最大回撤: " << result.max_drawdown * 100 << "%" << std::endl;
-    std::cout << "夏普比率: " << result.sharpe_ratio << std::endl;
-    std::cout << "胜率: " << result.win_rate * 100 << "%" << std::endl;
-    std::cout << "盈亏比: " << result.profit_factor << std::endl;
-    std::cout << "总交易次数: " << result.trade_count << std::endl;
-    std::cout << "盈利交易: " << result.win_count << std::endl;
-    std::cout << "亏损交易: " << result.lose_count << std::endl;
-    std::cout << "平均盈利: $" << result.avg_win << std::endl;
-    std::cout << "平均亏损: $" << result.avg_lose << std::endl;
+    std::cout << "Strategy Name: " << result.strategy_name << std::endl;
+    std::cout << "Trading Pair: " << result.symbol << std::endl;
+    std::cout << "Initial Balance: $" << result.initial_balance << std::endl;
+    std::cout << "Final Balance: $" << result.final_balance << std::endl;
+    std::cout << "Total Return: " << result.total_return * 100 << "%" << std::endl;
+    std::cout << "Max Drawdown: " << result.max_drawdown * 100 << "%" << std::endl;
+    std::cout << "Sharpe Ratio: " << result.sharpe_ratio << std::endl;
+    std::cout << "Win Rate: " << result.win_rate * 100 << "%" << std::endl;
+    std::cout << "Profit Factor: " << result.profit_factor << std::endl;
+    std::cout << "Total Trades: " << result.trade_count << std::endl;
+    std::cout << "Winning Trades: " << result.win_count << std::endl;
+    std::cout << "Losing Trades: " << result.lose_count << std::endl;
+    std::cout << "Average Win: $" << result.avg_win << std::endl;
+    std::cout << "Average Loss: $" << result.avg_lose << std::endl;
 
     // Parameter optimization
     std::cout << std::endl;
     std::cout << "==============================" << std::endl;
-    std::cout << "       参数优化" << std::endl;
+    std::cout << "    Parameter Optimization" << std::endl;
     std::cout << "==============================" << std::endl;
 
     auto optimizer = std::make_unique<veloz::backtest::GridSearchOptimizer>();
@@ -176,14 +176,14 @@ int main() {
         auto optimization_results = optimizer->get_results();
         auto best_parameters = optimizer->get_best_parameters();
 
-        std::cout << "优化结果数量: " << optimization_results.size() << std::endl;
-        std::cout << "最佳参数组合:" << std::endl;
+        std::cout << "Optimization Results Count: " << optimization_results.size() << std::endl;
+        std::cout << "Best Parameter Combination:" << std::endl;
 
         for (const auto& [name, value] : best_parameters) {
             std::cout << "  " << name << ": " << value << std::endl;
         }
     } else {
-        std::cout << "参数优化失败" << std::endl;
+        std::cout << "Parameter optimization failed" << std::endl;
     }
 
     return 0;

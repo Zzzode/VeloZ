@@ -12,7 +12,7 @@
 
 namespace veloz::core {
 
-// 指标类型
+// Metric type
 enum class MetricType {
   Counter,
   Gauge,
@@ -20,7 +20,7 @@ enum class MetricType {
   Summary
 };
 
-// 基础指标类
+// Base metric class
 class Metric {
 public:
   explicit Metric(std::string name, std::string description)
@@ -37,7 +37,7 @@ private:
   std::string description_;
 };
 
-// 计数器指标（单调递增）
+// Counter metric (monotonically increasing)
 class Counter final : public Metric {
 public:
   explicit Counter(std::string name, std::string description)
@@ -59,7 +59,7 @@ private:
   std::atomic<int64_t> count_{0};
 };
 
-// 仪表盘指标（可增可减）
+// Gauge metric (can increase or decrease)
 class Gauge final : public Metric {
 public:
   explicit Gauge(std::string name, std::string description)
@@ -89,7 +89,7 @@ private:
   std::atomic<int64_t> value_{0};
 };
 
-// 计时器（用于测量延迟）
+// Timer (for measuring latency)
 class Timer final {
 public:
   explicit Timer(bool auto_start = true) {
@@ -120,7 +120,7 @@ private:
   std::chrono::steady_clock::time_point start_time_;
 };
 
-// 直方图指标（用于分布统计）
+// Histogram metric (for distribution statistics)
 class Histogram final : public Metric {
 public:
   explicit Histogram(std::string name, std::string description,
@@ -181,12 +181,12 @@ private:
   std::atomic<double> sum_{0.0};
 };
 
-// 指标注册表
+// Metrics registry
 class MetricsRegistry final {
 public:
   MetricsRegistry() = default;
 
-  // 注册指标
+  // Register metrics
   void register_counter(std::string name, std::string description) {
     std::scoped_lock lock(mu_);
     counters_[std::move(name)] = std::make_unique<Counter>(name, std::move(description));
@@ -203,7 +203,7 @@ public:
     histograms_[std::move(name)] = std::make_unique<Histogram>(name, std::move(description), std::move(buckets));
   }
 
-  // 获取指标
+  // Get metrics
   [[nodiscard]] Counter* counter(std::string_view name) {
     std::scoped_lock lock(mu_);
     auto it = counters_.find(std::string(name));
@@ -222,7 +222,7 @@ public:
     return it != histograms_.end() ? it->second.get() : nullptr;
   }
 
-  // 获取所有指标名称
+  // Get all metric names
   [[nodiscard]] std::vector<std::string> counter_names() const {
     std::scoped_lock lock(mu_);
     std::vector<std::string> names;
@@ -253,7 +253,7 @@ public:
     return names;
   }
 
-  // 导出指标为Prometheus格式
+  // Export metrics to Prometheus format
   [[nodiscard]] std::string to_prometheus() const;
 
 private:
@@ -263,10 +263,10 @@ private:
   std::map<std::string, std::unique_ptr<Histogram>> histograms_;
 };
 
-// 全局指标注册表
+// Global metrics registry
 [[nodiscard]] MetricsRegistry& global_metrics();
 
-// 便捷的指标访问函数
+// Convenient metric access functions
 inline void counter_inc(std::string_view name, int64_t value = 1) {
   if (auto c = global_metrics().counter(name)) {
     c->increment(value);
@@ -311,7 +311,7 @@ inline void histogram_observe(std::string_view name, double value) {
   }
 }
 
-// 测量函数执行时间的宏
+// Macro for measuring function execution time
 #define MEASURE_TIME(name, func)                                                \
   do {                                                                         \
     veloz::core::Timer _timer;                                                \

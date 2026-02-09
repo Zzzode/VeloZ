@@ -143,12 +143,12 @@ std::optional<Config> Config::get_section(std::string_view key) const {
     return std::nullopt;
   }
 
-  // 这里可以扩展为支持嵌套配置
+  // This can be extended to support nested configuration
   return std::nullopt;
 }
 
 void Config::set_section(std::string_view key, const Config& config) {
-  // 这里可以扩展为支持嵌套配置
+  // This can be extended to support nested configuration
 }
 
 void Config::merge(const Config& other) {
@@ -166,7 +166,7 @@ std::vector<std::string> Config::keys() const {
   return result;
 }
 
-// 全局配置实例
+// Global configuration instance
 static Config* g_global_config = nullptr;
 
 Config& global_config() {

@@ -1,69 +1,81 @@
 # VeloZ
 
-VeloZ is a quantitative trading framework for crypto markets (C++23 core engine + multi-language ecosystem). It aims to provide a unified backtest/simulation/live trading runtime model and an evolvable engineering structure for low-latency critical paths.
-
-## Status
-
-The repository is in an early stage and already provides a buildable C++23 engine skeleton, base module split (core/market/exec/oms/risk), and standardized build/CI configuration.
+VeloZ is an early-stage quantitative trading framework for crypto markets with a C++23 core engine, Python gateway, and web UI. It aims to provide a unified backtest/simulation/live trading runtime model and an evolvable engineering structure.
 
 ## Quick Start
 
-### Build (Recommended: CMake Presets)
-
+### Build
 ```bash
 cmake --preset dev
 cmake --build --preset dev -j
 ```
 
-### Run Engine (Smoke Test)
-
+### Run
 ```bash
+# Engine only
 ./scripts/run_engine.sh dev
-```
 
-### Run Gateway + UI (Minimal Integration)
-
-```bash
+# Gateway + Web UI
 ./scripts/run_gateway.sh dev
 ```
 
-Default listen address: `http://127.0.0.1:8080/`.
-If you open `apps/ui/index.html` directly via file://, set API Base at the top of the page to `http://127.0.0.1:8080`.
+The gateway listens on `http://127.0.0.1:8080/` by default.
 
-Optional: switch gateway market source (Binance REST polling; offline environments fall back to simulated market data):
+## Documentation
 
-```bash
-VELOZ_MARKET_SOURCE=binance_rest ./scripts/run_gateway.sh dev
+| Category | Description |
+|----------|-------------|
+| [User Guide](docs/user/) | Getting started, configuration, and development |
+| [API Reference](docs/api/) | HTTP API, SSE stream, and engine protocol |
+| [Design Documents](docs/design/) | Architecture and system design |
+| [Implementation Plans](docs/plans/) | Development roadmaps with progress |
+| [Build & Run](docs/build_and_run.md) | Build instructions and scripts |
+
+### Key Documents
+
+- **[Quick Start Guide](docs/user/getting-started.md)** - Get up and running quickly
+- **[HTTP API Reference](docs/api/http-api.md)** - REST API endpoints and usage
+- **[Configuration Guide](docs/user/configuration.md)** - Environment variables and options
+- **[Development Guide](docs/user/development.md)** - Set up development environment
+- **[Implementation Status](docs/reviews/IMPLEMENTATION_STATUS.md)** - Feature progress tracking
+
+## Repository Structure
+
+```
+VeloZ/
+├── apps/
+│   ├── engine/          # C++23 engine executable
+│   ├── gateway/         # Python HTTP gateway
+│   └── ui/              # Web UI (HTML/JS)
+├── libs/
+│   ├── core/            # Infrastructure (logging, event loop, etc.)
+│   ├── market/           # Market data module
+│   ├── exec/            # Execution module
+│   ├── oms/              # Order management system
+│   ├── risk/             # Risk management module
+│   └── strategy/         # Strategy framework
+├── docs/                 # Documentation
+├── scripts/              # Build and run scripts
+├── tests/                # Test suites
+└── .github/              # CI/CD configuration
 ```
 
-Optional: switch execution channel (Binance Spot Testnet REST; requires API key/secret):
+## Features
 
-```bash
-VELOZ_EXECUTION_MODE=binance_testnet_spot ./scripts/run_gateway.sh dev
-```
-
-### Format C++ Code
-
-```bash
-./scripts/format.sh
-```
-
-See [Build and Run](docs/build_and_run.md) for more details.
-
-## Repository Structure (Summary)
-
-- apps/engine: C++23 engine executable (currently a skeleton)
-- libs/core: infrastructure (logging, time, event loop)
-- libs/market: market event model (placeholder)
-- libs/exec: trading interface model (placeholder)
-- libs/oms: order record and state aggregation (minimal implementation)
-- libs/risk: risk checks (minimal implementation)
-- docs: design and usage documents
-
-## Design Documents
-
-- [crypto_quant_framework_design.md](docs/crypto_quant_framework_design.md)
+| Module | Status | Description |
+|--------|--------|-------------|
+| Core Engine | Implemented | C++23 event-driven trading engine |
+| Market Data | Partial | Simulated + Binance REST polling |
+| Execution System | Implemented | Simulated + Binance testnet |
+| Order Management | Implemented | Order state tracking and aggregation |
+| Risk Management | Partial | Basic risk checks and circuit breaker |
+| Gateway API | Implemented | REST API with SSE stream |
+| Web UI | Implemented | Real-time trading interface |
 
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+## Contributing
+
+See [Development Guide](docs/user/development.md) for contribution guidelines.

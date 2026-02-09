@@ -26,7 +26,7 @@ void RiskMetricsCalculator::calculate_var(RiskMetrics& metrics) const {
     return;
   }
 
-  // 计算每日收益率
+  // Calculate daily returns
   std::vector<double> daily_returns;
   double cumulative_profit = 0.0;
 
@@ -35,14 +35,14 @@ void RiskMetricsCalculator::calculate_var(RiskMetrics& metrics) const {
     daily_returns.push_back(return_pct);
   }
 
-  // 对收益率进行排序
+  // Sort returns
   std::vector<double> sorted_returns = daily_returns;
   std::sort(sorted_returns.begin(), sorted_returns.end());
 
-  // 计算 VaR
+  // Calculate VaR
   int n = sorted_returns.size();
-  int idx_95 = static_cast<int>(n * 0.05); // 95% 置信水平
-  int idx_99 = static_cast<int>(n * 0.01); // 99% 置信水平
+  int idx_95 = static_cast<int>(n * 0.05); // 95% confidence level
+  int idx_99 = static_cast<int>(n * 0.01); // 99% confidence level
 
   if (idx_95 < n) {
     metrics.var_95 = std::abs(sorted_returns[idx_95]);
@@ -58,7 +58,7 @@ void RiskMetricsCalculator::calculate_max_drawdown(RiskMetrics& metrics) const {
     return;
   }
 
-  // 计算累积收益率
+  // Calculate cumulative returns
   std::vector<double> cumulative_returns;
   double cumulative_profit = 0.0;
   double peak_profit = 0.0;
@@ -78,7 +78,7 @@ void RiskMetricsCalculator::calculate_max_drawdown(RiskMetrics& metrics) const {
     }
   }
 
-  metrics.max_drawdown = max_drawdown * 100; // 转换为百分比
+  metrics.max_drawdown = max_drawdown * 100; // Convert to percentage
 }
 
 void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
@@ -86,7 +86,7 @@ void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
     return;
   }
 
-  // 计算每日收益率
+  // Calculate daily returns
   std::vector<double> daily_returns;
 
   for (const auto& trade : trades_) {
@@ -94,17 +94,17 @@ void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
     daily_returns.push_back(return_pct);
   }
 
-  // 计算平均收益率
+  // Calculate average return
   double avg_return = std::accumulate(daily_returns.begin(), daily_returns.end(), 0.0) / daily_returns.size();
 
-  // 计算收益率标准差
+  // Calculate return standard deviation
   double sum_sq = 0.0;
   for (double ret : daily_returns) {
     sum_sq += std::pow(ret - avg_return, 2);
   }
   double std_dev = std::sqrt(sum_sq / daily_returns.size());
 
-  // 计算夏普比率
+  // Calculate Sharpe ratio
   if (std_dev > 0.0) {
     metrics.sharpe_ratio = (avg_return - risk_free_rate_) / std_dev;
   } else {

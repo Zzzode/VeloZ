@@ -1,12 +1,13 @@
 /**
  * @file logger.h
- * @brief 日志系统的核心接口和实现
+ * @brief Core interfaces and implementation for the logging system
  *
- * 该文件包含了 VeloZ 量化交易框架中日志系统的核心接口和实现，
- * 包括日志级别定义、日志记录器类以及日志输出功能等。
+ * This file contains the core interfaces and implementation for the logging system
+ * in the VeloZ quantitative trading framework, including log level definitions,
+ * logger class, and logging output functionality.
  *
- * 日志系统支持多种日志级别，包括 Trace、Debug、Info、Warn、Error
- * 和 Critical，并提供了格式化输出、源位置追踪等功能。
+ * The logging system supports multiple log levels including Trace, Debug, Info, Warn,
+ * Error, and Critical, and provides formatted output and source location tracking.
  */
 
 #pragma once
@@ -21,111 +22,112 @@
 namespace veloz::core {
 
 /**
- * @brief 日志级别枚举
+ * @brief Log level enumeration
  *
- * 定义了框架支持的日志级别，从 Trace（最详细）到 Critical（最严重）。
- * 可以使用 Off 级别来禁用所有日志输出。
+ * Defines the log levels supported by the framework, from Trace (most detailed)
+ * to Critical (most severe). The Off level can be used to disable all log output.
  */
 enum class LogLevel : std::uint8_t {
-  Trace = 0,      ///< 跟踪级别，最详细的调试信息
-  Debug = 1,      ///< 调试级别，用于开发过程中的调试信息
-  Info = 2,       ///< 信息级别，用于普通的运行时信息
-  Warn = 3,       ///< 警告级别，用于潜在的问题或警告信息
-  Error = 4,      ///< 错误级别，用于错误信息
-  Critical = 5,   ///< 严重错误级别，用于导致系统无法继续运行的错误
-  Off = 6,        ///< 关闭所有日志输出
+  Trace = 0,      ///< Trace level, most detailed debug information
+  Debug = 1,      ///< Debug level, for debugging information during development
+  Info = 2,       ///< Info level, for normal runtime information
+  Warn = 3,       ///< Warning level, for potential issues or warnings
+  Error = 4,      ///< Error level, for error information
+  Critical = 5,   ///< Critical error level, for errors that prevent system from continuing
+  Off = 6,        ///< Turn off all log output
 };
 
 /**
- * @brief 日志记录器类
+ * @brief Logger class
  *
- * 提供了线程安全的日志记录功能，支持多种日志级别和格式化输出。
- * 日志记录器可以输出到任何标准输出流，并提供了源位置追踪功能。
+ * Provides thread-safe logging functionality, supporting multiple log levels
+ * and formatted output. The logger can output to any standard output stream
+ * and provides source location tracking.
  */
 class Logger final {
 public:
   /**
-   * @brief 构造函数
-   * @param out 输出流，默认为 std::cout
+   * @brief Constructor
+   * @param out Output stream, defaults to std::cout
    */
   explicit Logger(std::ostream& out);
 
   /**
-   * @brief 设置日志级别
-   * @param level 要设置的日志级别
+   * @brief Set log level
+   * @param level Log level to set
    */
   void set_level(LogLevel level);
 
   /**
-   * @brief 获取当前日志级别
-   * @return 当前日志级别
+   * @brief Get current log level
+   * @return Current log level
    */
   [[nodiscard]] LogLevel level() const;
 
   /**
-   * @brief 通用日志记录方法
-   * @param level 日志级别
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief General log recording method
+   * @param level Log level
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void log(LogLevel level, std::string_view message,
            const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 跟踪级别日志记录
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief Trace level logging
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void trace(std::string_view message,
              const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 调试级别日志记录
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief Debug level logging
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void debug(std::string_view message,
              const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 信息级别日志记录
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief Info level logging
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void info(std::string_view message,
             const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 警告级别日志记录
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief Warning level logging
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void warn(std::string_view message,
             const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 错误级别日志记录
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief Error level logging
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void error(std::string_view message,
              const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 严重错误级别日志记录
-   * @param message 日志消息
-   * @param location 源位置信息，默认为当前位置
+   * @brief Critical error level logging
+   * @param message Log message
+   * @param location Source location information, defaults to current location
    */
   void critical(std::string_view message,
                 const std::source_location& location = std::source_location::current());
 
   /**
-   * @brief 格式化日志记录方法
-   * @tparam Args 格式化参数类型
-   * @param level 日志级别
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted log recording method
+   * @tparam Args Formatting parameter types
+   * @param level Log level
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void log(LogLevel level, std::format_string<Args...> fmt, Args&&... args,
@@ -134,11 +136,11 @@ public:
   }
 
   /**
-   * @brief 格式化跟踪级别日志记录
-   * @tparam Args 格式化参数类型
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted trace level logging
+   * @tparam Args Formatting parameter types
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void trace(std::format_string<Args...> fmt, Args&&... args,
@@ -147,11 +149,11 @@ public:
   }
 
   /**
-   * @brief 格式化调试级别日志记录
-   * @tparam Args 格式化参数类型
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted debug level logging
+   * @tparam Args Formatting parameter types
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void debug(std::format_string<Args...> fmt, Args&&... args,
@@ -160,11 +162,11 @@ public:
   }
 
   /**
-   * @brief 格式化信息级别日志记录
-   * @tparam Args 格式化参数类型
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted info level logging
+   * @tparam Args Formatting parameter types
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void info(std::format_string<Args...> fmt, Args&&... args,
@@ -173,11 +175,11 @@ public:
   }
 
   /**
-   * @brief 格式化警告级别日志记录
-   * @tparam Args 格式化参数类型
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted warning level logging
+   * @tparam Args Formatting parameter types
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void warn(std::format_string<Args...> fmt, Args&&... args,
@@ -186,11 +188,11 @@ public:
   }
 
   /**
-   * @brief 格式化错误级别日志记录
-   * @tparam Args 格式化参数类型
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted error level logging
+   * @tparam Args Formatting parameter types
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void error(std::format_string<Args...> fmt, Args&&... args,
@@ -199,11 +201,11 @@ public:
   }
 
   /**
-   * @brief 格式化严重错误级别日志记录
-   * @tparam Args 格式化参数类型
-   * @param fmt 格式化字符串
-   * @param args 格式化参数
-   * @param location 源位置信息，默认为当前位置
+   * @brief Formatted critical error level logging
+   * @tparam Args Formatting parameter types
+   * @param fmt Format string
+   * @param args Formatting parameters
+   * @param location Source location information, defaults to current location
    */
   template <typename... Args>
   void critical(std::format_string<Args...> fmt, Args&&... args,
@@ -212,15 +214,15 @@ public:
   }
 
 private:
-  std::ostream* out_{nullptr};       ///< 输出流指针
-  LogLevel level_{LogLevel::Info};   ///< 当前日志级别
-  mutable std::mutex mu_;            ///< 互斥锁，用于线程安全
+  std::ostream* out_{nullptr};       ///< Output stream pointer
+  LogLevel level_{LogLevel::Info};   ///< Current log level
+  mutable std::mutex mu_;            ///< Mutex for thread safety
 };
 
 /**
- * @brief 将 LogLevel 转换为字符串表示
- * @param level 日志级别
- * @return 日志级别的字符串表示
+ * @brief Convert LogLevel to string representation
+ * @param level Log level
+ * @return String representation of the log level
  */
 [[nodiscard]] std::string_view to_string(LogLevel level);
 

@@ -50,11 +50,11 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
 
     html << R"(
         <!DOCTYPE html>
-        <html lang="zh-CN">
+        <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>VeloZ 回测报告</title>
+            <title>VeloZ Backtest Report</title>
             <style>
                 * {
                     margin: 0;
@@ -193,75 +193,75 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>VeloZ 回测报告</h1>
-                    <p>策略名称: )" << result.strategy_name << R"( | 交易对: )" << result.symbol << R"(</p>
-                    <p>回测时间: )" << result.start_time << R"( - )" << result.end_time << R"(</p>
+                    <h1>VeloZ Backtest Report</h1>
+                    <p>Strategy Name: )" << result.strategy_name << R"( | Trading Pair: )" << result.symbol << R"(</p>
+                    <p>Backtest Period: )" << result.start_time << R"( - )" << result.end_time << R"(</p>
                 </div>
 
                 <div class="summary">
                     <div class="stat-card">
-                        <h3>初始资金</h3>
+                        <h3>Initial Balance</h3>
                         <div class="value">$)" << result.initial_balance << R"(</div>
                     </div>
 
                     <div class="stat-card">
-                        <h3>最终资金</h3>
+                        <h3>Final Balance</h3>
                         <div class="value">$)" << result.final_balance << R"(</div>
                     </div>
 
                     <div class="stat-card">
-                        <h3>总收益率</h3>
+                        <h3>Total Return</h3>
                         <div class="value )" << (result.total_return >= 0 ? "positive" : "negative") << R"()">)" << (result.total_return * 100) << R"(%</div>
                     </div>
 
                     <div class="stat-card">
-                        <h3>最大回撤</h3>
+                        <h3>Max Drawdown</h3>
                         <div class="value )" << (result.max_drawdown >= 0 ? "negative" : "positive") << R"()">)" << (result.max_drawdown * 100) << R"(%</div>
                     </div>
 
                     <div class="stat-card">
-                        <h3>夏普比率</h3>
+                        <h3>Sharpe Ratio</h3>
                         <div class="value">)" << result.sharpe_ratio << R"()</div>
                     </div>
 
                     <div class="stat-card">
-                        <h3>胜率</h3>
+                        <h3>Win Rate</h3>
                         <div class="value )" << (result.win_rate >= 0.5 ? "positive" : "negative") << R"()">)" << (result.win_rate * 100) << R"(%</div>
                     </div>
                 </div>
 
                 <div class="content">
                     <div class="section">
-                        <h2>详细结果</h2>
+                        <h2>Detailed Results</h2>
 
                         <div class="table-container">
                             <table>
                                 <tr>
-                                    <th>指标</th>
-                                    <th>数值</th>
+                                    <th>Metric</th>
+                                    <th>Value</th>
                                 </tr>
                                 <tr>
-                                    <td>总交易次数</td>
+                                    <td>Total Trades</td>
                                     <td>)" << result.trade_count << R"()</td>
                                 </tr>
                                 <tr>
-                                    <td>盈利交易次数</td>
+                                    <td>Winning Trades</td>
                                     <td>)" << result.win_count << R"()</td>
                                 </tr>
                                 <tr>
-                                    <td>亏损交易次数</td>
+                                    <td>Losing Trades</td>
                                     <td>)" << result.lose_count << R"()</td>
                                 </tr>
                                 <tr>
-                                    <td>盈亏比</td>
+                                    <td>Profit Factor</td>
                                     <td>)" << result.profit_factor << R"()</td>
                                 </tr>
                                 <tr>
-                                    <td>平均盈利</td>
+                                    <td>Average Win</td>
                                     <td>$)" << result.avg_win << R"()</td>
                                 </tr>
                                 <tr>
-                                    <td>平均亏损</td>
+                                    <td>Average Loss</td>
                                     <td class=")" << (result.avg_lose < 0 ? "negative" : "positive") << R"()">$)" << result.avg_lose << R"()</td>
                                 </tr>
                             </table>
@@ -269,35 +269,35 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                     </div>
 
                     <div class="section">
-                        <h2>权益曲线</h2>
+                        <h2>Equity Curve</h2>
                         <div class="chart-container">
                             <div class="chart-placeholder">
-                                <p>图表功能开发中...</p>
+                                <p>Chart feature in development...</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="section">
-                        <h2>回撤曲线</h2>
+                        <h2>Drawdown Curve</h2>
                         <div class="chart-container">
                             <div class="chart-placeholder">
-                                <p>图表功能开发中...</p>
+                                <p>Chart feature in development...</p>
                             </div>
                         </div>
                     </div>
 
                     <div class="section">
-                        <h2>交易记录</h2>
+                        <h2>Trade History</h2>
                         <div class="table-container">
                             <table>
                                 <tr>
-                                    <th>时间</th>
-                                    <th>交易对</th>
-                                    <th>方向</th>
-                                    <th>价格</th>
-                                    <th>数量</th>
-                                    <th>费用</th>
-                                    <th>盈亏</th>
+                                    <th>Time</th>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Price</th>
+                                    <th>Quantity</th>
+                                    <th>Fee</th>
+                                    <th>P&L</th>
                                 </tr>
     )";
 

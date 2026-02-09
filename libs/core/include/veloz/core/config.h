@@ -26,12 +26,12 @@ public:
   bool save_to_file(const std::filesystem::path& file_path) const;
   std::string to_string() const;
 
-  // 基础访问方法
+  // Basic access methods
   [[nodiscard]] bool has_key(std::string_view key) const;
   void set(std::string_view key, Value value);
   void remove(std::string_view key);
 
-  // 模板访问方法
+  // Template access methods
   template <typename T>
   [[nodiscard]] std::optional<T> get(std::string_view key) const {
     auto it = config_.find(std::string(key));
@@ -68,20 +68,20 @@ public:
     return opt.value_or(std::move(default_value));
   }
 
-  // 嵌套配置访问
+  // Nested configuration access
   [[nodiscard]] std::optional<Config> get_section(std::string_view key) const;
   void set_section(std::string_view key, const Config& config);
 
-  // 配置合并
+  // Configuration merging
   void merge(const Config& other);
 
-  // 获取所有键
+  // Get all keys
   [[nodiscard]] std::vector<std::string> keys() const;
 
-  // 检查是否为空
+  // Check if empty
   [[nodiscard]] bool empty() const { return config_.empty(); }
 
-  // 获取配置大小
+  // Get configuration size
   [[nodiscard]] size_t size() const { return config_.size(); }
 
 private:
@@ -93,7 +93,7 @@ public:
   using std::runtime_error::runtime_error;
 };
 
-// 全局配置访问器
+// Global configuration accessor
 [[nodiscard]] Config& global_config();
 bool load_global_config(const std::filesystem::path& file_path);
 bool load_global_config(std::string_view json_content);

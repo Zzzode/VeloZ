@@ -14,7 +14,7 @@ void* aligned_alloc(size_t size, size_t alignment) {
 #elif defined(_WIN32)
   ptr = _aligned_malloc(size, alignment);
 #else
-  // 通用实现
+  // Generic implementation
   ptr = malloc(size + alignment + sizeof(void*));
   if (ptr == nullptr) {
     return nullptr;
@@ -37,13 +37,13 @@ void aligned_free(void* ptr) {
 #elif defined(_WIN32)
   _aligned_free(ptr);
 #else
-  // 通用实现
+  // Generic implementation
   void* real_ptr = reinterpret_cast<void**>(ptr)[-1];
   free(real_ptr);
 #endif
 }
 
-// 全局内存统计实例
+// Global memory statistics instance
 static MemoryStats* g_memory_stats = nullptr;
 
 MemoryStats& global_memory_stats() {

@@ -1,12 +1,14 @@
 /**
  * @file market_event.h
- * @brief 市场事件模块的核心接口和实现
+ * @brief Core interfaces and implementations for the market event module
  *
- * 该文件包含了 VeloZ 量化交易框架中市场事件模块的核心接口和实现，
- * 包括市场事件类型定义、市场数据结构以及事件处理相关功能。
+ * This file contains the core interfaces and implementations for the market event module
+ * in the VeloZ quantitative trading framework, including market event type definitions,
+ * market data structures, and event handling related functionality.
  *
- * 市场事件系统是框架的核心组件之一，负责处理各种类型的市场数据，
- * 包括交易数据、订单簿数据、K线数据等，并提供了统一的事件处理接口。
+ * The market event system is one of the core components of the framework, responsible for
+ * handling various types of market data including trade data, order book data, candlestick data,
+ * and providing a unified event handling interface.
  */
 
 #pragma once
@@ -21,107 +23,119 @@
 namespace veloz::market {
 
 /**
- * @brief 市场事件类型枚举
+ * @brief Market event type enumeration
  *
- * 定义了框架支持的各种市场事件类型，包括交易数据、订单簿数据、
- * K线数据、行情数据等。
+ * Defines various market event types supported by the framework, including trade data,
+ * order book data, candlestick data, ticker data, etc.
  */
 enum class MarketEventType : std::uint8_t {
-  Unknown = 0,    ///< 未知事件类型
-  Trade = 1,      ///< 交易数据事件
-  BookTop = 2,    ///< 订单簿顶部数据事件
-  BookDelta = 3,  ///< 订单簿增量数据事件
-  Kline = 4,      ///< K线数据事件
-  Ticker = 5,     ///< 行情数据事件
-  FundingRate = 6, ///< 资金费率事件
-  MarkPrice = 7,  ///< 标记价格事件
+  Unknown = 0,    ///< Unknown event type
+  Trade = 1,      ///< Trade data event
+  BookTop = 2,    ///< Order book top data event
+  BookDelta = 3,  ///< Order book delta data event
+  Kline = 4,      ///< Candlestick data event
+  Ticker = 5,     ///< Ticker data event
+  FundingRate = 6, ///< Funding rate event
+  MarkPrice = 7,   ///< Mark price event
 };
 
 /**
- * @brief 交易数据结构
+ * @brief Trade data structure
  *
- * 包含单笔交易的详细信息，如价格、数量、交易ID等。
+ * Contains detailed information about a single trade, such as price, quantity, trade ID, etc.
  */
 struct TradeData {
-  double price{0.0};              ///< 交易价格
-  double qty{0.0};                ///< 交易数量
-  bool is_buyer_maker{false};     ///< 是否为买方主动成交
-  std::int64_t trade_id{0};       ///< 交易ID
+  double price{0.0};              ///< Trade price
+  double qty{0.0};                ///< Trade quantity
+  bool is_buyer_maker{false};     ///< Whether buyer is maker
+  std::int64_t trade_id{0};       ///< Trade ID
+
+  auto operator<=>(const TradeData&) const = default;  // C++20 spaceship
 };
 
 /**
- * @brief 订单簿价位数据结构
+ * @brief Order book level data structure
  *
- * 包含订单簿中单个价位的价格和数量信息。
+ * Contains price and quantity information for a single level in the order book.
  */
 struct BookLevel {
-  double price{0.0};              ///< 价位价格
-  double qty{0.0};                ///< 价位数量
+  double price{0.0};              ///< Level price
+  double qty{0.0};                ///< Level quantity
+
+  auto operator<=>(const BookLevel&) const = default;
 };
 
 /**
- * @brief 订单簿数据结构
+ * @brief Order book data structure
  *
- * 包含订单簿的完整或增量数据，包括买盘和卖盘价位信息。
+ * Contains complete or incremental order book data, including bid and ask levels.
  */
 struct BookData {
-  std::vector<BookLevel> bids;    ///< 买盘价位列表
-  std::vector<BookLevel> asks;    ///< 卖盘价位列表
-  std::int64_t sequence{0};       ///< 订单簿序列号
+  std::vector<BookLevel> bids;    ///< Bid levels list
+  std::vector<BookLevel> asks;    ///< Ask levels list
+  std::int64_t sequence{0};       ///< Order book sequence number
+
+  auto operator<=>(const BookData&) const = default;
 };
 
 /**
- * @brief K线数据结构
+ * @brief Candlestick data structure
  *
- * 包含单根 K 线的详细信息，如开盘价、收盘价、最高价、最低价等。
+ * Contains detailed information about a single candlestick, such as open, close, high, low prices, etc.
  */
 struct KlineData {
-  double open{0.0};               ///< 开盘价
-  double high{0.0};               ///< 最高价
-  double low{0.0};                ///< 最低价
-  double close{0.0};              ///< 收盘价
-  double volume{0.0};             ///< 成交量
-  std::int64_t start_time{0};     ///< K线开始时间
-  std::int64_t close_time{0};     ///< K线结束时间
+  double open{0.0};               ///< Open price
+  double high{0.0};               ///< High price
+  double low{0.0};                ///< Low price
+  double close{0.0};              ///< Close price
+  double volume{0.0};             ///< Volume
+  std::int64_t start_time{0};     ///< Candlestick start time
+  std::int64_t close_time{0};     ///< Candlestick close time
+
+  auto operator<=>(const KlineData&) const = default;
 };
 
 /**
- * @brief 市场事件结构
+ * @brief Market event structure
  *
- * 包含市场事件的完整信息，包括事件类型、交易场所、交易品种、
- * 时间戳、事件数据等。
+ * Contains complete information about a market event, including event type, venue, symbol,
+ * timestamps, event data, etc.
  */
 struct MarketEvent final {
-  MarketEventType type{MarketEventType::Unknown};  ///< 事件类型
-  veloz::common::Venue venue{veloz::common::Venue::Unknown};  ///< 交易场所
-  veloz::common::MarketKind market{veloz::common::MarketKind::Unknown};  ///< 市场类型
-  veloz::common::SymbolId symbol{};  ///< 交易品种ID
+  MarketEventType type{MarketEventType::Unknown};  ///< Event type
+  veloz::common::Venue venue{veloz::common::Venue::Unknown};  ///< Trading venue
+  veloz::common::MarketKind market{veloz::common::MarketKind::Unknown};  ///< Market type
+  veloz::common::SymbolId symbol{};  ///< Trading symbol ID
 
-  std::int64_t ts_exchange_ns{0};  ///< 交易所时间戳（纳秒）
-  std::int64_t ts_recv_ns{0};      ///< 接收时间戳（纳秒）
-  std::int64_t ts_pub_ns{0};       ///< 发布时间戳（纳秒）
+  std::int64_t ts_exchange_ns{0};  ///< Exchange timestamp (nanoseconds)
+  std::int64_t ts_recv_ns{0};      ///< Receive timestamp (nanoseconds)
+  std::int64_t ts_pub_ns{0};       ///< Publish timestamp (nanoseconds)
 
   // Variant for typed access (optional, can parse from payload)
-  std::variant<std::monostate, TradeData, BookData, KlineData> data;  ///< 事件数据
+  std::variant<std::monostate, TradeData, BookData, KlineData> data;  ///< Event data
 
   // Raw JSON payload for backward compatibility
-  std::string payload;  ///< 原始 JSON 负载
+  std::string payload;  ///< Raw JSON payload
 
   // Helper: latency from exchange to publish
   /**
-   * @brief 计算从交易所到发布的延迟（纳秒）
-   * @return 延迟时间（纳秒）
+   * @brief Calculate latency from exchange to publish (nanoseconds)
+   * @return Latency time (nanoseconds)
    */
   [[nodiscard]] std::int64_t exchange_to_pub_ns() const {
+    if (ts_pub_ns == 0 || ts_exchange_ns == 0) return 0;
+    if (ts_pub_ns < ts_exchange_ns) return 0;  // Clock skew protection
     return ts_pub_ns - ts_exchange_ns;
   }
 
   // Helper: receive to publish latency
   /**
-   * @brief 计算从接收到发布的延迟（纳秒）
-   * @return 延迟时间（纳秒）
+   * @brief Calculate latency from receive to publish (nanoseconds)
+   * @return Latency time (nanoseconds)
    */
   [[nodiscard]] std::int64_t recv_to_pub_ns() const {
+    if (ts_pub_ns == 0 || ts_recv_ns == 0) return 0;
+    if (ts_pub_ns < ts_recv_ns) return 0;  // Clock skew protection
     return ts_pub_ns - ts_recv_ns;
   }
 };
