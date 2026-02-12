@@ -1,6 +1,7 @@
 #include "veloz/engine/command_parser.h"
 #include "veloz/engine/stdio_engine.h"
 
+#include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>
 #include <sstream>
@@ -58,14 +59,13 @@ TEST_F(StdioEngineTest, Constructor) {
 }
 
 TEST_F(StdioEngineTest, DefaultHandlersNotCalled) {
-  // Run engine briefly without input
+  std::istringstream empty_input;
+  auto* original_buf = std::cin.rdbuf(empty_input.rdbuf());
   std::atomic<bool> stop_flag{false};
-  auto engine_thread = std::thread([&]() {
-    // Simulate no input
-  });
 
-  stop_flag = true;
-  engine_thread.join();
+  engine_->run(stop_flag);
+
+  std::cin.rdbuf(original_buf);
 
   // Output should contain startup event
   std::string output = output_->str();

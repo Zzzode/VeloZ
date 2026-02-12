@@ -193,7 +193,7 @@ TEST_F(ConfigManagerTest, ConfigGroupValidate) {
   auto optional_item = ConfigItem<int>::Builder("opt", "Optional").default_value(1).build();
   auto required_item = ConfigItem<int>::Builder("req", "Required").required(true).build();
 
-  ConfigItem<int>* required_item_ptr = required_item.get(); // 保存原始指针
+  ConfigItem<int>* required_item_ptr = required_item.get(); // Save raw pointer
 
   group.add_item(std::move(optional_item));
   group.add_item(std::move(required_item));
@@ -201,7 +201,7 @@ TEST_F(ConfigManagerTest, ConfigGroupValidate) {
   EXPECT_FALSE(group.validate()); // Required item not set
   EXPECT_TRUE(group.validation_errors().size() > 0);
 
-  required_item_ptr->set(10); // 使用保存的指针
+  required_item_ptr->set(10); // Use saved pointer
   EXPECT_TRUE(group.validate());
   EXPECT_TRUE(group.validation_errors().empty());
 }

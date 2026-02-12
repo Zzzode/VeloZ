@@ -430,7 +430,7 @@ JsonBuilder& JsonBuilder::put_array(const std::string& key,
                                     std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc);
-    // create temporary JsonBuilder and directly set impl_ 成员
+    // Create temporary JsonBuilder and directly set impl_ members
     JsonBuilder nested_builder(Type::Array);
     if (nested_builder.impl_->doc) {
       yyjson_mut_doc_free(nested_builder.impl_->doc);

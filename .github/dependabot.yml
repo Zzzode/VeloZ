@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # GitHub Actions 依赖更新
+  # GitHub Actions dependency updates
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -10,7 +10,7 @@ updates:
     assignees:
       - "your-username"
 
-  # Docker 依赖更新（如果使用了 Dockerfile 中的基础镜像）
+  # Docker dependency updates (if using base images in Dockerfile)
   - package-ecosystem: "docker"
     directory: "/infra/docker"
     schedule:
@@ -20,7 +20,7 @@ updates:
     assignees:
       - "your-username"
 
-  # Python 依赖更新（应用于 apps/gateway 和 python/ 目录）
+  # Python dependency updates (for apps/gateway and python/ directories)
   - package-ecosystem: "pip"
     directory: "/apps/gateway"
     schedule:

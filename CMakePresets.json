@@ -172,6 +172,9 @@
     {
       "name": "dev",
       "configurePreset": "dev",
+      "execution": {
+        "timeout": 60
+      },
       "output": {
         "outputOnFailure": true
       }

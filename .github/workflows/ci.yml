@@ -2,16 +2,26 @@ name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
-    branches: [master]
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # 开发构建和测试
+  # Development build and tests
   dev-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmakeVersion: 3.27.7
 
       - name: Configure (dev)
         run: cmake --preset dev
@@ -25,11 +35,16 @@ jobs:
       - name: Smoke run engine
         run: timeout 3s ./build/dev/apps/engine/veloz_engine || true
 
-  # 发布构建
+  # Release build
   release-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmakeVersion: 3.27.7
 
       - name: Configure (release)
         run: cmake --preset release
@@ -40,11 +55,16 @@ jobs:
       - name: Smoke run engine (release)
         run: timeout 3s ./build/release/apps/engine/veloz_engine || true
 
-  # ASan 构建和测试（内存错误检测）
+  # ASan build and tests (memory error detection)
   asan-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmakeVersion: 3.27.7
 
       - name: Install Clang
         run: sudo apt-get update && sudo apt-get install -y clang-16
@@ -56,13 +76,16 @@ jobs:
         run: cmake --build --preset asan-all -j$(nproc)
 
       - name: Run all tests with ASan
-        run: ctest --preset dev -j$(nproc)
+        run: ctest --test-dir build/asan -j$(nproc)
 
-  # 代码格式检查
+  # Code format check
   format-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check C++ format
         run: |
@@ -71,7 +94,7 @@ jobs:
             exit 1
           }
 
-  # 文档检查
+  # Documentation check
   docs-check:
     runs-on: ubuntu-latest
     steps:
@@ -81,13 +104,13 @@ jobs:
         run: |
           if [ -d "docs" ]; then
             echo "Checking documentation..."
-            # 简单检查文档结构完整性
+            # Simple check for documentation structure integrity
             test -f "README.md" || exit 1
             test -f "CLAUDE.md" || exit 1
             test -d "docs" || exit 1
           fi
 
-  # Python 代码检查
+  # Python code check
   python-check:
     runs-on: ubuntu-latest
     steps:
@@ -96,7 +119,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
@@ -109,7 +132,17 @@ jobs:
 
       - name: Lint Python code
         run: |
-          pip install flake8
-          flake8 python/ apps/gateway/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 python/ apps/gateway/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
+          if [ -d "python" ] || [ -d "apps/gateway" ]; then
+            pip install flake8
+            targets=()
+            if [ -d "python" ]; then
+              targets+=("python")
+            fi
+            if [ -d "apps/gateway" ]; then
+              targets+=("apps/gateway")
+            fi
+            if [ ${#targets[@]} -gt 0 ]; then
+              flake8 "${targets[@]}" --count --select=E9,F63,F7,F82 --show-source --statistics
+              flake8 "${targets[@]}" --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+            fi
+          fi

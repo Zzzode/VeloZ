@@ -1,5 +1,6 @@
 #include "veloz/backtest/data_source.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -83,6 +84,10 @@ TEST_F(DataSourceTest, CSVDataSourceGetData) {
 }
 
 TEST_F(DataSourceTest, BinanceDataSourceGetData) {
+  const char* run_network_tests = std::getenv("VELOZ_RUN_NETWORK_TESTS");
+  if (!run_network_tests || std::string(run_network_tests) != "1") {
+    GTEST_SKIP();
+  }
   auto events =
       binance_data_source_->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
   EXPECT_TRUE(events.empty()); // Should be empty as not implemented yet
@@ -134,6 +139,10 @@ TEST_F(DataSourceTest, CSVDataSourceDownloadDataInvalidParams) {
 }
 
 TEST_F(DataSourceTest, BinanceDataSourceDownloadData) {
+  const char* run_network_tests = std::getenv("VELOZ_RUN_NETWORK_TESTS");
+  if (!run_network_tests || std::string(run_network_tests) != "1") {
+    GTEST_SKIP();
+  }
   EXPECT_FALSE(binance_data_source_->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline",
                                                    "1h", "test_data.csv"));
 }

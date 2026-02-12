@@ -364,7 +364,7 @@ public:
       try {
         auto j = veloz::core::JsonDocument::parse(std::string(value));
         if (j.root().is_array()) {
-          // 解析数组类型
+          // Parse array type
           if constexpr (std::is_same_v<T, std::vector<bool>>) {
             std::vector<bool> vec;
             j.root().for_each_array(
