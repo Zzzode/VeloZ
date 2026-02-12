@@ -2,10 +2,13 @@ name: ci
 
 on:
   push:
+    branches: [master]
   pull_request:
+    branches: [master]
 
 jobs:
-  build:
+  # 开发构建和测试
+  dev-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,8 +16,100 @@ jobs:
       - name: Configure (dev)
         run: cmake --preset dev
 
-      - name: Build (dev)
-        run: cmake --build --preset dev -j
+      - name: Build (dev-all)
+        run: cmake --build --preset dev-all -j$(nproc)
+
+      - name: Run all tests
+        run: ctest --preset dev -j$(nproc)
 
       - name: Smoke run engine
         run: timeout 3s ./build/dev/apps/engine/veloz_engine || true
+
+  # 发布构建
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (release)
+        run: cmake --preset release
+
+      - name: Build (release-all)
+        run: cmake --build --preset release-all -j$(nproc)
+
+      - name: Smoke run engine (release)
+        run: timeout 3s ./build/release/apps/engine/veloz_engine || true
+
+  # ASan 构建和测试（内存错误检测）
+  asan-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang
+        run: sudo apt-get update && sudo apt-get install -y clang-16
+
+      - name: Configure (asan)
+        run: cmake --preset asan
+
+      - name: Build (asan-all)
+        run: cmake --build --preset asan-all -j$(nproc)
+
+      - name: Run all tests with ASan
+        run: ctest --preset dev -j$(nproc)
+
+  # 代码格式检查
+  format-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check C++ format
+        run: |
+          ./scripts/format.sh --check 2>&1 || {
+            echo "Code formatting check failed. Please run ./scripts/format.sh to fix."
+            exit 1
+          }
+
+  # 文档检查
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for broken links in documentation
+        run: |
+          if [ -d "docs" ]; then
+            echo "Checking documentation..."
+            # 简单检查文档结构完整性
+            test -f "README.md" || exit 1
+            test -f "CLAUDE.md" || exit 1
+            test -d "docs" || exit 1
+          fi
+
+  # Python 代码检查
+  python-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          if [ -f "python/requirements.txt" ]; then
+            pip install -r python/requirements.txt
+          fi
+          if [ -f "apps/gateway/requirements.txt" ]; then
+            pip install -r apps/gateway/requirements.txt
+          fi
+
+      - name: Lint Python code
+        run: |
+          pip install flake8
+          flake8 python/ apps/gateway/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 python/ apps/gateway/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+

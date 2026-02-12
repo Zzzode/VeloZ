@@ -15,5 +15,14 @@ if [[ ${#files[@]} -eq 0 ]]; then
   exit 0
 fi
 
-clang-format -i "${files[@]}"
+# 检查是否有 --check 选项
+if [[ "$*" == *"--check"* ]]; then
+  echo "Checking code formatting..."
+  clang-format --dry-run --Werror "${files[@]}"
+  echo "Code formatting is correct"
+else
+  echo "Formatting code..."
+  clang-format -i "${files[@]}"
+  echo "Code formatting completed"
+fi
 
