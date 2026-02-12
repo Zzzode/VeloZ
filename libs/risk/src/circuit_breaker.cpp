@@ -1,4 +1,5 @@
 #include "veloz/risk/circuit_breaker.h"
+
 #include <chrono>
 
 namespace veloz::risk {
@@ -35,13 +36,13 @@ void CircuitBreaker::record_failure() {
     // Back to open immediately
     state_ = CircuitState::Open;
     success_count_ = 0;
-  } else if (state_ == CircuitState::Closed &&
-             failure_count_ >= failure_threshold_) {
+  } else if (state_ == CircuitState::Closed && failure_count_ >= failure_threshold_) {
     state_ = CircuitState::Open;
   }
 
   auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+                 std::chrono::system_clock::now().time_since_epoch())
+                 .count();
   last_failure_time_ms_ = now;
 }
 
@@ -74,10 +75,12 @@ CircuitState CircuitBreaker::state() const {
 }
 
 void CircuitBreaker::check_auto_reset() {
-  if (state_ != CircuitState::Open) return;
+  if (state_ != CircuitState::Open)
+    return;
 
   auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+                 std::chrono::system_clock::now().time_since_epoch())
+                 .count();
 
   if (now - last_failure_time_ms_ >= timeout_ms_) {
     state_ = CircuitState::HalfOpen;

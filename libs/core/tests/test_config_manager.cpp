@@ -1,11 +1,10 @@
-#include <gtest/gtest.h>
-
 #include "veloz/core/config_manager.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <gtest/gtest.h>
 #include <thread>
-#include <chrono>
 
 using namespace veloz::core;
 
@@ -15,7 +14,8 @@ protected:
     // Clean up test config files
     try {
       std::filesystem::remove_all("test_configs");
-    } catch (...) {}
+    } catch (...) {
+    }
 
     std::filesystem::create_directories("test_configs");
   }
@@ -24,7 +24,8 @@ protected:
     // Clean up test config files
     try {
       std::filesystem::remove_all("test_configs");
-    } catch (...) {}
+    } catch (...) {
+    }
   }
 };
 
@@ -33,10 +34,8 @@ protected:
 // ============================================================================
 
 TEST_F(ConfigManagerTest, ConfigItemBuilder) {
-  auto item = ConfigItem<int>::Builder("test_item", "Test item")
-      .default_value(42)
-      .required(false)
-      .build();
+  auto item =
+      ConfigItem<int>::Builder("test_item", "Test item").default_value(42).required(false).build();
 
   EXPECT_EQ(std::string(item->key()), "test_item");
   EXPECT_EQ(std::string(item->description()), "Test item");
@@ -46,9 +45,7 @@ TEST_F(ConfigManagerTest, ConfigItemBuilder) {
 }
 
 TEST_F(ConfigManagerTest, ConfigItemGetValue) {
-  auto item = ConfigItem<int>::Builder("test", "Test")
-      .default_value(100)
-      .build();
+  auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
 
   auto value = item->get();
   ASSERT_TRUE(value.has_value());
@@ -58,9 +55,7 @@ TEST_F(ConfigManagerTest, ConfigItemGetValue) {
 }
 
 TEST_F(ConfigManagerTest, ConfigItemSetValue) {
-  auto item = ConfigItem<int>::Builder("test", "Test")
-      .default_value(100)
-      .build();
+  auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
 
   EXPECT_TRUE(item->set(200));
   EXPECT_EQ(item->value(), 200);
@@ -68,8 +63,8 @@ TEST_F(ConfigManagerTest, ConfigItemSetValue) {
 
 TEST_F(ConfigManagerTest, ConfigItemValidator) {
   auto item = ConfigItem<int>::Builder("test", "Test")
-      .validator([](const int& v) { return v >= 0 && v <= 100; })
-      .build();
+                  .validator([](const int& v) { return v >= 0 && v <= 100; })
+                  .build();
 
   EXPECT_TRUE(item->set(50));
   EXPECT_EQ(item->value(), 50);
@@ -84,13 +79,13 @@ TEST_F(ConfigManagerTest, ConfigItemCallback) {
   int new_value = 0;
 
   auto item = ConfigItem<int>::Builder("test", "Test")
-      .default_value(10)
-      .on_change([&](const int& old_v, const int& new_v) {
-        ++callback_count;
-        old_value = old_v;
-        new_value = new_v;
-      })
-      .build();
+                  .default_value(10)
+                  .on_change([&](const int& old_v, const int& new_v) {
+                    ++callback_count;
+                    old_value = old_v;
+                    new_value = new_v;
+                  })
+                  .build();
 
   EXPECT_EQ(callback_count, 0);
 
@@ -101,9 +96,7 @@ TEST_F(ConfigManagerTest, ConfigItemCallback) {
 }
 
 TEST_F(ConfigManagerTest, ConfigItemReset) {
-  auto item = ConfigItem<int>::Builder("test", "Test")
-      .default_value(100)
-      .build();
+  auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
 
   item->set(200);
   EXPECT_EQ(item->value(), 200);
@@ -141,8 +134,8 @@ TEST_F(ConfigManagerTest, ConfigItemFromString) {
 
 TEST_F(ConfigManagerTest, ConfigItemArray) {
   auto array_item = ConfigItem<std::vector<int>>::Builder("array", "Array")
-      .default_value(std::vector<int>{1, 2, 3})
-      .build();
+                        .default_value(std::vector<int>{1, 2, 3})
+                        .build();
 
   auto value = array_item->get();
   ASSERT_TRUE(value.has_value());
@@ -289,8 +282,7 @@ TEST_F(ConfigManagerTest, ConfigManagerSaveToJson) {
 
   // Verify content
   std::ifstream ifs("test_configs/saved.json");
-  std::string content((std::istreambuf_iterator<char>(ifs)),
-                     std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
   EXPECT_TRUE(content.find("\"int_val\"") != std::string::npos);
   EXPECT_TRUE(content.find("\"str_val\"") != std::string::npos);
@@ -314,7 +306,8 @@ TEST_F(ConfigManagerTest, ConfigManagerNestedGroups) {
   auto* root = manager.root_group();
 
   auto db_group = std::make_unique<ConfigGroup>("database", "Database config");
-  db_group->add_item(ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
+  db_group->add_item(
+      ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
   db_group->add_item(ConfigItem<int>::Builder("port", "Port").default_value(5432).build());
 
   root->add_group(std::move(db_group));
@@ -400,22 +393,21 @@ TEST_F(ConfigManagerTest, FullConfigCycle) {
 
   // Create database config group
   auto db_group = std::make_unique<ConfigGroup>("database", "Database settings");
-  db_group->add_item(ConfigItem<std::string>::Builder("host", "Database host")
-      .default_value("localhost")
-      .build());
+  db_group->add_item(
+      ConfigItem<std::string>::Builder("host", "Database host").default_value("localhost").build());
   db_group->add_item(ConfigItem<int>::Builder("port", "Database port")
-      .default_value(5432)
-      .validator([](const int& v) { return v > 0 && v < 65536; })
-      .build());
+                         .default_value(5432)
+                         .validator([](const int& v) { return v > 0 && v < 65536; })
+                         .build());
 
   // Create server config group
   auto server_group = std::make_unique<ConfigGroup>("server", "Server settings");
-  server_group->add_item(ConfigItem<int>::Builder("port", "Server port")
-      .default_value(8080)
-      .build());
-  server_group->add_item(ConfigItem<std::vector<std::string>>::Builder("allowed_hosts", "Allowed hosts")
-      .default_value(std::vector<std::string>{"localhost", "127.0.0.1"})
-      .build());
+  server_group->add_item(
+      ConfigItem<int>::Builder("port", "Server port").default_value(8080).build());
+  server_group->add_item(
+      ConfigItem<std::vector<std::string>>::Builder("allowed_hosts", "Allowed hosts")
+          .default_value(std::vector<std::string>{"localhost", "127.0.0.1"})
+          .build());
 
   // Add groups to root
   root->add_group(std::move(db_group));

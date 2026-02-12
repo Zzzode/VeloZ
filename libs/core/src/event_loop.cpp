@@ -40,13 +40,12 @@ void EventLoop::post_with_tags(std::function<void()> task, std::vector<EventTag>
   post_with_tags(std::move(task), EventPriority::Normal, std::move(tags));
 }
 
-void EventLoop::post_with_tags(std::function<void()> task, EventPriority priority, std::vector<EventTag> tags) {
-  Task t{
-    .task = std::move(task),
-    .priority = priority,
-    .tags = std::move(tags),
-    .enqueue_time = std::chrono::steady_clock::now()
-  };
+void EventLoop::post_with_tags(std::function<void()> task, EventPriority priority,
+                               std::vector<EventTag> tags) {
+  Task t{.task = std::move(task),
+         .priority = priority,
+         .tags = std::move(tags),
+         .enqueue_time = std::chrono::steady_clock::now()};
   {
     std::scoped_lock lock(mu_);
     tasks_.push(std::move(t));
@@ -56,24 +55,23 @@ void EventLoop::post_with_tags(std::function<void()> task, EventPriority priorit
   cv_.notify_one();
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay, EventPriority priority) {
+void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+                             EventPriority priority) {
   post_delayed(std::move(task), delay, priority, {});
 }
 
 void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                            std::vector<EventTag> tags) {
+                             std::vector<EventTag> tags) {
   post_delayed(std::move(task), delay, EventPriority::Normal, std::move(tags));
 }
 
 void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                            EventPriority priority, std::vector<EventTag> tags) {
+                             EventPriority priority, std::vector<EventTag> tags) {
   auto deadline = std::chrono::steady_clock::now() + delay;
-  Task t{
-    .task = std::move(task),
-    .priority = priority,
-    .tags = std::move(tags),
-    .enqueue_time = std::chrono::steady_clock::now()
-  };
+  Task t{.task = std::move(task),
+         .priority = priority,
+         .tags = std::move(tags),
+         .enqueue_time = std::chrono::steady_clock::now()};
   {
     std::scoped_lock lock(mu_);
     delayed_tasks_.push({deadline, std::move(t)});
@@ -129,11 +127,13 @@ void EventLoop::route_task(Task& task, std::function<void()> wrapped) {
 void EventLoop::execute_task(Task& task) {
   // Track queue wait time
   auto now = std::chrono::steady_clock::now();
-  auto wait_time = std::chrono::duration_cast<std::chrono::nanoseconds>(now - task.enqueue_time).count();
+  auto wait_time =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(now - task.enqueue_time).count();
   stats_.queue_wait_time_ns += static_cast<uint64_t>(wait_time);
   uint64_t current_max = stats_.max_queue_wait_time_ns.load();
   uint64_t wait_time_u = static_cast<uint64_t>(wait_time);
-  while (wait_time_u > current_max && !stats_.max_queue_wait_time_ns.compare_exchange_weak(current_max, wait_time_u)) {
+  while (wait_time_u > current_max &&
+         !stats_.max_queue_wait_time_ns.compare_exchange_weak(current_max, wait_time_u)) {
     // Retry if another thread updated it
   }
 
@@ -155,7 +155,9 @@ void EventLoop::execute_task(Task& task) {
   auto processing_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
   stats_.processing_time_ns += static_cast<uint64_t>(processing_time);
   current_max = stats_.max_processing_time_ns.load();
-  while (static_cast<uint64_t>(processing_time) > current_max && !stats_.max_processing_time_ns.compare_exchange_weak(current_max, static_cast<uint64_t>(processing_time))) {
+  while (static_cast<uint64_t>(processing_time) > current_max &&
+         !stats_.max_processing_time_ns.compare_exchange_weak(
+             current_max, static_cast<uint64_t>(processing_time))) {
     // Retry if another thread updated it
   }
 }
@@ -195,7 +197,7 @@ void EventLoop::run() {
       } else if (!delayed_tasks_.empty()) {
         // Wait for delayed task
         cv_.wait_until(lock, delayed_tasks_.top().deadline,
-                      [&] { return stop_requested_.load() || !tasks_.empty(); });
+                       [&] { return stop_requested_.load() || !tasks_.empty(); });
         continue;
       } else if (stop_requested_.load()) {
         break;
@@ -265,22 +267,16 @@ EventLoop Statistics:
   Avg Queue Wait Time: {:.3f} ms
   Max Queue Wait Time: {:.3f} ms
 )",
-    stats_.total_events.load(),
-    stats_.total_delayed_events.load(),
-    stats_.events_processed.load(),
-    stats_.events_failed.load(),
-    stats_.events_filtered.load(),
-    stats_.events_by_priority[0].load(),
-    stats_.events_by_priority[1].load(),
-    stats_.events_by_priority[2].load(),
-    stats_.events_by_priority[3].load(),
-    stats_.processing_time_ns.load() / 1e6,
-    stats_.max_processing_time_ns.load() / 1e6,
-    stats_.events_processed.load() > 0
-      ? (stats_.queue_wait_time_ns.load() / 1e6) / stats_.events_processed.load()
-      : 0.0,
-    stats_.max_queue_wait_time_ns.load() / 1e6
-  );
+                     stats_.total_events.load(), stats_.total_delayed_events.load(),
+                     stats_.events_processed.load(), stats_.events_failed.load(),
+                     stats_.events_filtered.load(), stats_.events_by_priority[0].load(),
+                     stats_.events_by_priority[1].load(), stats_.events_by_priority[2].load(),
+                     stats_.events_by_priority[3].load(), stats_.processing_time_ns.load() / 1e6,
+                     stats_.max_processing_time_ns.load() / 1e6,
+                     stats_.events_processed.load() > 0
+                         ? (stats_.queue_wait_time_ns.load() / 1e6) / stats_.events_processed.load()
+                         : 0.0,
+                     stats_.max_queue_wait_time_ns.load() / 1e6);
 }
 
 uint64_t EventLoop::add_filter(EventFilter filter, std::optional<EventPriority> priority) {

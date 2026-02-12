@@ -1,5 +1,7 @@
 #include "veloz/risk/risk_engine.h"
+
 #include "veloz/risk/risk_metrics.h"
+
 #include <cmath>
 #include <sstream>
 
@@ -131,7 +133,8 @@ void RiskEngine::clear_risk_alerts() {
   risk_alerts_.clear();
 }
 
-void RiskEngine::add_risk_alert(RiskLevel level, const std::string& message, const std::string& symbol) {
+void RiskEngine::add_risk_alert(RiskLevel level, const std::string& message,
+                                const std::string& symbol) {
   RiskAlert alert;
   alert.level = level;
   alert.message = message;
@@ -226,7 +229,8 @@ bool RiskEngine::check_take_profit(const veloz::oms::Position& position) const {
   }
 
   double current_pnl_percentage = (position.unrealized_pnl(reference_price_) /
-                                   (std::abs(position.size()) * position.avg_price())) * 100;
+                                   (std::abs(position.size()) * position.avg_price())) *
+                                  100;
 
   if (position.side() == veloz::oms::PositionSide::Long) {
     return current_pnl_percentage < take_profit_percentage_;
@@ -253,7 +257,7 @@ void RiskEngine::reset_circuit_breaker() {
 
 bool RiskEngine::check_available_funds(const veloz::exec::PlaceOrderRequest& req) const {
   if (!req.price.has_value()) {
-    return true;  // Market orders checked elsewhere
+    return true; // Market orders checked elsewhere
   }
 
   double notional = req.qty * req.price.value();
@@ -263,7 +267,7 @@ bool RiskEngine::check_available_funds(const veloz::exec::PlaceOrderRequest& req
 
 bool RiskEngine::check_max_position(const veloz::exec::PlaceOrderRequest& req) const {
   if (max_position_size_ <= 0.0) {
-    return true;  // No limit
+    return true; // No limit
   }
 
   auto it = positions_.find(req.symbol.value);
@@ -273,7 +277,7 @@ bool RiskEngine::check_max_position(const veloz::exec::PlaceOrderRequest& req) c
 
 bool RiskEngine::check_price_deviation(const veloz::exec::PlaceOrderRequest& req) const {
   if (reference_price_ <= 0.0 || !req.price.has_value()) {
-    return true;  // No reference price or market order
+    return true; // No reference price or market order
   }
 
   double deviation = std::abs((req.price.value() - reference_price_) / reference_price_);
@@ -304,7 +308,8 @@ bool RiskEngine::check_stop_loss(const veloz::oms::Position& position) const {
   }
 
   double current_pnl_percentage = (position.unrealized_pnl(reference_price_) /
-                                   (std::abs(position.size()) * position.avg_price())) * 100;
+                                   (std::abs(position.size()) * position.avg_price())) *
+                                  100;
 
   if (position.side() == veloz::oms::PositionSide::Long) {
     return current_pnl_percentage > -stop_loss_percentage_;

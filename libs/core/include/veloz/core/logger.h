@@ -12,18 +12,18 @@
 
 #pragma once
 
-#include <cstdint>
-#include <mutex>
-#include <string>
-#include <string_view>
-#include <source_location>
-#include <format>
-#include <memory>
-#include <vector>
-#include <filesystem>
-#include <fstream>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <memory>
+#include <mutex>
+#include <source_location>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace veloz::core {
 
@@ -34,13 +34,13 @@ namespace veloz::core {
  * to Critical (most severe). The Off level can be used to disable all log output.
  */
 enum class LogLevel : std::uint8_t {
-  Trace = 0,      ///< Trace level, most detailed debug information
-  Debug = 1,      ///< Debug level, for debugging information during development
-  Info = 2,       ///< Info level, for normal runtime information
-  Warn = 3,       ///< Warning level, for potential issues or warnings
-  Error = 4,      ///< Error level, for error information
-  Critical = 5,   ///< Critical error level, for errors that prevent system from continuing
-  Off = 6,        ///< Turn off all log output
+  Trace = 0,    ///< Trace level, most detailed debug information
+  Debug = 1,    ///< Debug level, for debugging information during development
+  Info = 2,     ///< Info level, for normal runtime information
+  Warn = 3,     ///< Warning level, for potential issues or warnings
+  Error = 4,    ///< Error level, for error information
+  Critical = 5, ///< Critical error level, for errors that prevent system from continuing
+  Off = 6,      ///< Turn off all log output
 };
 
 /**
@@ -101,7 +101,9 @@ public:
       : include_function_(include_function), use_color_(use_color) {}
 
   [[nodiscard]] std::string format(const LogEntry& entry) const override;
-  [[nodiscard]] std::string_view name() const override { return "TextFormatter"; }
+  [[nodiscard]] std::string_view name() const override {
+    return "TextFormatter";
+  }
 
 private:
   bool include_function_;
@@ -124,7 +126,9 @@ public:
   explicit JsonFormatter(bool pretty = false) : pretty_(pretty) {}
 
   [[nodiscard]] std::string format(const LogEntry& entry) const override;
-  [[nodiscard]] std::string_view name() const override { return "JsonFormatter"; }
+  [[nodiscard]] std::string_view name() const override {
+    return "JsonFormatter";
+  }
 
 private:
   bool pretty_;
@@ -174,7 +178,9 @@ public:
 
   void write(const std::string& formatted, const LogEntry& entry) override;
   void flush() override;
-  [[nodiscard]] bool is_open() const override { return true; }
+  [[nodiscard]] bool is_open() const override {
+    return true;
+  }
 
 private:
   bool use_stderr_;
@@ -193,21 +199,16 @@ public:
    * @brief Rotation strategy
    */
   enum class Rotation {
-    None,      ///< No rotation
-    Size,      ///< Rotate when file exceeds size limit
-    Time,      ///< Rotate at time intervals
-    Both       ///< Use both size and time-based rotation
+    None, ///< No rotation
+    Size, ///< Rotate when file exceeds size limit
+    Time, ///< Rotate at time intervals
+    Both  ///< Use both size and time-based rotation
   };
 
   /**
    * @brief Time interval for time-based rotation
    */
-  enum class RotationInterval {
-    Hourly,
-    Daily,
-    Weekly,
-    Monthly
-  };
+  enum class RotationInterval { Hourly, Daily, Weekly, Monthly };
 
   /**
    * @brief Constructor
@@ -217,12 +218,9 @@ public:
    * @param max_files Maximum number of backup files to keep
    * @param interval Time interval for rotation (for Time rotation)
    */
-  explicit FileOutput(
-      const std::filesystem::path& file_path,
-      Rotation rotation = Rotation::Size,
-      size_t max_size = 10 * 1024 * 1024, // 10MB default
-      size_t max_files = 5,
-      RotationInterval interval = RotationInterval::Daily);
+  explicit FileOutput(const std::filesystem::path& file_path, Rotation rotation = Rotation::Size,
+                      size_t max_size = 10 * 1024 * 1024, // 10MB default
+                      size_t max_files = 5, RotationInterval interval = RotationInterval::Daily);
 
   ~FileOutput() override;
 
@@ -243,9 +241,15 @@ public:
   /**
    * @brief Get rotation settings
    */
-  [[nodiscard]] Rotation rotation() const { return rotation_; }
-  [[nodiscard]] size_t max_size() const { return max_size_; }
-  [[nodiscard]] size_t max_files() const { return max_files_; }
+  [[nodiscard]] Rotation rotation() const {
+    return rotation_;
+  }
+  [[nodiscard]] size_t max_size() const {
+    return max_size_;
+  }
+  [[nodiscard]] size_t max_files() const {
+    return max_files_;
+  }
 
 private:
   void check_rotation();
@@ -507,23 +511,23 @@ private:
  * @brief Convenience functions for logging to the global logger
  */
 inline void log_global(LogLevel level, std::string_view message,
-                      const std::source_location& location = std::source_location::current()) {
+                       const std::source_location& location = std::source_location::current()) {
   global_logger().log(level, message, location);
 }
 
 template <typename... Args>
 inline void log_global(LogLevel level, std::format_string<Args...> fmt, Args&&... args,
-                      const std::source_location& location = std::source_location::current()) {
+                       const std::source_location& location = std::source_location::current()) {
   global_logger().log(level, fmt, std::forward<Args>(args)..., location);
 }
 
 inline void trace_global(std::string_view message,
-                        const std::source_location& location = std::source_location::current()) {
+                         const std::source_location& location = std::source_location::current()) {
   global_logger().trace(message, location);
 }
 
 inline void debug_global(std::string_view message,
-                        const std::source_location& location = std::source_location::current()) {
+                         const std::source_location& location = std::source_location::current()) {
   global_logger().debug(message, location);
 }
 
@@ -533,7 +537,7 @@ inline void info_global(std::string_view message,
 }
 
 inline void warn_global(std::string_view message,
-                       const std::source_location& location = std::source_location::current()) {
+                        const std::source_location& location = std::source_location::current()) {
   global_logger().warn(message, location);
 }
 
@@ -542,44 +546,46 @@ inline void error_global(std::string_view message,
   global_logger().error(message, location);
 }
 
-inline void critical_global(std::string_view message,
-                           const std::source_location& location = std::source_location::current()) {
+inline void
+critical_global(std::string_view message,
+                const std::source_location& location = std::source_location::current()) {
   global_logger().critical(message, location);
 }
 
 template <typename... Args>
 inline void trace_global(std::format_string<Args...> fmt, Args&&... args,
-                        const std::source_location& location = std::source_location::current()) {
+                         const std::source_location& location = std::source_location::current()) {
   global_logger().trace(fmt, std::forward<Args>(args)..., location);
 }
 
 template <typename... Args>
 inline void debug_global(std::format_string<Args...> fmt, Args&&... args,
-                        const std::source_location& location = std::source_location::current()) {
+                         const std::source_location& location = std::source_location::current()) {
   global_logger().debug(fmt, std::forward<Args>(args)..., location);
 }
 
 template <typename... Args>
 inline void info_global(std::format_string<Args...> fmt, Args&&... args,
-                       const std::source_location& location = std::source_location::current()) {
+                        const std::source_location& location = std::source_location::current()) {
   global_logger().info(fmt, std::forward<Args>(args)..., location);
 }
 
 template <typename... Args>
 inline void warn_global(std::format_string<Args...> fmt, Args&&... args,
-                       const std::source_location& location = std::source_location::current()) {
+                        const std::source_location& location = std::source_location::current()) {
   global_logger().warn(fmt, std::forward<Args>(args)..., location);
 }
 
 template <typename... Args>
 inline void error_global(std::format_string<Args...> fmt, Args&&... args,
-                        const std::source_location& location = std::source_location::current()) {
+                         const std::source_location& location = std::source_location::current()) {
   global_logger().error(fmt, std::forward<Args>(args)..., location);
 }
 
 template <typename... Args>
-inline void critical_global(std::format_string<Args...> fmt, Args&&... args,
-                           const std::source_location& location = std::source_location::current()) {
+inline void
+critical_global(std::format_string<Args...> fmt, Args&&... args,
+                const std::source_location& location = std::source_location::current()) {
   global_logger().critical(fmt, std::forward<Args>(args)..., location);
 }
 

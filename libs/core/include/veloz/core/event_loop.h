@@ -1,18 +1,18 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <mutex>
-#include <queue>
-#include <chrono>
 #include <optional>
-#include <string>
-#include <vector>
-#include <unordered_set>
-#include <unordered_map>
+#include <queue>
 #include <regex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace veloz::core {
 
@@ -23,10 +23,10 @@ namespace veloz::core {
  * Higher priority events are executed before lower priority ones.
  */
 enum class EventPriority : uint8_t {
-  Low = 0,       ///< Low priority events (background tasks, cleanup)
-  Normal = 1,    ///< Normal priority events (default)
-  High = 2,      ///< High priority events (important but not critical)
-  Critical = 3   ///< Critical priority events (must execute immediately)
+  Low = 0,     ///< Low priority events (background tasks, cleanup)
+  Normal = 1,  ///< Normal priority events (default)
+  High = 2,    ///< High priority events (important but not critical)
+  Critical = 3 ///< Critical priority events (must execute immediately)
 };
 
 /**
@@ -105,8 +105,10 @@ public:
   // Priority-based task posting
   void post(std::function<void()> task, EventPriority priority);
   void post_with_tags(std::function<void()> task, std::vector<EventTag> tags);
-  void post_with_tags(std::function<void()> task, EventPriority priority, std::vector<EventTag> tags);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay, EventPriority priority);
+  void post_with_tags(std::function<void()> task, EventPriority priority,
+                      std::vector<EventTag> tags);
+  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+                    EventPriority priority);
   void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
                     std::vector<EventTag> tags);
   void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
@@ -122,8 +124,12 @@ public:
   [[nodiscard]] size_t pending_tasks_by_priority(EventPriority priority) const;
 
   // Statistics
-  [[nodiscard]] const EventStats& stats() const { return stats_; }
-  void reset_stats() { stats_.reset(); }
+  [[nodiscard]] const EventStats& stats() const {
+    return stats_;
+  }
+  void reset_stats() {
+    stats_.reset();
+  }
   [[nodiscard]] std::string stats_to_string() const;
 
   // Filtering
@@ -133,7 +139,8 @@ public:
    * @param priority Optional priority level to filter (if empty, applies to all)
    * @return Filter ID for removal
    */
-  [[nodiscard]] uint64_t add_filter(EventFilter filter, std::optional<EventPriority> priority = std::nullopt);
+  [[nodiscard]] uint64_t add_filter(EventFilter filter,
+                                    std::optional<EventPriority> priority = std::nullopt);
   void remove_filter(uint64_t filter_id);
   void clear_filters();
 

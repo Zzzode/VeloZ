@@ -1,21 +1,20 @@
 #pragma once
 
-#include <string>
-#include <map>
-#include <vector>
-#include <variant>
-#include <optional>
 #include <filesystem>
+#include <map>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <variant>
+#include <vector>
 
 namespace veloz::core {
 
 class Config final {
 public:
-  using Value = std::variant<bool, int64_t, double, std::string,
-                             std::vector<bool>, std::vector<int64_t>,
-                             std::vector<double>, std::vector<std::string>>;
+  using Value = std::variant<bool, int64_t, double, std::string, std::vector<bool>,
+                             std::vector<int64_t>, std::vector<double>, std::vector<std::string>>;
 
   Config() = default;
   explicit Config(const std::filesystem::path& file_path);
@@ -32,8 +31,7 @@ public:
   void remove(std::string_view key);
 
   // Template access methods
-  template <typename T>
-  [[nodiscard]] std::optional<T> get(std::string_view key) const {
+  template <typename T> [[nodiscard]] std::optional<T> get(std::string_view key) const {
     auto it = config_.find(std::string(key));
     if (it == config_.end()) {
       return std::nullopt;
@@ -62,8 +60,7 @@ public:
     return std::nullopt;
   }
 
-  template <typename T>
-  T get_or(std::string_view key, T default_value) const {
+  template <typename T> T get_or(std::string_view key, T default_value) const {
     auto opt = get<T>(key);
     return opt.value_or(std::move(default_value));
   }
@@ -79,10 +76,14 @@ public:
   [[nodiscard]] std::vector<std::string> keys() const;
 
   // Check if empty
-  [[nodiscard]] bool empty() const { return config_.empty(); }
+  [[nodiscard]] bool empty() const {
+    return config_.empty();
+  }
 
   // Get configuration size
-  [[nodiscard]] size_t size() const { return config_.size(); }
+  [[nodiscard]] size_t size() const {
+    return config_.size();
+  }
 
 private:
   std::map<std::string, Value> config_;

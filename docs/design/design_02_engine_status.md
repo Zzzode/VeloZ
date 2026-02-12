@@ -2,149 +2,66 @@
 
 ## 3.1 Implementation Status (Current - Feb 2026)
 
-The VeloZ engine has achieved significant progress from initial skeleton. Core infrastructure is now production-ready with comprehensive logging, JSON processing, memory management, and configuration systems. Current implementation focuses on a minimal, inspectable event loop (market → order → fill) with full OMS/account aggregation and risk management.
+The engine is a minimal stdio-driven runtime with a small in-process state machine and NDJSON
+event emission. The service mode exists as a placeholder loop. Integration is done through the
+Python gateway that spawns the engine in stdio mode.
 
 ### 3.1.1 Project Status Summary
 
-**Current Phase:** Core Infrastructure Complete, Engine Functionality in Progress
+**Current Phase:** Minimal end-to-end skeleton (engine + gateway + UI)
 
-**Completed Infrastructure (Feb 2026):**
-- ✅ Event loop with priority scheduling and filtering
-- ✅ Advanced logging system with multiple formatters and outputs
-- ✅ High-performance JSON processing with type-safe API
-- ✅ Memory pool management with statistics tracking
-- ✅ Hierarchical configuration management with validation
+**Implemented (Current):**
+- ✅ Stdio command parsing for ORDER/CANCEL/QUERY
+- ✅ Stdio event output (`engine_started`, `order_received`, `cancel_received`, `query_received`)
+- ✅ EngineState with balances, order reservation, pending fills, and order state updates
+- ✅ Risk checks via `libs/risk` wired into order placement
+- ✅ NDJSON event helpers for market/order/fill/account/error
+- ✅ Gateway stdio bridge + REST + SSE stream
 
-**Engine Functionality (In Progress):**
-- ⚠️ Order state machine implementation (OrderStore - partially complete)
-- ⚠️ Account balance management (OMS - partial implementation)
-- ⚠️ Backtest execution engine (basic implementation, needs enhancement)
+**In Progress / Partial:**
+- ⚠️ Service mode runtime (placeholder loop + heartbeat)
+- ⚠️ Exchange integrations (Binance REST optional; WS scaffolding only)
+- ⚠️ Persistence and recovery (no WAL/replay yet)
+- ⚠️ Strategy runtime integration
 
-**Recent Sprint 2 Updates (Feb 2026):**
-- ✅ Grid search optimization implementation
-- ✅ Trade records in backtest reports
-- ✅ Enhanced command parser (ORDER/CANCEL/QUERY)
-- ✅ StdioEngine event loop implementation
-- ✅ Binance REST adapter (REST API complete, WebSocket pending)
-- **Deterministic state machines:** Order/position/account are driven by a single source of truth (EngineState), with full event replay capability.
-- **Separation of fast-path vs slow-path:** Market/order handling uses atomic operations and minimal locks; reconciliation and reporting run off the fast path.
-- **Observability by default:** Every critical state transition has timestamped events for audit and replay.
-- **Backpressure & drop policies:** UI subscriptions and low-priority streams are isolated to avoid impacting trading or risk checks.
-- **Idempotency everywhere:** Every external interaction and internal event application is safely repeatable.
+### 3.1.2 Runtime Behavior (Current)
 
-### 3.1.3 Engine Implementation Breakdown (Completed)
+- Engine is launched with `--stdio`
+- Commands arrive via stdin; events are emitted to stdout as NDJSON
+- Orders are accepted/rejected by `EngineState` and risk checks
+- Pending orders simulate fills using due timestamps
+- Order/account snapshots are derived from in-memory state
 
-#### apps/engine (100% complete)
-- **Process lifecycle:** Signal handling, clean shutdown, and health checks
-- **Engine application shell:** Configuration, mode selection (stdio vs service), and lifecycle orchestration
-- **Stdio simulation runtime:** Command parsing (ORDER/CANCEL), market simulation, and fill simulation
-- **State aggregation:** Order state + account state in-memory with periodic snapshot/export
-- **Event emission:** Structured market/order/fill/account events in JSON format
+### 3.1.3 Engine Implementation Breakdown (Current)
 
-#### libs/core (100% complete)
-- **Time utilities:** Monotonic clock wrappers and time conversion functions
-- **Logging and structured trace:** Scaffolding for structured logging and tracing
+#### apps/engine
+- **main.cpp:** Argument parsing, enables stdio mode
+- **engine_app.cpp:** stdio vs service mode, signal handling
+- **stdio_engine.cpp:** Parses commands and emits command events
+- **command_parser.cpp:** ORDER/CANCEL/QUERY parsing
+- **engine_state.cpp:** Order acceptance, cancellations, pending fills, balances
+- **event_emitter.cpp:** NDJSON emission helpers for market/order/fill/account/error
 
-#### libs/market (100% complete)
-- **Market event normalization:** Complete MarketEvent types with typed data structures (TradeData, BookData, KlineData)
-- **Event types supported:** Trade, BookTop, BookDelta, Kline, Ticker, FundingRate, MarkPrice
-- **Payload handling:** Variant-based typed access + raw JSON payload for backward compatibility
-- **Latency measurements:** Built-in exchange-to-publish and receive-to-publish latency tracking
+#### libs/core
+- Event loop, logger, time utilities, config manager, JSON wrapper, metrics, memory utilities, error
+  types
 
-#### libs/exec (100% complete)
-- **Execution interface:** OrderSide, OrderType, and PlaceOrderRequest/Response models
-- **Idempotent order semantics:** Client order ID validation and duplicate detection
-- **Order routing:** Execution interface and adapter boundary
+#### libs/oms / libs/risk / libs/exec / libs/market
+- **OMS:** Order records and positions (basic)
+- **Risk:** Risk engine and circuit breaker (basic checks)
+- **Exec:** Order request/response models, client order IDs, adapter scaffolding
+- **Market:** Market event types, order book scaffolding, subscription manager, WebSocket scaffold
 
-#### libs/oms (100% complete)
-- **Order state machine:** Complete OrderStore with OrderRecord and OrderState management
-- **Position and account aggregation:** Full position tracking and account balance management
-- **Reconciliation hooks:** Order state export and snapshot capabilities
+### 3.1.4 Engine ↔ Gateway Integration
 
-#### libs/risk (100% complete)
-- **Pre-trade checks:** Funds/limits/price protection validation
-- **Post-trade validation:** Position checks and circuit breakers
-- **Risk engine configuration:**
-  - Account balance limits
-  - Max position size and leverage
-  - Price deviation checks
-  - Order rate and size limits
-  - Stop loss configuration
-  - Circuit breaker functionality
+- Gateway starts the engine with `--stdio` and sends ORDER/CANCEL commands
+- Engine emits NDJSON events consumed by the gateway and exposed over SSE
+- REST endpoints and protocol details are documented in `docs/build_and_run.md` and
+  `docs/api/engine_protocol.md`
 
-### 3.1.4 Engine Framework (Complete Implementation)
+### 3.1.5 Gaps vs Design
 
-#### apps/engine/src/main.cpp
-- Argument parsing and process bootstrapping (supports --stdio flag)
-
-#### apps/engine/src/engine_app.cpp
-- Mode switch (stdio vs service) and lifecycle management
-
-#### apps/engine/src/stdio_engine.cpp
-- Stdio simulation loop with market and fill threads
-- Real-time price simulation with drift and noise
-- Order execution simulation with due fill timestamps
-- Event-driven architecture with concurrent threads
-
-#### apps/engine/src/engine_state.cpp
-- Order state aggregation and pending order management
-- Account balance tracking with free/locked funds
-- Risk engine integration for pre-trade checks
-- Order placement, cancellation, and fill execution
-- Position and balance snapshot capabilities
-
-#### apps/engine/src/command_parser.cpp
-- Text command parsing for ORDER/CANCEL operations
-- OrderRequest and CancelRequest data structures
-
-#### apps/engine/src/event_emitter.cpp
-- JSON event emission (market, order_update, fill, order_state, account, error)
-- Thread-safe event publishing with proper serialization
-- Event types include:
-  - Market price updates
-  - Order status changes (ACCEPTED, REJECTED, CANCELLED, FILLED)
-  - Fill executions with price and quantity
-  - Order state snapshots
-  - Account balance updates
-  - Error messages
-
-### 3.1.5 Completed Features vs Original Roadmap
-
-**All Phase 1 and Core Features Completed:**
-- ✅ Market data layer foundation (all tasks completed)
-- ✅ Risk engine implementation (all tasks completed)
-- ✅ OMS/order management (all tasks completed)
-- ✅ Execution interface (all tasks completed)
-- ✅ Engine state management (all tasks completed)
-- ✅ Event emission system (all tasks completed)
-
-**Current Capabilities Beyond Initial Plan:**
-- Complete risk engine with comprehensive pre/post-trade checks
-- Full order state machine with history tracking
-- Real-time market simulation with price drift and noise
-- Account balance management with free/locked funds tracking
-- Python gateway integration via stdio communication
-- Static UI for real-time monitoring
-
-### 3.1.6 Future Enhancement Roadmap
-
-- **Phase 2 - API and Integration:**
-  - Replace stdio command parsing with gRPC or REST API
-  - Add WebSocket support for real-time market data
-  - Integrate with real cryptocurrency exchanges (Binance, Coinbase, etc.)
-  - Implement FIX protocol adapter
-
-- **Phase 3 - Performance and Scalability:**
-  - Introduce internal event bus with SPSC/MPSC ring buffers
-  - Optimize for high-frequency trading (HFT) with sub-microsecond latency
-  - Add deterministic simulator with pluggable matching models
-
-- **Phase 4 - Risk and Compliance:**
-  - Implement full order journal and recovery replay (WAL + replay)
-  - Add account reconciliation loop with REST snapshot + WS delta
-  - Implement advanced risk controls (value-at-risk, stress testing)
-
-- **Phase 5 - Strategy and Backtesting:**
-  - Add strategy runtime with backtesting capabilities
-  - Implement algorithmic trading strategies (MA, RSI, etc.)
-  - Add analytics and reporting dashboard
+- Service mode networking stack is not implemented
+- WebSocket market ingestion and order book rebuild are pending
+- Persistence (order WAL + replay) is not implemented
+- Strategy runtime/SDK is not integrated into the engine

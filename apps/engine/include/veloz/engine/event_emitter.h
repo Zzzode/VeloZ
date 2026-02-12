@@ -21,10 +21,9 @@ public:
   void emit_fill(std::string_view client_order_id, std::string_view symbol, double qty,
                  double price, std::int64_t ts_ns);
   void emit_order_update(std::string_view client_order_id, std::string_view status,
-                         std::string_view symbol, std::string_view side,
-                         std::optional<double> qty, std::optional<double> price,
-                         std::string_view venue_order_id, std::string_view reason,
-                         std::int64_t ts_ns);
+                         std::string_view symbol, std::string_view side, std::optional<double> qty,
+                         std::optional<double> price, std::string_view venue_order_id,
+                         std::string_view reason, std::int64_t ts_ns);
   void emit_order_state(const veloz::oms::OrderState& state);
   void emit_account(std::int64_t ts_ns, const std::vector<Balance>& balances);
   void emit_error(std::string_view message, std::int64_t ts_ns);
@@ -36,4 +35,4 @@ private:
   void emit_line(std::string_view json_line);
 };
 
-}
+} // namespace veloz::engine

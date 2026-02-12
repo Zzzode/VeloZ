@@ -13,7 +13,7 @@ add_executable(test_command_parser
 
 target_link_libraries(test_command_parser
     PRIVATE
-    veloz_engine
+    veloz_engine_lib
     ${GTEST_LIBRARIES}
 )
 
@@ -23,7 +23,7 @@ add_executable(test_stdio_engine
 
 target_link_libraries(test_stdio_engine
     PRIVATE
-    veloz_engine
+    veloz_engine_lib
     ${GTEST_LIBRARIES}
 )
 

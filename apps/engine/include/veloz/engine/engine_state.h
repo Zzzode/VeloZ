@@ -52,12 +52,11 @@ public:
 
   [[nodiscard]] OrderDecision place_order(const veloz::exec::PlaceOrderRequest& request,
                                           std::int64_t ts_ns);
-  [[nodiscard]] CancelDecision cancel_order(std::string_view client_order_id,
-                                            std::int64_t ts_ns);
+  [[nodiscard]] CancelDecision cancel_order(std::string_view client_order_id, std::int64_t ts_ns);
   void apply_fill(const PendingOrder& po, double fill_price, std::int64_t ts_ns);
   [[nodiscard]] std::vector<PendingOrder> collect_due_fills(std::int64_t now_ns);
-  [[nodiscard]] std::optional<veloz::oms::OrderState> get_order_state(
-      std::string_view client_order_id) const;
+  [[nodiscard]] std::optional<veloz::oms::OrderState>
+  get_order_state(std::string_view client_order_id) const;
 
 private:
   veloz::risk::RiskEngine risk_engine_;
@@ -75,4 +74,4 @@ private:
   void release_on_cancel(const PendingOrder& po);
 };
 
-}
+} // namespace veloz::engine

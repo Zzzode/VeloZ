@@ -43,8 +43,8 @@ private:
   std::int64_t last_failure_time_ms_{0};
 
   std::size_t failure_threshold_{5};
-  std::int64_t timeout_ms_{60000};  // 1 minute default
-  std::size_t success_threshold_{2};  // Need 2 successes in half-open to close
+  std::int64_t timeout_ms_{60000};   // 1 minute default
+  std::size_t success_threshold_{2}; // Need 2 successes in half-open to close
 };
 
 } // namespace veloz::risk

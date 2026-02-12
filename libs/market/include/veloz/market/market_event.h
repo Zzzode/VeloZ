@@ -29,12 +29,12 @@ namespace veloz::market {
  * order book data, candlestick data, ticker data, etc.
  */
 enum class MarketEventType : std::uint8_t {
-  Unknown = 0,    ///< Unknown event type
-  Trade = 1,      ///< Trade data event
-  BookTop = 2,    ///< Order book top data event
-  BookDelta = 3,  ///< Order book delta data event
-  Kline = 4,      ///< Candlestick data event
-  Ticker = 5,     ///< Ticker data event
+  Unknown = 0,     ///< Unknown event type
+  Trade = 1,       ///< Trade data event
+  BookTop = 2,     ///< Order book top data event
+  BookDelta = 3,   ///< Order book delta data event
+  Kline = 4,       ///< Candlestick data event
+  Ticker = 5,      ///< Ticker data event
   FundingRate = 6, ///< Funding rate event
   MarkPrice = 7,   ///< Mark price event
 };
@@ -45,12 +45,12 @@ enum class MarketEventType : std::uint8_t {
  * Contains detailed information about a single trade, such as price, quantity, trade ID, etc.
  */
 struct TradeData {
-  double price{0.0};              ///< Trade price
-  double qty{0.0};                ///< Trade quantity
-  bool is_buyer_maker{false};     ///< Whether buyer is maker
-  std::int64_t trade_id{0};       ///< Trade ID
+  double price{0.0};          ///< Trade price
+  double qty{0.0};            ///< Trade quantity
+  bool is_buyer_maker{false}; ///< Whether buyer is maker
+  std::int64_t trade_id{0};   ///< Trade ID
 
-  auto operator<=>(const TradeData&) const = default;  // C++20 spaceship
+  auto operator<=>(const TradeData&) const = default; // C++20 spaceship
 };
 
 /**
@@ -59,8 +59,8 @@ struct TradeData {
  * Contains price and quantity information for a single level in the order book.
  */
 struct BookLevel {
-  double price{0.0};              ///< Level price
-  double qty{0.0};                ///< Level quantity
+  double price{0.0}; ///< Level price
+  double qty{0.0};   ///< Level quantity
 
   auto operator<=>(const BookLevel&) const = default;
 };
@@ -71,9 +71,9 @@ struct BookLevel {
  * Contains complete or incremental order book data, including bid and ask levels.
  */
 struct BookData {
-  std::vector<BookLevel> bids;    ///< Bid levels list
-  std::vector<BookLevel> asks;    ///< Ask levels list
-  std::int64_t sequence{0};       ///< Order book sequence number
+  std::vector<BookLevel> bids; ///< Bid levels list
+  std::vector<BookLevel> asks; ///< Ask levels list
+  std::int64_t sequence{0};    ///< Order book sequence number
 
   auto operator<=>(const BookData&) const = default;
 };
@@ -81,16 +81,17 @@ struct BookData {
 /**
  * @brief Candlestick data structure
  *
- * Contains detailed information about a single candlestick, such as open, close, high, low prices, etc.
+ * Contains detailed information about a single candlestick, such as open, close, high, low prices,
+ * etc.
  */
 struct KlineData {
-  double open{0.0};               ///< Open price
-  double high{0.0};               ///< High price
-  double low{0.0};                ///< Low price
-  double close{0.0};              ///< Close price
-  double volume{0.0};             ///< Volume
-  std::int64_t start_time{0};     ///< Candlestick start time
-  std::int64_t close_time{0};     ///< Candlestick close time
+  double open{0.0};           ///< Open price
+  double high{0.0};           ///< High price
+  double low{0.0};            ///< Low price
+  double close{0.0};          ///< Close price
+  double volume{0.0};         ///< Volume
+  std::int64_t start_time{0}; ///< Candlestick start time
+  std::int64_t close_time{0}; ///< Candlestick close time
 
   auto operator<=>(const KlineData&) const = default;
 };
@@ -102,20 +103,20 @@ struct KlineData {
  * timestamps, event data, etc.
  */
 struct MarketEvent final {
-  MarketEventType type{MarketEventType::Unknown};  ///< Event type
-  veloz::common::Venue venue{veloz::common::Venue::Unknown};  ///< Trading venue
-  veloz::common::MarketKind market{veloz::common::MarketKind::Unknown};  ///< Market type
-  veloz::common::SymbolId symbol{};  ///< Trading symbol ID
+  MarketEventType type{MarketEventType::Unknown};                       ///< Event type
+  veloz::common::Venue venue{veloz::common::Venue::Unknown};            ///< Trading venue
+  veloz::common::MarketKind market{veloz::common::MarketKind::Unknown}; ///< Market type
+  veloz::common::SymbolId symbol{};                                     ///< Trading symbol ID
 
-  std::int64_t ts_exchange_ns{0};  ///< Exchange timestamp (nanoseconds)
-  std::int64_t ts_recv_ns{0};      ///< Receive timestamp (nanoseconds)
-  std::int64_t ts_pub_ns{0};       ///< Publish timestamp (nanoseconds)
+  std::int64_t ts_exchange_ns{0}; ///< Exchange timestamp (nanoseconds)
+  std::int64_t ts_recv_ns{0};     ///< Receive timestamp (nanoseconds)
+  std::int64_t ts_pub_ns{0};      ///< Publish timestamp (nanoseconds)
 
   // Variant for typed access (optional, can parse from payload)
-  std::variant<std::monostate, TradeData, BookData, KlineData> data;  ///< Event data
+  std::variant<std::monostate, TradeData, BookData, KlineData> data; ///< Event data
 
   // Raw JSON payload for backward compatibility
-  std::string payload;  ///< Raw JSON payload
+  std::string payload; ///< Raw JSON payload
 
   // Helper: latency from exchange to publish
   /**
@@ -123,8 +124,10 @@ struct MarketEvent final {
    * @return Latency time (nanoseconds)
    */
   [[nodiscard]] std::int64_t exchange_to_pub_ns() const {
-    if (ts_pub_ns == 0 || ts_exchange_ns == 0) return 0;
-    if (ts_pub_ns < ts_exchange_ns) return 0;  // Clock skew protection
+    if (ts_pub_ns == 0 || ts_exchange_ns == 0)
+      return 0;
+    if (ts_pub_ns < ts_exchange_ns)
+      return 0; // Clock skew protection
     return ts_pub_ns - ts_exchange_ns;
   }
 
@@ -134,8 +137,10 @@ struct MarketEvent final {
    * @return Latency time (nanoseconds)
    */
   [[nodiscard]] std::int64_t recv_to_pub_ns() const {
-    if (ts_pub_ns == 0 || ts_recv_ns == 0) return 0;
-    if (ts_pub_ns < ts_recv_ns) return 0;  // Clock skew protection
+    if (ts_pub_ns == 0 || ts_recv_ns == 0)
+      return 0;
+    if (ts_pub_ns < ts_recv_ns)
+      return 0; // Clock skew protection
     return ts_pub_ns - ts_recv_ns;
   }
 };

@@ -14,19 +14,20 @@
 
 #pragma once
 
-#include <string>
-#include <functional>
-#include <memory>
-#include <vector>
-#include <unordered_map>
-#include <variant>
-#include <optional>
-#include <mutex>
+#include "veloz/core/json.h"
+
 #include <atomic>
 #include <filesystem>
-#include <stdexcept>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <shared_mutex>
-#include "veloz/core/json.h"
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <variant>
+#include <vector>
 
 namespace veloz::core {
 
@@ -59,26 +60,16 @@ enum class ConfigItemType {
  *
  * Variant type that can hold any supported configuration value.
  */
-using ConfigValue = std::variant<
-  bool,
-  int,
-  int64_t,
-  double,
-  std::string,
-  std::vector<bool>,
-  std::vector<int>,
-  std::vector<int64_t>,
-  std::vector<double>,
-  std::vector<std::string>
->;
+using ConfigValue =
+    std::variant<bool, int, int64_t, double, std::string, std::vector<bool>, std::vector<int>,
+                 std::vector<int64_t>, std::vector<double>, std::vector<std::string>>;
 
 /**
  * @brief Validation function signature
  *
  * Used to validate configuration values before they are set.
  */
-template <typename T>
-using ConfigValidator = std::function<bool(const T&)>;
+template <typename T> using ConfigValidator = std::function<bool(const T&)>;
 
 /**
  * @brief Change callback function signature
@@ -156,8 +147,7 @@ public:
  *
  * @tparam T The type of the configuration value
  */
-template <typename T>
-class ConfigItem : public ConfigItemBase {
+template <typename T> class ConfigItem : public ConfigItemBase {
 public:
   /**
    * @brief Builder for ConfigItem
@@ -204,8 +194,8 @@ public:
      * @brief Build the ConfigItem
      */
     std::unique_ptr<ConfigItem<T>> build() {
-      auto item = std::make_unique<ConfigItem<T>>(
-          std::move(key_), std::move(description_), required_, has_default_);
+      auto item = std::make_unique<ConfigItem<T>>(std::move(key_), std::move(description_),
+                                                  required_, has_default_);
 
       if (has_default_) {
         item->default_value_ = std::move(default_);
@@ -232,20 +222,28 @@ public:
    * @brief Constructor (use Builder instead)
    */
   ConfigItem(std::string key, std::string description, bool required, bool has_default)
-      : key_(std::move(key)),
-        description_(std::move(description)),
-        required_(required),
+      : key_(std::move(key)), description_(std::move(description)), required_(required),
         has_default_(has_default) {
     is_set_.store(has_default);
   }
 
   // Getters
-  [[nodiscard]] std::string_view key() const noexcept override { return key_; }
-  [[nodiscard]] std::string_view description() const noexcept override { return description_; }
+  [[nodiscard]] std::string_view key() const noexcept override {
+    return key_;
+  }
+  [[nodiscard]] std::string_view description() const noexcept override {
+    return description_;
+  }
   [[nodiscard]] ConfigItemType type() const noexcept override;
-  [[nodiscard]] bool is_required() const noexcept override { return required_; }
-  [[nodiscard]] bool is_set() const noexcept override { return is_set_; }
-  [[nodiscard]] bool has_default() const noexcept override { return has_default_; }
+  [[nodiscard]] bool is_required() const noexcept override {
+    return required_;
+  }
+  [[nodiscard]] bool is_set() const noexcept override {
+    return is_set_;
+  }
+  [[nodiscard]] bool has_default() const noexcept override {
+    return has_default_;
+  }
 
   /**
    * @brief Get the current value
@@ -319,11 +317,12 @@ public:
     } else if constexpr (std::is_same_v<T, std::string>) {
       return is_set_ ? "\"" + value_ + "\"" : "not set";
     } else if constexpr (std::is_same_v<T, std::vector<bool>> ||
-                       std::is_same_v<T, std::vector<int>> ||
-                       std::is_same_v<T, std::vector<int64_t>> ||
-                       std::is_same_v<T, std::vector<double>> ||
-                       std::is_same_v<T, std::vector<std::string>>) {
-      if (!is_set_) return "not set";
+                         std::is_same_v<T, std::vector<int>> ||
+                         std::is_same_v<T, std::vector<int64_t>> ||
+                         std::is_same_v<T, std::vector<double>> ||
+                         std::is_same_v<T, std::vector<std::string>>) {
+      if (!is_set_)
+        return "not set";
       return array_to_string(value_);
     } else {
       return is_set_ ? std::to_string(value_) : "not set";
@@ -332,31 +331,44 @@ public:
 
   bool from_string(std::string_view value) override {
     if constexpr (std::is_same_v<T, bool>) {
-      if (value == "true" || value == "1") return set(true);
-      if (value == "false" || value == "0") return set(false);
+      if (value == "true" || value == "1")
+        return set(true);
+      if (value == "false" || value == "0")
+        return set(false);
       return false;
     } else if constexpr (std::is_same_v<T, int>) {
-      try { return set(std::stoi(std::string(value))); } catch (...) { return false; }
+      try {
+        return set(std::stoi(std::string(value)));
+      } catch (...) {
+        return false;
+      }
     } else if constexpr (std::is_same_v<T, int64_t>) {
-      try { return set(std::stoll(std::string(value))); } catch (...) { return false; }
+      try {
+        return set(std::stoll(std::string(value)));
+      } catch (...) {
+        return false;
+      }
     } else if constexpr (std::is_same_v<T, double>) {
-      try { return set(std::stod(std::string(value))); } catch (...) { return false; }
+      try {
+        return set(std::stod(std::string(value)));
+      } catch (...) {
+        return false;
+      }
     } else if constexpr (std::is_same_v<T, std::string>) {
       return set(std::string(value));
     } else if constexpr (std::is_same_v<T, std::vector<bool>> ||
-                       std::is_same_v<T, std::vector<int>> ||
-                       std::is_same_v<T, std::vector<int64_t>> ||
-                       std::is_same_v<T, std::vector<double>> ||
-                       std::is_same_v<T, std::vector<std::string>>) {
+                         std::is_same_v<T, std::vector<int>> ||
+                         std::is_same_v<T, std::vector<int64_t>> ||
+                         std::is_same_v<T, std::vector<double>> ||
+                         std::is_same_v<T, std::vector<std::string>>) {
       try {
         auto j = veloz::core::JsonDocument::parse(std::string(value));
         if (j.root().is_array()) {
           // 解析数组类型
           if constexpr (std::is_same_v<T, std::vector<bool>>) {
             std::vector<bool> vec;
-            j.root().for_each_array([&vec](const veloz::core::JsonValue& val) {
-              vec.push_back(val.get_bool());
-            });
+            j.root().for_each_array(
+                [&vec](const veloz::core::JsonValue& val) { vec.push_back(val.get_bool()); });
             return set(vec);
           } else if constexpr (std::is_same_v<T, std::vector<int>>) {
             std::vector<int> vec;
@@ -366,21 +378,18 @@ public:
             return set(vec);
           } else if constexpr (std::is_same_v<T, std::vector<int64_t>>) {
             std::vector<int64_t> vec;
-            j.root().for_each_array([&vec](const veloz::core::JsonValue& val) {
-              vec.push_back(val.get_int());
-            });
+            j.root().for_each_array(
+                [&vec](const veloz::core::JsonValue& val) { vec.push_back(val.get_int()); });
             return set(vec);
           } else if constexpr (std::is_same_v<T, std::vector<double>>) {
             std::vector<double> vec;
-            j.root().for_each_array([&vec](const veloz::core::JsonValue& val) {
-              vec.push_back(val.get_double());
-            });
+            j.root().for_each_array(
+                [&vec](const veloz::core::JsonValue& val) { vec.push_back(val.get_double()); });
             return set(vec);
           } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
             std::vector<std::string> vec;
-            j.root().for_each_array([&vec](const veloz::core::JsonValue& val) {
-              vec.push_back(val.get_string());
-            });
+            j.root().for_each_array(
+                [&vec](const veloz::core::JsonValue& val) { vec.push_back(val.get_string()); });
             return set(vec);
           }
           return false;
@@ -410,21 +419,7 @@ public:
     }
 
     std::lock_guard<std::mutex> lock(mu_);
-    veloz::core::JsonBuilder builder = veloz::core::JsonBuilder::object();
-    builder.put("value", value_);
-    auto doc = veloz::core::JsonDocument::parse(builder.build());
-    auto root = doc.root();
-
-    // 根据类型获取值
-    if constexpr (std::is_same_v<T, bool>) {
-      return root["value"].get_bool() ? "true" : "false";
-    } else if constexpr (std::is_integral_v<T>) {
-      return std::to_string(root["value"].get_int());
-    } else if constexpr (std::is_floating_point_v<T>) {
-      return std::to_string(root["value"].get_double());
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      return "\"" + root["value"].get_string() + "\"";
-    } else if constexpr (std::is_same_v<T, std::vector<bool>>) {
+    if constexpr (std::is_same_v<T, std::vector<bool>>) {
       veloz::core::JsonBuilder arr_builder = veloz::core::JsonBuilder::array();
       for (bool item : value_) {
         arr_builder.add(item);
@@ -454,14 +449,28 @@ public:
         arr_builder.add(item);
       }
       return arr_builder.build();
+    } else {
+      veloz::core::JsonBuilder builder = veloz::core::JsonBuilder::object();
+      builder.put("value", value_);
+      auto doc = veloz::core::JsonDocument::parse(builder.build());
+      auto root = doc.root();
+
+      if constexpr (std::is_same_v<T, bool>) {
+        return root["value"].get_bool() ? "true" : "false";
+      } else if constexpr (std::is_integral_v<T>) {
+        return std::to_string(root["value"].get_int());
+      } else if constexpr (std::is_floating_point_v<T>) {
+        return std::to_string(root["value"].get_double());
+      } else if constexpr (std::is_same_v<T, std::string>) {
+        return "\"" + root["value"].get_string() + "\"";
+      }
     }
 
     return "null";
   }
 
 private:
-  template <typename U>
-  bool set_locked(U&& value) {
+  template <typename U> bool set_locked(U&& value) {
     if (validator_ && !validator_(value)) {
       return false;
     }
@@ -485,14 +494,14 @@ private:
     std::string s = "[";
     for (size_t i = 0; i < v.size(); ++i) {
       s += v[i] ? "true" : "false";
-      if (i < v.size() - 1) s += ", ";
+      if (i < v.size() - 1)
+        s += ", ";
     }
     s += "]";
     return s;
   }
 
-  template <typename V>
-  [[nodiscard]] static std::string array_to_string(const std::vector<V>& v) {
+  template <typename V> [[nodiscard]] static std::string array_to_string(const std::vector<V>& v) {
     std::string s = "[";
     for (size_t i = 0; i < v.size(); ++i) {
       if constexpr (std::is_same_v<V, std::string>) {
@@ -500,7 +509,8 @@ private:
       } else {
         s += std::to_string(v[i]);
       }
-      if (i < v.size() - 1) s += ", ";
+      if (i < v.size() - 1)
+        s += ", ";
     }
     s += "]";
     return s;
@@ -521,61 +531,49 @@ private:
 /**
  * @brief Type trait to map types to ConfigItemType
  */
-template <typename T>
-struct ConfigTypeTraits;
+template <typename T> struct ConfigTypeTraits;
 
-template <>
-struct ConfigTypeTraits<bool> {
+template <> struct ConfigTypeTraits<bool> {
   static constexpr ConfigItemType type = ConfigItemType::Bool;
 };
 
-template <>
-struct ConfigTypeTraits<int> {
+template <> struct ConfigTypeTraits<int> {
   static constexpr ConfigItemType type = ConfigItemType::Int;
 };
 
-template <>
-struct ConfigTypeTraits<int64_t> {
+template <> struct ConfigTypeTraits<int64_t> {
   static constexpr ConfigItemType type = ConfigItemType::Int64;
 };
 
-template <>
-struct ConfigTypeTraits<double> {
+template <> struct ConfigTypeTraits<double> {
   static constexpr ConfigItemType type = ConfigItemType::Double;
 };
 
-template <>
-struct ConfigTypeTraits<std::string> {
+template <> struct ConfigTypeTraits<std::string> {
   static constexpr ConfigItemType type = ConfigItemType::String;
 };
 
-template <>
-struct ConfigTypeTraits<std::vector<bool>> {
+template <> struct ConfigTypeTraits<std::vector<bool>> {
   static constexpr ConfigItemType type = ConfigItemType::BoolArray;
 };
 
-template <>
-struct ConfigTypeTraits<std::vector<int>> {
+template <> struct ConfigTypeTraits<std::vector<int>> {
   static constexpr ConfigItemType type = ConfigItemType::IntArray;
 };
 
-template <>
-struct ConfigTypeTraits<std::vector<int64_t>> {
+template <> struct ConfigTypeTraits<std::vector<int64_t>> {
   static constexpr ConfigItemType type = ConfigItemType::Int64Array;
 };
 
-template <>
-struct ConfigTypeTraits<std::vector<double>> {
+template <> struct ConfigTypeTraits<std::vector<double>> {
   static constexpr ConfigItemType type = ConfigItemType::DoubleArray;
 };
 
-template <>
-struct ConfigTypeTraits<std::vector<std::string>> {
+template <> struct ConfigTypeTraits<std::vector<std::string>> {
   static constexpr ConfigItemType type = ConfigItemType::StringArray;
 };
 
-template <typename T>
-ConfigItemType ConfigItem<T>::type() const noexcept {
+template <typename T> ConfigItemType ConfigItem<T>::type() const noexcept {
   return ConfigTypeTraits<T>::type;
 }
 
@@ -614,8 +612,7 @@ public:
    * @tparam T Expected type
    * @param key Item key
    */
-  template <typename T>
-  [[nodiscard]] ConfigItem<T>* get_item(std::string_view key) {
+  template <typename T> [[nodiscard]] ConfigItem<T>* get_item(std::string_view key) {
     std::scoped_lock lock(mu_);
     auto it = items_.find(std::string(key));
     if (it == items_.end()) {
@@ -693,8 +690,12 @@ public:
     return errors;
   }
 
-  [[nodiscard]] std::string_view name() const noexcept { return name_; }
-  [[nodiscard]] std::string_view description() const noexcept { return description_; }
+  [[nodiscard]] std::string_view name() const noexcept {
+    return name_;
+  }
+  [[nodiscard]] std::string_view description() const noexcept {
+    return description_;
+  }
 
 private:
   std::string name_;
@@ -717,8 +718,7 @@ using HotReloadCallback = std::function<void()>;
  */
 class ConfigManager final {
 public:
-  explicit ConfigManager(std::string name = "default")
-      : name_(std::move(name)) {
+  explicit ConfigManager(std::string name = "default") : name_(std::move(name)) {
     root_group_ = std::make_unique<ConfigGroup>("root", "Root configuration group");
   }
 
@@ -731,7 +731,9 @@ public:
   /**
    * @brief Get the root configuration group
    */
-  [[nodiscard]] ConfigGroup* root_group() const { return root_group_.get(); }
+  [[nodiscard]] ConfigGroup* root_group() const {
+    return root_group_.get();
+  }
 
   /**
    * @brief Set hot reload enabled
@@ -783,8 +785,7 @@ public:
   /**
    * @brief Find a config item by path (templated, type-safe without dynamic_cast)
    */
-  template <typename T>
-  [[nodiscard]] ConfigItem<T>* find_item(std::string_view path) {
+  template <typename T> [[nodiscard]] ConfigItem<T>* find_item(std::string_view path) {
     ConfigItemBase* base = find_item(path);
     if (base && base->type() == ConfigTypeTraits<T>::type) {
       return static_cast<ConfigItem<T>*>(base);

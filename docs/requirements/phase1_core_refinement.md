@@ -16,6 +16,7 @@ Phase 1: Core Engine Refinement aims to strengthen the foundational infrastructu
 ### 1.2 Scope
 
 This phase encompasses six core infrastructure components:
+
 1. Event-driven framework optimization
 2. Advanced memory management system
 3. Enhanced logging system
@@ -28,6 +29,7 @@ This phase encompasses six core infrastructure components:
 The VeloZ framework currently has approximately 85% of Phase 1 core infrastructure implemented with production-ready functionality for all six components.
 
 **Completed Features:**
+
 - Event loop with filtering, routing, and multi-threading support
 - Memory pool implementation with FixedSizeMemoryPool, MemoryMonitor, and allocation tracking
 - Logging system with async writing, multiple destinations, and rotation support
@@ -37,6 +39,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 - Comprehensive test coverage with 5 new test files
 
 **Key Gaps Identified:**
+
 - Event prioritization needs performance benchmarking
 - Log rotation implementation may need refinement for production
 - Configuration hot-reload file watching not yet implemented
@@ -88,6 +91,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EDF-004**: Critical events shall bypass any batching or queue delay mechanisms.
 
 **Acceptance Criteria:**
+
 - Events are processed in priority order
 - Unit tests verify priority ordering across all four levels
 - Performance benchmarks show <1 microsecond priority determination overhead
@@ -105,6 +109,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EDF-009**: Event routes shall be dynamically added and removed at runtime.
 
 **Acceptance Criteria:**
+
 - Filters can be registered and removed dynamically
 - Routing configuration can be changed without stopping the event loop
 - Multiple handlers for the same event all receive the event
@@ -125,6 +130,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EDF-015**: Event processing throughput shall be at least 1 million events per second per core.
 
 **Acceptance Criteria:**
+
 - Benchmark tests achieve target latency and throughput
 - Lock-free implementation verified with stress tests
 - Batch processing reduces context switching by at least 50%
@@ -133,11 +139,12 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 #### 3.1.4 Event Statistics and Monitoring
 
 **REQ-EDF-016**: The event loop shall collect statistics including:
-  - Total events processed
-  - Events processed per type
-  - Average processing time
-  - Maximum processing time
-  - Current queue depth
+
+- Total events processed
+- Events processed per type
+- Average processing time
+- Maximum processing time
+- Current queue depth
 
 **REQ-EDF-017**: Statistics shall be available in real-time without blocking event processing.
 
@@ -146,6 +153,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EDF-019**: Event processing time histograms shall be maintained for each event type.
 
 **Acceptance Criteria:**
+
 - Statistics can be retrieved without performance impact
 - Prometheus endpoint returns valid metrics
 - Histograms capture 50th, 95th, 99th, and 99.9th percentiles
@@ -173,6 +181,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MEM-008**: Memory pool deallocation shall be less than 100 nanoseconds.
 
 **Acceptance Criteria:**
+
 - Memory pool benchmarks meet latency targets
 - Thread-local pool shows zero contention under load
 - Pre-allocation reduces runtime allocation overhead by at least 90%
@@ -184,10 +193,11 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MEM-010**: Leak detection shall track allocations by allocation site (file:line).
 
 **REQ-MEM-011**: Leak detection shall generate detailed reports including:
-  - Number of leaked allocations
-  - Total leaked memory
-  - Allocation stack traces
-  - Timestamp of allocation
+
+- Number of leaked allocations
+- Total leaked memory
+- Allocation stack traces
+- Timestamp of allocation
 
 **REQ-MEM-012**: Leak detection shall be enabled/disabled at compile time.
 
@@ -196,6 +206,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MEM-014**: Integration with AddressSanitizer shall be supported.
 
 **Acceptance Criteria:**
+
 - Detects all intentional memory leaks in test cases
 - Reports provide sufficient information to locate leaks
 - No false positives in leak-free scenarios
@@ -204,11 +215,12 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 #### 3.2.3 Memory Usage Monitoring
 
 **REQ-MEM-015**: The system shall track memory usage statistics including:
-  - Total allocated memory
-  - Currently used memory
-  - Peak memory usage
-  - Allocation count
-  - Deallocation count
+
+- Total allocated memory
+- Currently used memory
+- Peak memory usage
+- Allocation count
+- Deallocation count
 
 **REQ-MEM-016**: Memory statistics shall be available per-pool and globally.
 
@@ -219,6 +231,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MEM-019**: Alerts shall be triggerable when memory usage exceeds thresholds.
 
 **Acceptance Criteria:**
+
 - Memory metrics appear in Prometheus endpoint
 - Per-pool statistics match aggregate statistics
 - Threshold alerts trigger correctly
@@ -240,6 +253,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-LOG-005**: The default log level shall be configurable.
 
 **Acceptance Criteria:**
+
 - Log filtering works correctly for all levels
 - Per-module configuration overrides global settings
 - No performance impact from disabled log levels
@@ -257,6 +271,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-LOG-010**: Custom formatters shall be registrable via user code.
 
 **Acceptance Criteria:**
+
 - Both formatters produce correctly formatted output
 - JSON logs are valid and parseable
 - Custom formatter interface works as documented
@@ -276,6 +291,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-LOG-016**: Network output shall support both TCP and UDP protocols.
 
 **Acceptance Criteria:**
+
 - Logs appear in all configured destinations
 - Independent filtering works per destination
 - Dynamic add/remove works without data loss
@@ -284,9 +300,10 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 #### 3.3.4 Log Rotation and Archiving
 
 **REQ-LOG-017**: File logging shall support rotation based on:
-  - Maximum file size
-  - Maximum file age
-  - Maximum number of files
+
+- Maximum file size
+- Maximum file age
+- Maximum number of files
 
 **REQ-LOG-018**: Rotation shall be configurable per file destination.
 
@@ -297,6 +314,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-LOG-021**: Rotation shall not cause log loss or duplicate entries.
 
 **Acceptance Criteria:**
+
 - Rotation triggers correctly at size/age limits
 - No data loss during rotation
 - Compression works as configured
@@ -317,6 +335,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-LOG-027**: Log write latency shall be less than 1 microsecond in async mode.
 
 **Acceptance Criteria:**
+
 - Benchmark shows <1 microsecond latency
 - Thread safety verified with stress tests
 - No blocking observed under high log rates
@@ -342,6 +361,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-CFG-007**: Required configuration items shall be marked as such.
 
 **Acceptance Criteria:**
+
 - Invalid values trigger appropriate validation errors
 - Custom validators work correctly
 - Required item validation fails when not provided
@@ -351,9 +371,10 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-CFG-008**: Configuration shall support hot reload without restarting the application.
 
 **REQ-CFG-009**: Hot reload shall be triggered by:
-  - File system watch events
-  - API calls
-  - Signals
+
+- File system watch events
+- API calls
+- Signals
 
 **REQ-CFG-010**: Hot reload shall preserve state where possible.
 
@@ -364,6 +385,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-CFG-013**: Configuration changes shall be atomic (all-or-nothing).
 
 **Acceptance Criteria:**
+
 - Application continues running during reload
 - Failed reloads do not corrupt configuration
 - Callbacks receive notifications correctly
@@ -384,6 +406,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-CFG-019**: Configuration sources shall have defined precedence order.
 
 **Acceptance Criteria:**
+
 - Inheritance works correctly for nested sections
 - Override behavior is predictable
 - Multiple file loads merge as expected
@@ -401,6 +424,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-CFG-024**: Format-specific loaders shall be pluggable.
 
 **Acceptance Criteria:**
+
 - Both JSON and YAML parse correctly
 - Auto-detection works for common extensions
 - Round-trip serialization preserves all data
@@ -417,21 +441,23 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EXC-002**: Base exception shall include: message, file, line, column, function, timestamp.
 
 **REQ-EXC-003**: The system shall provide specialized exception classes for major domains:
-  - ConfigurationException
-  - NetworkException
-  - MarketDataException
-  - ExecutionException
-  - RiskException
-  - ValidationException
-  - TimeoutException
-  - ResourceException
-  - ProtocolException
+
+- ConfigurationException
+- NetworkException
+- MarketDataException
+- ExecutionException
+- RiskException
+- ValidationException
+- TimeoutException
+- ResourceException
+- ProtocolException
 
 **REQ-EXC-004**: Domain exceptions shall include domain-specific information.
 
 **REQ-EXC-005**: Exception constructors shall automatically capture source location.
 
 **Acceptance Criteria:**
+
 - All exceptions include required metadata
 - Domain exceptions contain appropriate fields
 - Source location capture works correctly
@@ -443,15 +469,17 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EXC-007**: The system shall provide a default exception handler that logs exceptions.
 
 **REQ-EXC-008**: Exception handlers shall differentiate between:
-  - VeloZ exceptions
-  - Standard library exceptions
-  - Unknown exceptions
+
+- VeloZ exceptions
+- Standard library exceptions
+- Unknown exceptions
 
 **REQ-EXC-009**: Exception handlers shall be chainable.
 
 **REQ-EXC-010**: Exception handlers shall be globally configurable.
 
 **Acceptance Criteria:**
+
 - Default handler logs all exceptions
 - Handler chain processes in order
 - Exception types are correctly identified
@@ -465,15 +493,17 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-EXC-013**: Recovery strategies shall implement recovery actions.
 
 **REQ-EXC-014**: The system shall provide built-in recovery strategies for common scenarios:
-  - Network retry with exponential backoff
-  - Circuit breaker after N failures
-  - Fallback to alternative component
+
+- Network retry with exponential backoff
+- Circuit breaker after N failures
+- Fallback to alternative component
 
 **REQ-EXC-015**: Recovery strategies shall be configurable per exception type.
 
 **REQ-EXC-016**: Recovery attempts shall be logged and monitored.
 
 **Acceptance Criteria:**
+
 - Retry strategy works with configurable backoff
 - Circuit breaker triggers after configured threshold
 - Fallback switches to alternative correctly
@@ -486,10 +516,11 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 #### 3.6.1 Metric Types
 
 **REQ-MET-001**: The system shall support four metric types:
-  - Counter: monotonically increasing value
-  - Gauge: value that can increase or decrease
-  - Histogram: distribution of observed values
-  - Summary: quantile-based statistics
+
+- Counter: monotonically increasing value
+- Gauge: value that can increase or decrease
+- Histogram: distribution of observed values
+- Summary: quantile-based statistics
 
 **REQ-MET-002**: Metrics shall have names and descriptions.
 
@@ -500,6 +531,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MET-005**: Metric updates shall be lock-free for optimal performance.
 
 **Acceptance Criteria:**
+
 - All metric types work correctly
 - Metric names follow convention
 - Thread safety verified with stress tests
@@ -521,6 +553,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MET-012**: Metrics with different labels shall be distinct metrics.
 
 **Acceptance Criteria:**
+
 - Registration works for all metric types
 - Duplicate registration is prevented
 - Labels create distinct metrics correctly
@@ -540,6 +573,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MET-018**: Histograms shall calculate: count, sum, and bucket counts.
 
 **Acceptance Criteria:**
+
 - Observations fall into correct buckets
 - Default buckets cover common latency ranges
 - Custom buckets work as specified
@@ -559,6 +593,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MET-024**: Metrics endpoint shall be configurable.
 
 **Acceptance Criteria:**
+
 - Prometheus format is valid and parsable
 - JSON format includes all metric data
 - HTTP endpoint returns correct content type
@@ -576,6 +611,7 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 **REQ-MET-029**: A macro shall be provided for convenient function timing.
 
 **Acceptance Criteria:**
+
 - Timer measurements are accurate
 - Auto-start works as expected
 - Macro integrates with histogram metrics
@@ -583,17 +619,19 @@ The VeloZ framework currently has approximately 85% of Phase 1 core infrastructu
 #### 3.6.6 Built-in Metrics
 
 **REQ-MET-030**: The system shall provide built-in metrics for:
-  - Event loop: queue depth, processing time, throughput
-  - Memory: allocation rate, usage, pool statistics
-  - Logging: log rate per level, error rate
-  - Configuration: reload count, validation failures
-  - Exceptions: exception count per type, recovery attempts
+
+- Event loop: queue depth, processing time, throughput
+- Memory: allocation rate, usage, pool statistics
+- Logging: log rate per level, error rate
+- Configuration: reload count, validation failures
+- Exceptions: exception count per type, recovery attempts
 
 **REQ-MET-031**: Built-in metrics shall be automatically registered.
 
 **REQ-MET-032**: Built-in metrics shall use consistent naming: `veloz_<component>_<metric>`.
 
 **Acceptance Criteria:**
+
 - All built-in metrics are registered
 - Metrics follow naming convention
 - Metrics provide useful information

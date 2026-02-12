@@ -1,8 +1,8 @@
+#include "veloz/engine/engine_app.h"
+
 #include <iostream>
 #include <string>
 #include <vector>
-
-#include "veloz/engine/engine_app.h"
 
 namespace {
 
@@ -15,7 +15,7 @@ bool has_flag(const std::vector<std::string>& args, std::string_view flag) {
   return false;
 }
 
-}
+} // namespace
 
 int main(int argc, char** argv) {
   std::vector<std::string> args;

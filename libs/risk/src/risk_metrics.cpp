@@ -1,6 +1,7 @@
 #include "veloz/risk/risk_metrics.h"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <vector>
 
@@ -95,7 +96,8 @@ void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
   }
 
   // Calculate average return
-  double avg_return = std::accumulate(daily_returns.begin(), daily_returns.end(), 0.0) / daily_returns.size();
+  double avg_return =
+      std::accumulate(daily_returns.begin(), daily_returns.end(), 0.0) / daily_returns.size();
 
   // Calculate return standard deviation
   double sum_sq = 0.0;

@@ -1,11 +1,10 @@
-#include <gtest/gtest.h>
-
 #include "veloz/core/event_loop.h"
 
-#include <chrono>
-#include <thread>
 #include <atomic>
+#include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
+#include <thread>
 
 using namespace veloz::core;
 
@@ -33,9 +32,7 @@ TEST_F(EventLoopTest, PostAndRunBasicTask) {
   bool task_executed = false;
   loop_->post([&] { task_executed = true; });
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -50,9 +47,7 @@ TEST_F(EventLoopTest, PostMultipleTasks) {
     loop_->post([&] { ++executed; });
   }
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -64,16 +59,17 @@ TEST_F(EventLoopTest, PostDelayedTask) {
   std::atomic<bool> task_executed{false};
   auto start_time = std::chrono::steady_clock::now();
 
-  loop_->post_delayed([&] {
-    task_executed = true;
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start_time).count();
-    EXPECT_GE(elapsed, delay.count() - 10); // Allow small tolerance
-  }, delay);
+  loop_->post_delayed(
+      [&] {
+        task_executed = true;
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - start_time)
+                           .count();
+        EXPECT_GE(elapsed, delay.count() - 10); // Allow small tolerance
+      },
+      delay);
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
 
   std::this_thread::sleep_for(delay + std::chrono::milliseconds(50));
   loop_->stop();
@@ -90,29 +86,35 @@ TEST_F(EventLoopTest, PostWithPriority) {
   std::vector<int> execution_order;
   std::mutex order_mutex;
 
-  loop_->post([&] {
-    std::lock_guard<std::mutex> lock(order_mutex);
-    execution_order.push_back(1);
-  }, EventPriority::Low);
+  loop_->post(
+      [&] {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(1);
+      },
+      EventPriority::Low);
 
-  loop_->post([&] {
-    std::lock_guard<std::mutex> lock(order_mutex);
-    execution_order.push_back(2);
-  }, EventPriority::Critical);
+  loop_->post(
+      [&] {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(2);
+      },
+      EventPriority::Critical);
 
-  loop_->post([&] {
-    std::lock_guard<std::mutex> lock(order_mutex);
-    execution_order.push_back(3);
-  }, EventPriority::Normal);
+  loop_->post(
+      [&] {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(3);
+      },
+      EventPriority::Normal);
 
-  loop_->post([&] {
-    std::lock_guard<std::mutex> lock(order_mutex);
-    execution_order.push_back(4);
-  }, EventPriority::High);
+  loop_->post(
+      [&] {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(4);
+      },
+      EventPriority::High);
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -130,19 +132,21 @@ TEST_F(EventLoopTest, PostDelayedWithPriority) {
   const auto delay = std::chrono::milliseconds(50);
 
   // Post delayed tasks with different priorities
-  loop_->post_delayed([&] {
-    std::lock_guard<std::mutex> lock(order_mutex);
-    execution_order.push_back(1);
-  }, delay, EventPriority::Low);
+  loop_->post_delayed(
+      [&] {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(1);
+      },
+      delay, EventPriority::Low);
 
-  loop_->post_delayed([&] {
-    std::lock_guard<std::mutex> lock(order_mutex);
-    execution_order.push_back(2);
-  }, delay, EventPriority::Critical);
+  loop_->post_delayed(
+      [&] {
+        std::lock_guard<std::mutex> lock(order_mutex);
+        execution_order.push_back(2);
+      },
+      delay, EventPriority::Critical);
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
 
   std::this_thread::sleep_for(delay + std::chrono::milliseconds(50));
   loop_->stop();
@@ -161,13 +165,13 @@ TEST_F(EventLoopTest, PostWithTags) {
   std::vector<std::string> received_tags;
   std::mutex tags_mutex;
 
-  loop_->post_with_tags([&] {
-    // Task with tags
-  }, {"market", "binance"});
+  loop_->post_with_tags(
+      [&] {
+        // Task with tags
+      },
+      {"market", "binance"});
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -187,14 +191,13 @@ TEST_F(EventLoopTest, AddRemoveFilter) {
   uint64_t filter_id = loop_->add_filter(
       [](const std::vector<EventTag>&) {
         return false; // Filter out all
-      }, EventPriority::Low);
+      },
+      EventPriority::Low);
 
   loop_->post([&] { ++normal_executed; }, EventPriority::Normal);
   loop_->post([&] { ++low_executed; }, EventPriority::Low);
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -210,9 +213,7 @@ TEST_F(EventLoopTest, AddRemoveFilter) {
   loop_->post([&] { ++normal_executed; }, EventPriority::Normal);
   loop_->post([&] { ++low_executed; }, EventPriority::Low);
 
-  std::thread worker2([&] {
-    loop_->run();
-  });
+  std::thread worker2([&] { loop_->run(); });
   loop_->stop();
   worker2.join();
 
@@ -230,9 +231,7 @@ TEST_F(EventLoopTest, TagFilter) {
   loop_->post_with_tags([&] { ++allowed_executed; }, {"market", "trade"});
   loop_->post_with_tags([&] { ++filtered_executed; }, {"debug", "trace"});
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -254,9 +253,7 @@ TEST_F(EventLoopTest, StatisticsTracking) {
   loop_->post([&] {}, EventPriority::Low);
   loop_->post([&] {}, EventPriority::High);
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 
@@ -326,9 +323,7 @@ TEST_F(EventLoopTest, SetRouter) {
   loop_->post_with_tags([&] {}, EventPriority::Normal, {"route1"});
   loop_->post_with_tags([&] {}, EventPriority::Normal, {"route2"});
 
-  std::thread worker([&] {
-    loop_->run();
-  });
+  std::thread worker([&] { loop_->run(); });
   loop_->stop();
   worker.join();
 

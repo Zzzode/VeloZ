@@ -1,24 +1,19 @@
 #pragma once
 
-#include <string>
-#include <map>
 #include <atomic>
 #include <chrono>
-#include <vector>
 #include <functional>
-#include <variant>
-#include <source_location>
+#include <map>
 #include <mutex>
+#include <source_location>
+#include <string>
+#include <variant>
+#include <vector>
 
 namespace veloz::core {
 
 // Metric type
-enum class MetricType {
-  Counter,
-  Gauge,
-  Histogram,
-  Summary
-};
+enum class MetricType { Counter, Gauge, Histogram, Summary };
 
 // Base metric class
 class Metric {
@@ -28,8 +23,12 @@ public:
 
   virtual ~Metric() = default;
 
-  [[nodiscard]] const std::string& name() const noexcept { return name_; }
-  [[nodiscard]] const std::string& description() const noexcept { return description_; }
+  [[nodiscard]] const std::string& name() const noexcept {
+    return name_;
+  }
+  [[nodiscard]] const std::string& description() const noexcept {
+    return description_;
+  }
   [[nodiscard]] virtual MetricType type() const noexcept = 0;
 
 private:
@@ -103,13 +102,13 @@ public:
   }
 
   [[nodiscard]] std::chrono::milliseconds elapsed_ms() const noexcept {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start_time_);
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                 start_time_);
   }
 
   [[nodiscard]] std::chrono::microseconds elapsed_us() const noexcept {
-    return std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - start_time_);
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                                 start_time_);
   }
 
   [[nodiscard]] std::chrono::nanoseconds elapsed_ns() const noexcept {
@@ -125,8 +124,7 @@ class Histogram final : public Metric {
 public:
   explicit Histogram(std::string name, std::string description,
                      std::vector<double> buckets = default_buckets())
-      : Metric(std::move(name), std::move(description)),
-        buckets_(std::move(buckets)) {
+      : Metric(std::move(name), std::move(description)), buckets_(std::move(buckets)) {
     bucket_counts_.reset(new std::atomic<int64_t>[buckets_.size()]);
     for (size_t i = 0; i < buckets_.size(); ++i) {
       bucket_counts_[i].store(0);
@@ -170,8 +168,8 @@ public:
   }
 
   static std::vector<double> default_buckets() {
-    return {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0,
-            2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0};
+    return {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1,   0.2,   0.5,
+            1.0,   2.0,   5.0,   10.0, 30.0, 60.0, 120.0, 300.0, 600.0};
   }
 
 private:
@@ -200,7 +198,8 @@ public:
   void register_histogram(std::string name, std::string description,
                           std::vector<double> buckets = Histogram::default_buckets()) {
     std::scoped_lock lock(mu_);
-    histograms_[std::move(name)] = std::make_unique<Histogram>(name, std::move(description), std::move(buckets));
+    histograms_[std::move(name)] =
+        std::make_unique<Histogram>(name, std::move(description), std::move(buckets));
   }
 
   // Get metrics
@@ -312,11 +311,11 @@ inline void histogram_observe(std::string_view name, double value) {
 }
 
 // Macro for measuring function execution time
-#define MEASURE_TIME(name, func)                                                \
-  do {                                                                         \
-    veloz::core::Timer _timer;                                                \
-    func;                                                                     \
-    veloz::core::histogram_observe(name, _timer.elapsed_ms().count() / 1000.0);\
+#define MEASURE_TIME(name, func)                                                                   \
+  do {                                                                                             \
+    veloz::core::Timer _timer;                                                                     \
+    func;                                                                                          \
+    veloz::core::histogram_observe(name, _timer.elapsed_ms().count() / 1000.0);                    \
   } while (false)
 
 } // namespace veloz::core

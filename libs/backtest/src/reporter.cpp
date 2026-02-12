@@ -1,54 +1,57 @@
 #include "veloz/backtest/reporter.h"
+
 #include "veloz/core/logger.h"
-#include <iostream>
+
 #include <fstream>
+#include <iostream>
 #include <sstream>
 
 namespace veloz::backtest {
 
 struct BacktestReporter::Impl {
-    std::shared_ptr<veloz::core::Logger> logger;
+  std::shared_ptr<veloz::core::Logger> logger;
 
-    Impl() {
-        logger = std::make_shared<veloz::core::Logger>();
-    }
+  Impl() {
+    logger = std::make_shared<veloz::core::Logger>();
+  }
 };
 
 BacktestReporter::BacktestReporter() : impl_(std::make_unique<Impl>()) {}
 
 BacktestReporter::~BacktestReporter() {}
 
-bool BacktestReporter::generate_report(const BacktestResult& result, const std::string& output_path) {
-    impl_->logger->info(std::format("Generating report to: {}", output_path));
+bool BacktestReporter::generate_report(const BacktestResult& result,
+                                       const std::string& output_path) {
+  impl_->logger->info(std::format("Generating report to: {}", output_path));
 
-    // TODO: Implement report generation
-    // For now, just create a simple HTML file
+  // TODO: Implement report generation
+  // For now, just create a simple HTML file
 
-    std::string html_content = generate_html_report(result);
+  std::string html_content = generate_html_report(result);
 
-    // Write to file
-    try {
-        std::ofstream out_file(output_path);
-        if (!out_file.is_open()) {
-            impl_->logger->error(std::format("Failed to open file: {}", output_path));
-            return false;
-        }
-
-        out_file << html_content;
-        out_file.close();
-
-        impl_->logger->info(std::format("Report generated successfully: {}", output_path));
-        return true;
-    } catch (const std::exception& e) {
-        impl_->logger->error(std::format("Failed to write report: {}", e.what()));
-        return false;
+  // Write to file
+  try {
+    std::ofstream out_file(output_path);
+    if (!out_file.is_open()) {
+      impl_->logger->error(std::format("Failed to open file: {}", output_path));
+      return false;
     }
+
+    out_file << html_content;
+    out_file.close();
+
+    impl_->logger->info(std::format("Report generated successfully: {}", output_path));
+    return true;
+  } catch (const std::exception& e) {
+    impl_->logger->error(std::format("Failed to write report: {}", e.what()));
+    return false;
+  }
 }
 
 std::string BacktestReporter::generate_html_report(const BacktestResult& result) {
-    std::stringstream html;
+  std::stringstream html;
 
-    html << R"(
+  html << R"(
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -194,39 +197,50 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
             <div class="container">
                 <div class="header">
                     <h1>VeloZ Backtest Report</h1>
-                    <p>Strategy Name: )" << result.strategy_name << R"( | Trading Pair: )" << result.symbol << R"(</p>
-                    <p>Backtest Period: )" << result.start_time << R"( - )" << result.end_time << R"(</p>
+                    <p>Strategy Name: )"
+       << result.strategy_name << R"( | Trading Pair: )" << result.symbol << R"(</p>
+                    <p>Backtest Period: )"
+       << result.start_time << R"( - )" << result.end_time << R"(</p>
                 </div>
 
                 <div class="summary">
                     <div class="stat-card">
                         <h3>Initial Balance</h3>
-                        <div class="value">\$)" << result.initial_balance << R"(</div>
+                        <div class="value">\$)"
+       << result.initial_balance << R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Final Balance</h3>
-                        <div class="value">$)" << result.final_balance << R"(</div>
+                        <div class="value">$)"
+       << result.final_balance << R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Total Return</h3>
-                        <div class="value )" << (result.total_return >= 0 ? "positive" : "negative") << ">" << (result.total_return * 100) << R"(%</div>
+                        <div class="value )"
+       << (result.total_return >= 0 ? "positive" : "negative") << ">" << (result.total_return * 100)
+       << R"(%</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Max Drawdown</h3>
-                        <div class="value )" << (result.max_drawdown >= 0 ? "negative" : "positive") << ">" << (result.max_drawdown * 100) << R"(%</div>
+                        <div class="value )"
+       << (result.max_drawdown >= 0 ? "negative" : "positive") << ">" << (result.max_drawdown * 100)
+       << R"(%</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Sharpe Ratio</h3>
-                        <div class="value">)" << result.sharpe_ratio << R"(</div>
+                        <div class="value">)"
+       << result.sharpe_ratio << R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Win Rate</h3>
-                        <div class="value )" << (result.win_rate >= 0.5 ? "positive" : "negative") << ">" << (result.win_rate * 100) << R"(%</div>
+                        <div class="value )"
+       << (result.win_rate >= 0.5 ? "positive" : "negative") << ">" << (result.win_rate * 100)
+       << R"(%</div>
                     </div>
                 </div>
 
@@ -242,27 +256,34 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                                 </tr>
                                 <tr>
                                     <td>Total Trades</td>
-                                    <td>)" << result.trade_count << R"()</td>
+                                    <td>)"
+       << result.trade_count << R"()</td>
                                 </tr>
                                 <tr>
                                     <td>Winning Trades</td>
-                                    <td>)" << result.win_count << R"()</td>
+                                    <td>)"
+       << result.win_count << R"()</td>
                                 </tr>
                                 <tr>
                                     <td>Losing Trades</td>
-                                    <td>)" << result.lose_count << R"()</td>
+                                    <td>)"
+       << result.lose_count << R"()</td>
                                 </tr>
                                 <tr>
                                     <td>Profit Factor</td>
-                                    <td>)" << result.profit_factor << R"(</td>
+                                    <td>)"
+       << result.profit_factor << R"(</td>
                                 </tr>
                                 <tr>
                                     <td>Average Win</td>
-                                    <td>$)" << result.avg_win << R"(</td>
+                                    <td>$)"
+       << result.avg_win << R"(</td>
                                 </tr>
                                 <tr>
                                     <td>Average Loss</td>
-                                    <td class=")" << (result.avg_lose < 0 ? "negative" : "positive") << ">" << "$)" << result.avg_lose << R"(</td>
+                                    <td class=")"
+       << (result.avg_lose < 0 ? "negative" : "positive") << ">" << "$)" << result.avg_lose
+       << R"(</td>
                                 </tr>
                             </table>
                         </div>
@@ -300,21 +321,28 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                                     <th>P&L</th>
                                 </tr>)";
 
-    // Add trade records to table
-    for (const auto& trade : result.trades) {
-        html << R"(
-                                <tr>
-                                    <td>)" << trade.timestamp << R"(</td>
-                                    <td>)" << trade.symbol << R"(</td>
-                                    <td>)" << trade.side << R"(</td>
-                                    <td>$)" << trade.price << R"(</td>
-                                    <td>)" << trade.quantity << R"(</td>
-                                    <td>$)" << trade.fee << R"(</td>
-                                    <td class=)" << (trade.pnl >= 0 ? "positive" : "negative") << ">$" << trade.pnl << R"(</td>
-                                </tr>)";
-    }
-
+  // Add trade records to table
+  for (const auto& trade : result.trades) {
     html << R"(
+                                <tr>
+                                    <td>)"
+         << trade.timestamp << R"(</td>
+                                    <td>)"
+         << trade.symbol << R"(</td>
+                                    <td>)"
+         << trade.side << R"(</td>
+                                    <td>$)"
+         << trade.price << R"(</td>
+                                    <td>)"
+         << trade.quantity << R"(</td>
+                                    <td>$)"
+         << trade.fee << R"(</td>
+                                    <td class=)"
+         << (trade.pnl >= 0 ? "positive" : "negative") << ">$" << trade.pnl << R"(</td>
+                                </tr>)";
+  }
+
+  html << R"(
                             </table>
                         </div>
                     </div>
@@ -324,54 +352,79 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
         </html>
     )";
 
-    return html.str();
+  return html.str();
 }
 
 std::string BacktestReporter::generate_json_report(const BacktestResult& result) {
-    std::stringstream json;
+  std::stringstream json;
 
-    json << R"({
-        "strategy_name": ")" << result.strategy_name << R"(",
-        "symbol": ")" << result.symbol << R"(",
-        "start_time": )" << result.start_time << R"(,
-        "end_time": )" << result.end_time << R"(,
-        "initial_balance": )" << result.initial_balance << R"(,
-        "final_balance": )" << result.final_balance << R"(,
-        "total_return": )" << result.total_return << R"(,
-        "max_drawdown": )" << result.max_drawdown << R"(,
-        "sharpe_ratio": )" << result.sharpe_ratio << R"(,
-        "win_rate": )" << result.win_rate << R"(,
-        "profit_factor": )" << result.profit_factor << R"(,
-        "trade_count": )" << result.trade_count << R"(,
-        "win_count": )" << result.win_count << R"(,
-        "lose_count": )" << result.lose_count << R"(,
-        "avg_win": )" << result.avg_win << R"(,
-        "avg_lose": )" << result.avg_lose << R"(,
+  json << R"({
+        "strategy_name": ")"
+       << result.strategy_name << R"(",
+        "symbol": ")"
+       << result.symbol << R"(",
+        "start_time": )"
+       << result.start_time << R"(,
+        "end_time": )"
+       << result.end_time << R"(,
+        "initial_balance": )"
+       << result.initial_balance << R"(,
+        "final_balance": )"
+       << result.final_balance << R"(,
+        "total_return": )"
+       << result.total_return << R"(,
+        "max_drawdown": )"
+       << result.max_drawdown << R"(,
+        "sharpe_ratio": )"
+       << result.sharpe_ratio << R"(,
+        "win_rate": )"
+       << result.win_rate << R"(,
+        "profit_factor": )"
+       << result.profit_factor << R"(,
+        "trade_count": )"
+       << result.trade_count << R"(,
+        "win_count": )"
+       << result.win_count << R"(,
+        "lose_count": )"
+       << result.lose_count << R"(,
+        "avg_win": )"
+       << result.avg_win << R"(,
+        "avg_lose": )"
+       << result.avg_lose << R"(,
         "trades": [)";
 
-    // Add trade records
-    bool first_trade = true;
-    for (const auto& trade : result.trades) {
-        if (!first_trade) json << ",";
-        first_trade = false;
-        json << R"(
-            {
-                "timestamp": )" << trade.timestamp << R"(,
-                "symbol": ")" << trade.symbol << R"(",
-                "side": ")" << trade.side << R"(",
-                "price": )" << trade.price << R"(,
-                "quantity": )" << trade.quantity << R"(,
-                "fee": )" << trade.fee << R"(,
-                "pnl": )" << trade.pnl << R"(,
-                "strategy_id": ")" << trade.strategy_id << R"("
-            })";
-    }
-
+  // Add trade records
+  bool first_trade = true;
+  for (const auto& trade : result.trades) {
+    if (!first_trade)
+      json << ",";
+    first_trade = false;
     json << R"(
+            {
+                "timestamp": )"
+         << trade.timestamp << R"(,
+                "symbol": ")"
+         << trade.symbol << R"(",
+                "side": ")"
+         << trade.side << R"(",
+                "price": )"
+         << trade.price << R"(,
+                "quantity": )"
+         << trade.quantity << R"(,
+                "fee": )"
+         << trade.fee << R"(,
+                "pnl": )"
+         << trade.pnl << R"(,
+                "strategy_id": ")"
+         << trade.strategy_id << R"("
+            })";
+  }
+
+  json << R"(
         ]
     })";
 
-    return json.str();
+  return json.str();
 }
 
 } // namespace veloz::backtest

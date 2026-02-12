@@ -34,7 +34,8 @@ std::string MetricsRegistry::to_prometheus() const {
 
     auto bucket_counts = histogram->bucket_counts();
     for (size_t i = 0; i < histogram->buckets().size(); ++i) {
-      oss << name << "_bucket{le=\"" << histogram->buckets()[i] << "\"} " << bucket_counts[i] << "\n";
+      oss << name << "_bucket{le=\"" << histogram->buckets()[i] << "\"} " << bucket_counts[i]
+          << "\n";
     }
     oss << name << "_bucket{le=\"+Inf\"} " << histogram->count() << "\n";
     oss << name << "_sum " << histogram->sum() << "\n";
@@ -54,8 +55,10 @@ MetricsRegistry& global_metrics() {
     // Register some system metrics
     g_metrics_registry->register_counter("veloz_system_start_time", "System start time");
     g_metrics_registry->register_gauge("veloz_system_uptime", "System uptime in seconds");
-    g_metrics_registry->register_gauge("veloz_event_loop_pending_tasks", "Number of pending tasks in event loop");
-    g_metrics_registry->register_histogram("veloz_event_loop_task_latency", "Event loop task execution latency in seconds");
+    g_metrics_registry->register_gauge("veloz_event_loop_pending_tasks",
+                                       "Number of pending tasks in event loop");
+    g_metrics_registry->register_histogram("veloz_event_loop_task_latency",
+                                           "Event loop task execution latency in seconds");
   }
   return *g_metrics_registry;
 }

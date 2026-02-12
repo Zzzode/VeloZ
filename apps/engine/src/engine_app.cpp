@@ -1,12 +1,13 @@
 #include "veloz/engine/engine_app.h"
+
 #include "veloz/core/event_loop.h"
 #include "veloz/core/logger.h"
 #include "veloz/engine/stdio_engine.h"
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <thread>
-#include <algorithm>
 
 namespace {
 
@@ -18,7 +19,7 @@ void handle_signal(int) {
   }
 }
 
-}
+} // namespace
 
 namespace veloz::engine {
 
@@ -40,12 +41,12 @@ int EngineApp::run() {
     // Logger for stderr
     auto console_output = std::make_unique<veloz::core::ConsoleOutput>(true);
     logger_ptr = std::make_unique<veloz::core::Logger>(
-      std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
+        std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
   } else {
     // Logger for stdout
     auto console_output = std::make_unique<veloz::core::ConsoleOutput>(false);
     logger_ptr = std::make_unique<veloz::core::Logger>(
-      std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
+        std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
   }
 
   logger_ptr->set_level(veloz::core::LogLevel::Info);
@@ -83,4 +84,4 @@ int EngineApp::run_service() {
   return 0;
 }
 
-}
+} // namespace veloz::engine

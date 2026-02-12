@@ -13,19 +13,26 @@ enum class Venue : std::uint8_t {
 };
 
 inline std::string to_string(Venue venue) {
-    switch (venue) {
-        case Venue::Binance: return "Binance";
-        case Venue::Okx: return "OKX";
-        case Venue::Bybit: return "Bybit";
-        default: return "Unknown";
-    }
+  switch (venue) {
+  case Venue::Binance:
+    return "Binance";
+  case Venue::Okx:
+    return "OKX";
+  case Venue::Bybit:
+    return "Bybit";
+  default:
+    return "Unknown";
+  }
 }
 
 inline Venue from_string(const std::string& str) {
-    if (str == "Binance" || str == "binance") return Venue::Binance;
-    if (str == "OKX" || str == "Okx" || str == "okx") return Venue::Okx;
-    if (str == "Bybit" || str == "bybit") return Venue::Bybit;
-    return Venue::Unknown;
+  if (str == "Binance" || str == "binance")
+    return Venue::Binance;
+  if (str == "OKX" || str == "Okx" || str == "okx")
+    return Venue::Okx;
+  if (str == "Bybit" || str == "bybit")
+    return Venue::Bybit;
+  return Venue::Unknown;
 }
 
 enum class MarketKind : std::uint8_t {

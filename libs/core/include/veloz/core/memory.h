@@ -1,13 +1,13 @@
 #pragma once
 
-#include <cstddef>
-#include <memory>
-#include <vector>
-#include <deque>
-#include <mutex>
-#include <functional>
 #include <atomic>
+#include <cstddef>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
+#include <vector>
 
 namespace veloz::core {
 
@@ -15,8 +15,7 @@ namespace veloz::core {
 [[nodiscard]] void* aligned_alloc(size_t size, size_t alignment);
 void aligned_free(void* ptr);
 
-template <typename T>
-[[nodiscard]] T* aligned_new(size_t alignment = alignof(T)) {
+template <typename T> [[nodiscard]] T* aligned_new(size_t alignment = alignof(T)) {
   void* ptr = aligned_alloc(sizeof(T), alignment);
   if (ptr == nullptr) {
     throw std::bad_alloc();
@@ -33,8 +32,7 @@ template <typename T, typename... Args>
   return new (ptr) T(std::forward<Args>(args)...);
 }
 
-template <typename T>
-void aligned_delete(T* ptr) {
+template <typename T> void aligned_delete(T* ptr) {
   if (ptr == nullptr) {
     return;
   }
@@ -43,8 +41,7 @@ void aligned_delete(T* ptr) {
 }
 
 // Simple object pool implementation
-template <typename T>
-class ObjectPool final {
+template <typename T> class ObjectPool final {
 public:
   explicit ObjectPool(size_t initial_size = 0, size_t max_size = 0)
       : max_size_(max_size), size_(0) {
@@ -59,8 +56,7 @@ public:
   ~ObjectPool() = default;
 
   // Acquire object from pool
-  template <typename... Args>
-  std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
+  template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     std::scoped_lock lock(mu_);
 
     if (!pool_.empty()) {
@@ -69,15 +65,13 @@ public:
       // Reset object state
       ptr->~T();
       new (ptr) T(std::forward<Args>(args)...);
-      return std::unique_ptr<T, std::function<void(T*)>>(
-          ptr, [this](T* p) { release(p); });
+      return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
     if (max_size_ == 0 || size_ < max_size_) {
       auto ptr = new T(std::forward<Args>(args)...);
       ++size_;
-      return std::unique_ptr<T, std::function<void(T*)>>(
-          ptr, [this](T* p) { release(p); });
+      return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
     throw std::runtime_error("Object pool exhausted");
@@ -110,7 +104,9 @@ public:
     return size_;
   }
 
-  [[nodiscard]] size_t max_size() const noexcept { return max_size_; }
+  [[nodiscard]] size_t max_size() const noexcept {
+    return max_size_;
+  }
 
   // Preallocate objects
   void preallocate(size_t count) {
@@ -140,8 +136,7 @@ private:
 };
 
 // Thread-local object pool
-template <typename T>
-class ThreadLocalObjectPool final {
+template <typename T> class ThreadLocalObjectPool final {
 public:
   explicit ThreadLocalObjectPool(size_t initial_size = 0, size_t max_size = 0)
       : initial_size_(initial_size), max_size_(max_size) {}
@@ -149,8 +144,7 @@ public:
   ~ThreadLocalObjectPool() = default;
 
   // Acquire object from pool
-  template <typename... Args>
-  std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
+  template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     auto& pool = pool_;
 
     if (!pool.empty()) {
@@ -158,14 +152,12 @@ public:
       pool.pop_back();
       ptr->~T();
       new (ptr) T(std::forward<Args>(args)...);
-      return std::unique_ptr<T, std::function<void(T*)>>(
-          ptr, [this](T* p) { release(p); });
+      return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
     if (max_size_ == 0 || pool.size() < max_size_) {
       auto ptr = new T(std::forward<Args>(args)...);
-      return std::unique_ptr<T, std::function<void(T*)>>(
-          ptr, [this](T* p) { release(p); });
+      return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
     throw std::runtime_error("Thread local object pool exhausted");
@@ -191,8 +183,7 @@ private:
   const size_t max_size_;
 };
 
-template <typename T>
-thread_local std::vector<std::unique_ptr<T>> ThreadLocalObjectPool<T>::pool_;
+template <typename T> thread_local std::vector<std::unique_ptr<T>> ThreadLocalObjectPool<T>::pool_;
 
 // Memory usage statistics
 class MemoryStats final {
@@ -216,10 +207,18 @@ public:
     ++deallocation_count_;
   }
 
-  [[nodiscard]] size_t total_allocated() const noexcept { return total_allocated_; }
-  [[nodiscard]] size_t peak_allocated() const noexcept { return peak_allocated_; }
-  [[nodiscard]] uint64_t allocation_count() const noexcept { return allocation_count_; }
-  [[nodiscard]] uint64_t deallocation_count() const noexcept { return deallocation_count_; }
+  [[nodiscard]] size_t total_allocated() const noexcept {
+    return total_allocated_;
+  }
+  [[nodiscard]] size_t peak_allocated() const noexcept {
+    return peak_allocated_;
+  }
+  [[nodiscard]] uint64_t allocation_count() const noexcept {
+    return allocation_count_;
+  }
+  [[nodiscard]] uint64_t deallocation_count() const noexcept {
+    return deallocation_count_;
+  }
 
   void reset() {
     total_allocated_ = 0;

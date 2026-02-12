@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(VELOZ_ENABLE_WERROR "Treat warnings as errors" OFF)
 option(VELOZ_BUILD_TESTS "Build tests" ON)
-option(VELOZ_BUILD_BACKTEST "Build backtest module" OFF)  # Temporarily disabled
+option(VELOZ_BUILD_BACKTEST "Build backtest module" ON)
 
 # GoogleTest setup
 if(VELOZ_BUILD_TESTS)

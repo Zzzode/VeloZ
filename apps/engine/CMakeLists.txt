@@ -1,5 +1,4 @@
-add_executable(veloz_engine
-  src/main.cpp
+add_library(veloz_engine_lib
   src/command_parser.cpp
   src/engine_app.cpp
   src/engine_state.cpp
@@ -7,9 +6,25 @@ add_executable(veloz_engine
   src/stdio_engine.cpp
 )
 
+target_compile_features(veloz_engine_lib PRIVATE cxx_std_23)
+target_include_directories(veloz_engine_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(veloz_engine_lib
+  PUBLIC
+    veloz_market
+    veloz_exec
+    veloz_oms
+    veloz_risk
+  PRIVATE
+    veloz_core
+    veloz_common
+)
+
+add_executable(veloz_engine
+  src/main.cpp
+)
+
 target_compile_features(veloz_engine PRIVATE cxx_std_23)
-target_include_directories(veloz_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(veloz_engine PRIVATE veloz_core veloz_common veloz_market veloz_exec veloz_oms veloz_risk)
+target_link_libraries(veloz_engine PRIVATE veloz_engine_lib)
 
 # Add tests
 enable_testing()

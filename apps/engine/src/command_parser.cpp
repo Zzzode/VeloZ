@@ -1,8 +1,8 @@
 #include "veloz/engine/command_parser.h"
 
-#include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 
 namespace veloz::engine {
 
@@ -19,7 +19,8 @@ static std::string to_lower(std::string_view s) {
 // Helper to trim whitespace from both ends
 static std::string_view trim(std::string_view s) {
   auto start = s.find_first_not_of(" \t\n\r");
-  if (start == std::string_view::npos) return "";
+  if (start == std::string_view::npos)
+    return "";
   auto end = s.find_last_not_of(" \t\n\r");
   return s.substr(start, end - start + 1);
 }
@@ -92,8 +93,8 @@ ParsedCommand parse_command(std::string_view line) {
   std::string verb_lower = to_lower(verb);
 
   // Check for ORDER command (supports: ORDER, BUY, SELL)
-  if (verb_lower == "order" || verb_lower == "buy" || verb_lower == "sell" ||
-      verb_lower == "b" || verb_lower == "s") {
+  if (verb_lower == "order" || verb_lower == "buy" || verb_lower == "sell" || verb_lower == "b" ||
+      verb_lower == "s") {
     auto order = parse_order_command(trimmed_line);
     if (order) {
       result.type = CommandType::Order;
@@ -121,8 +122,7 @@ ParsedCommand parse_command(std::string_view line) {
     } else {
       result.error = "Failed to parse QUERY command";
     }
-  }
-  else {
+  } else {
     result.error = "Unknown command: " + verb;
   }
 
@@ -167,8 +167,10 @@ std::optional<ParsedOrder> parse_order_command(std::string_view line) {
 
   // Try to parse optional parameters
   std::string token;
-  if (iss >> token) type_str = token;
-  if (iss >> token) tif_str = token;
+  if (iss >> token)
+    type_str = token;
+  if (iss >> token)
+    tif_str = token;
 
   // Validate required parameters
   if (symbol.empty() || qty <= 0.0 || price <= 0.0 || client_id.empty()) {
@@ -249,11 +251,12 @@ std::optional<ParsedQuery> parse_query_command(std::string_view line) {
   // Read remaining parameters
   std::string token;
   while (iss >> token) {
-    if (!params.empty()) params += " ";
+    if (!params.empty())
+      params += " ";
     params += token;
   }
 
   return ParsedQuery{.query_type = query_type, .params = params, .raw_command = std::string(line)};
 }
 
-}
+} // namespace veloz::engine

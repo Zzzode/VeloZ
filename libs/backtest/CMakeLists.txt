@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 project(veloz_backtest LANGUAGES CXX)
 
-add_library(veloz_backtest STATIC)
+add_library(veloz_backtest STATIC
+    src/backtest_engine.cpp
+    src/data_source.cpp
+    src/analyzer.cpp
+    src/optimizer.cpp
+    src/reporter.cpp
+)
 # Include directories
 target_include_directories(veloz_backtest
     PUBLIC
@@ -13,10 +19,11 @@ target_compile_features(veloz_backtest PUBLIC cxx_std_23)
 
 # Dependencies
 target_link_libraries(veloz_backtest
-    PRIVATE
-        veloz_core
+    PUBLIC
         veloz_strategy
         veloz_market
+    PRIVATE
+        veloz_core
         veloz_oms
         veloz_exec
         veloz_risk

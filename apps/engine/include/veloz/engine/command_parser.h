@@ -10,12 +10,7 @@
 namespace veloz::engine {
 
 // Command types
-enum class CommandType {
-  Order,
-  Cancel,
-  Query,
-  Unknown
-};
+enum class CommandType { Order, Cancel, Query, Unknown };
 
 struct ParsedOrder final {
   veloz::exec::PlaceOrderRequest request;
@@ -54,4 +49,4 @@ struct ParsedCommand final {
 [[nodiscard]] bool is_valid_tif(std::string_view tif);
 [[nodiscard]] veloz::exec::TimeInForce parse_tif(std::string_view tif);
 
-}
+} // namespace veloz::engine

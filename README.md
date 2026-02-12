@@ -4,13 +4,33 @@ VeloZ is an early-stage quantitative trading framework for crypto markets with a
 
 ## Quick Start
 
+### Dependencies
+
+Required:
+
+- CMake >= 3.24
+- C++23-capable compiler (Clang 16+ or GCC 13+)
+
+Optional:
+
+- GTest (only if building tests)
+- OpenSSL (only if enabling TLS in websocketpp)
+
+Ubuntu/Debian:
+
+```bash
+sudo apt install cmake ninja-build build-essential clang libgtest-dev libssl-dev
+```
+
 ### Build
+
 ```bash
 cmake --preset dev
 cmake --build --preset dev -j
 ```
 
 ### Run
+
 ```bash
 # Engine only
 ./scripts/run_engine.sh dev

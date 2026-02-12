@@ -1,10 +1,10 @@
 #include "veloz/oms/position.h"
+
 #include <cmath>
 
 namespace veloz::oms {
 
-Position::Position(veloz::common::SymbolId symbol)
-    : symbol_(std::move(symbol)) {}
+Position::Position(veloz::common::SymbolId symbol) : symbol_(std::move(symbol)) {}
 
 const veloz::common::SymbolId& Position::symbol() const {
   return symbol_;
@@ -19,7 +19,8 @@ double Position::avg_price() const {
 }
 
 PositionSide Position::side() const {
-  if (std::abs(size_) < 1e-9) return PositionSide::None;
+  if (std::abs(size_) < 1e-9)
+    return PositionSide::None;
   return size_ > 0 ? PositionSide::Long : PositionSide::Short;
 }
 
@@ -28,7 +29,8 @@ double Position::realized_pnl() const {
 }
 
 double Position::unrealized_pnl(double current_price) const {
-  if (std::abs(size_) < 1e-9) return 0.0;
+  if (std::abs(size_) < 1e-9)
+    return 0.0;
 
   if (size_ > 0) {
     // Long: (current - avg) * size

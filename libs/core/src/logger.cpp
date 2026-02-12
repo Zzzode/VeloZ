@@ -2,12 +2,12 @@
 
 #include "veloz/core/time.h"
 
+#include <algorithm>
+#include <cstdarg>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <iomanip>
-#include <algorithm>
-#include <ctime>
-#include <cstdarg>
 
 namespace veloz::core {
 
@@ -47,22 +47,22 @@ std::string TextFormatter::colorize(LogLevel level, std::string_view text) const
   const char* color_code = nullptr;
   switch (level) {
   case LogLevel::Trace:
-    color_code = "\033[90m";    // Gray
+    color_code = "\033[90m"; // Gray
     break;
   case LogLevel::Debug:
-    color_code = "\033[36m";    // Cyan
+    color_code = "\033[36m"; // Cyan
     break;
   case LogLevel::Info:
-    color_code = "\033[32m";    // Green
+    color_code = "\033[32m"; // Green
     break;
   case LogLevel::Warn:
-    color_code = "\033[33m";    // Yellow
+    color_code = "\033[33m"; // Yellow
     break;
   case LogLevel::Error:
-    color_code = "\033[31m";    // Red
+    color_code = "\033[31m"; // Red
     break;
   case LogLevel::Critical:
-    color_code = "\033[35m";    // Magenta
+    color_code = "\033[35m"; // Magenta
     break;
   default:
     color_code = "\033[0m";
@@ -77,8 +77,9 @@ std::string TextFormatter::format(const LogEntry& entry) const {
 
   // Timestamp with milliseconds
   auto time_t_sec = std::chrono::system_clock::to_time_t(entry.time_point);
-  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      entry.time_point.time_since_epoch()) % 1000;
+  auto ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(entry.time_point.time_since_epoch()) %
+      1000;
   std::tm tm{};
 #ifdef _WIN32
   localtime_s(&tm, &time_t_sec);
@@ -86,9 +87,8 @@ std::string TextFormatter::format(const LogEntry& entry) const {
   localtime_r(&time_t_sec, &tm);
 #endif
 
-  oss << std::format("[{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}]",
-                     tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-                     tm.tm_hour, tm.tm_min, tm.tm_sec, ms.count());
+  oss << std::format("[{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}.{:03d}]", tm.tm_year + 1900,
+                     tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ms.count());
 
   // Level
   std::string level_str = std::string(to_string(entry.level));
@@ -205,18 +205,10 @@ void ConsoleOutput::flush() {
 // FileOutput Implementation
 // ============================================================================
 
-FileOutput::FileOutput(
-    const std::filesystem::path& file_path,
-    Rotation rotation,
-    size_t max_size,
-    size_t max_files,
-    RotationInterval interval)
-    : file_path_(file_path),
-      rotation_(rotation),
-      max_size_(max_size),
-      max_files_(max_files),
-      interval_(interval),
-      last_rotation_(std::chrono::system_clock::now()) {
+FileOutput::FileOutput(const std::filesystem::path& file_path, Rotation rotation, size_t max_size,
+                       size_t max_files, RotationInterval interval)
+    : file_path_(file_path), rotation_(rotation), max_size_(max_size), max_files_(max_files),
+      interval_(interval), last_rotation_(std::chrono::system_clock::now()) {
 
   // Open the initial file
   file_stream_.open(file_path_, std::ios::out | std::ios::app);
@@ -309,21 +301,20 @@ std::string FileOutput::get_rotation_suffix() const {
   localtime_r(&time_t_sec, &tm);
 #endif
 
-  return std::format("{:04d}{:02d}{:02d}_{:02d}{:02d}{:02d}",
-                     tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-                     tm.tm_hour, tm.tm_min, tm.tm_sec);
+  return std::format("{:04d}{:02d}{:02d}_{:02d}{:02d}{:02d}", tm.tm_year + 1900, tm.tm_mon + 1,
+                     tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
 std::filesystem::path FileOutput::get_rotated_path(size_t index) const {
   std::string suffix = get_rotation_suffix();
 
   if (index == 0) {
-    return file_path_.parent_path() /
-           std::format("{}_{}{}", file_path_.stem().string(), suffix, file_path_.extension().string());
+    return file_path_.parent_path() / std::format("{}_{}{}", file_path_.stem().string(), suffix,
+                                                  file_path_.extension().string());
   }
 
-  return file_path_.parent_path() /
-         std::format("{}_{}.{}{}", file_path_.stem().string(), suffix, index, file_path_.extension().string());
+  return file_path_.parent_path() / std::format("{}_{}.{}{}", file_path_.stem().string(), suffix,
+                                                index, file_path_.extension().string());
 }
 
 void FileOutput::perform_rotation() {
@@ -420,8 +411,7 @@ size_t MultiOutput::output_count() const {
 // Logger Implementation
 // ============================================================================
 
-Logger::Logger(std::unique_ptr<LogFormatter> formatter,
-               std::unique_ptr<LogOutput> output)
+Logger::Logger(std::unique_ptr<LogFormatter> formatter, std::unique_ptr<LogOutput> output)
     : formatter_(std::move(formatter)) {
   multi_output_ = std::make_unique<MultiOutput>();
   multi_output_->add_output(std::move(output));
@@ -455,8 +445,7 @@ void Logger::add_output(std::unique_ptr<LogOutput> output) {
   multi_output_->add_output(std::move(output));
 }
 
-void Logger::log(LogLevel level, std::string_view message,
-                 const std::source_location& location) {
+void Logger::log(LogLevel level, std::string_view message, const std::source_location& location) {
   std::scoped_lock lock(mu_);
   if (level_ == LogLevel::Off || static_cast<int>(level) < static_cast<int>(level_)) {
     return;
@@ -471,48 +460,40 @@ void Logger::log(LogLevel level, std::string_view message,
 
   // Create log entry
   auto now = std::chrono::system_clock::now();
-  LogEntry entry{
-    .level = level,
-    .timestamp = std::string(now_utc_iso8601()),
-    .file = std::move(file),
-    .line = static_cast<int_least32_t>(location.line()),
-    .function = std::string(location.function_name()),
-    .message = std::string(message),
-    .time_point = now
-  };
+  LogEntry entry{.level = level,
+                 .timestamp = std::string(now_utc_iso8601()),
+                 .file = std::move(file),
+                 .line = static_cast<int_least32_t>(location.line()),
+                 .function = std::string(location.function_name()),
+                 .message = std::string(message),
+                 .time_point = now};
 
   // Format and write
   std::string formatted = formatter_->format(entry);
   multi_output_->write(formatted, entry);
 }
 
-void Logger::trace(std::string_view message,
-                   const std::source_location& location) {
+void Logger::trace(std::string_view message, const std::source_location& location) {
   log(LogLevel::Trace, message, location);
 }
 
-void Logger::debug(std::string_view message,
-                   const std::source_location& location) {
+void Logger::debug(std::string_view message, const std::source_location& location) {
   log(LogLevel::Debug, message, location);
 }
 
-void Logger::info(std::string_view message,
-                  const std::source_location& location) {
+void Logger::info(std::string_view message, const std::source_location& location) {
   log(LogLevel::Info, message, location);
 }
 
-void Logger::warn(std::string_view message,
-                  const std::source_location& location) {
+void Logger::warn(std::string_view message, const std::source_location& location) {
   log(LogLevel::Warn, message, location);
 }
 
-void Logger::error(std::string_view message,
-                   const std::source_location& location) {
+void Logger::error(std::string_view message, const std::source_location& location) {
   log(LogLevel::Error, message, location);
 }
 
-void Logger::critical(std::string_view message,
-                      const std::source_location& location) {
+void Logger::critical(std::string_view message, const std::source_location& location) {
   log(LogLevel::Critical, message, location);
 }
 
@@ -529,10 +510,8 @@ static Logger* g_global_logger = nullptr;
 
 Logger& global_logger() {
   if (g_global_logger == nullptr) {
-    g_global_logger = new Logger(
-        std::make_unique<TextFormatter>(false, false),
-        std::make_unique<ConsoleOutput>()
-    );
+    g_global_logger = new Logger(std::make_unique<TextFormatter>(false, false),
+                                 std::make_unique<ConsoleOutput>());
   }
   return *g_global_logger;
 }

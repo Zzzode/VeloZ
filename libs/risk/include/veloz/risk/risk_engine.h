@@ -17,20 +17,21 @@
 #include "veloz/oms/position.h"
 #include "veloz/risk/risk_metrics.h"
 
+#include <chrono>
 #include <string>
 #include <unordered_map>
-#include <chrono>
 
 namespace veloz::risk {
 
 /**
  * @brief Risk check result structure
  *
- * Contains the result information of risk checking, including whether trading is allowed and rejection reason.
+ * Contains the result information of risk checking, including whether trading is allowed and
+ * rejection reason.
  */
 struct RiskCheckResult {
-  bool allowed{true};      ///< Whether trading is allowed
-  std::string reason;      ///< Reason for rejection (if not allowed)
+  bool allowed{true}; ///< Whether trading is allowed
+  std::string reason; ///< Reason for rejection (if not allowed)
 };
 
 /**
@@ -48,20 +49,21 @@ enum class RiskLevel {
 /**
  * @brief Risk alert information structure
  *
- * Contains detailed information about risk alerts, including alert level, message, timestamp, and trading symbol.
+ * Contains detailed information about risk alerts, including alert level, message, timestamp, and
+ * trading symbol.
  */
 struct RiskAlert {
-  RiskLevel level;                                   ///< Risk alert level
-  std::string message;                               ///< Alert message
-  std::chrono::steady_clock::time_point timestamp;   ///< Alert timestamp
-  std::string symbol;                                ///< Associated trading symbol
+  RiskLevel level;                                 ///< Risk alert level
+  std::string message;                             ///< Alert message
+  std::chrono::steady_clock::time_point timestamp; ///< Alert timestamp
+  std::string symbol;                              ///< Associated trading symbol
 };
 
 /**
  * @brief Risk engine class
  *
- * Responsible for managing and evaluating trading risk, including pre-trade checks, post-trade checks,
- * risk alerts, risk metrics calculation, and risk control functionality.
+ * Responsible for managing and evaluating trading risk, including pre-trade checks, post-trade
+ * checks, risk alerts, risk metrics calculation, and risk control functionality.
  */
 class RiskEngine final {
 public:
@@ -269,13 +271,13 @@ private:
   double max_position_size_{0.0};
   double max_leverage_{1.0};
   double reference_price_{0.0};
-  double max_price_deviation_{0.1};  // 10% default
-  int max_order_rate_{100};  // orders per second
-  double max_order_size_{1000.0};  // max quantity per order
+  double max_price_deviation_{0.1}; // 10% default
+  int max_order_rate_{100};         // orders per second
+  double max_order_size_{1000.0};   // max quantity per order
   bool stop_loss_enabled_{false};
-  double stop_loss_percentage_{0.05};  // 5% default
+  double stop_loss_percentage_{0.05}; // 5% default
   bool take_profit_enabled_{false};
-  double take_profit_percentage_{0.1};  // 10% default
+  double take_profit_percentage_{0.1}; // 10% default
 
   std::unordered_map<std::string, veloz::oms::Position> positions_;
   std::vector<std::chrono::steady_clock::time_point> order_timestamps_;

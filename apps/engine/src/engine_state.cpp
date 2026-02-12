@@ -85,8 +85,7 @@ OrderDecision EngineState::place_order(const veloz::exec::PlaceOrderRequest& req
     decision.accepted = false;
     decision.reason = risk.reason;
     order_store_.apply_order_update(request.client_order_id, request.symbol.value,
-                                    (request.side == veloz::exec::OrderSide::Sell) ? "SELL"
-                                                                                  : "BUY",
+                                    (request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY",
                                     "", "REJECTED", risk.reason, ts_ns);
     return decision;
   }
@@ -95,8 +94,7 @@ OrderDecision EngineState::place_order(const veloz::exec::PlaceOrderRequest& req
     decision.accepted = false;
     decision.reason = "duplicate_client_order_id";
     order_store_.apply_order_update(request.client_order_id, request.symbol.value,
-                                    (request.side == veloz::exec::OrderSide::Sell) ? "SELL"
-                                                                                  : "BUY",
+                                    (request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY",
                                     "", "REJECTED", decision.reason, ts_ns);
     return decision;
   }
@@ -145,12 +143,10 @@ CancelDecision EngineState::cancel_order(std::string_view client_order_id, std::
   }
 
   if (decision.found) {
-    order_store_.apply_order_update(cancelled.request.client_order_id,
-                                    cancelled.request.symbol.value,
-                                    (cancelled.request.side == veloz::exec::OrderSide::Sell)
-                                        ? "SELL"
-                                        : "BUY",
-                                    "", "CANCELLED", "", ts_ns);
+    order_store_.apply_order_update(
+        cancelled.request.client_order_id, cancelled.request.symbol.value,
+        (cancelled.request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY", "", "CANCELLED",
+        "", ts_ns);
     release_on_cancel(cancelled);
     return decision;
   }
@@ -209,9 +205,9 @@ std::vector<PendingOrder> EngineState::collect_due_fills(std::int64_t now_ns) {
   return due;
 }
 
-std::optional<veloz::oms::OrderState> EngineState::get_order_state(
-    std::string_view client_order_id) const {
+std::optional<veloz::oms::OrderState>
+EngineState::get_order_state(std::string_view client_order_id) const {
   return order_store_.get(client_order_id);
 }
 
-}
+} // namespace veloz::engine

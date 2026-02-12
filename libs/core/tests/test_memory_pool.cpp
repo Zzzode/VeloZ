@@ -1,13 +1,12 @@
-#include <gtest/gtest.h>
-
-#include "veloz/core/memory_pool.h"
 #include "veloz/core/memory.h"
+#include "veloz/core/memory_pool.h"
 
-#include <vector>
-#include <thread>
-#include <future>
 #include <format>
+#include <future>
+#include <gtest/gtest.h>
 #include <list>
+#include <thread>
+#include <vector>
 
 using namespace veloz::core;
 
@@ -199,7 +198,7 @@ TEST_F(MemoryPoolTest, PeakTracking) {
   MemoryMonitor monitor;
 
   monitor.track_allocation("peak_test", 100);
-  monitor.track_allocation("peak_test", 200);  // Peak: 300
+  monitor.track_allocation("peak_test", 200); // Peak: 300
   monitor.track_deallocation("peak_test", 100);
 
   EXPECT_EQ(monitor.peak_allocated_bytes(), 300);

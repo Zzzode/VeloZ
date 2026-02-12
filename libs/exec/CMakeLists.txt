@@ -25,6 +25,16 @@ if(CURL_FOUND)
   target_link_libraries(veloz_exec PUBLIC CURL::libcurl)
 else()
   message(WARNING "libcurl not found on system - disabling curl support")
+  target_compile_definitions(veloz_exec PRIVATE VELOZ_NO_CURL)
+endif()
+
+# Try to find OpenSSL for HMAC signing
+find_package(OpenSSL)
+if(OpenSSL_FOUND)
+  target_link_libraries(veloz_exec PUBLIC OpenSSL::Crypto)
+else()
+  message(WARNING "OpenSSL not found on system - disabling OpenSSL support")
+  target_compile_definitions(veloz_exec PRIVATE VELOZ_NO_OPENSSL)
 endif()
 
 # Tests

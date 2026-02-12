@@ -29,4 +29,4 @@ private:
   int run_service();
 };
 
-}
+} // namespace veloz::engine

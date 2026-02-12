@@ -14,22 +14,22 @@
 
 #pragma once
 
-#include <cstddef>
-#include <memory>
-#include <vector>
-#include <deque>
-#include <mutex>
-#include <functional>
+#include <algorithm>
 #include <atomic>
-#include <stdexcept>
+#include <cstddef>
+#include <deque>
+#include <format>
+#include <functional>
+#include <iomanip>
+#include <memory>
+#include <mutex>
 #include <new>
+#include <sstream>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <unordered_map>
-#include <string>
-#include <algorithm>
-#include <format>
-#include <sstream>
-#include <iomanip>
+#include <vector>
 
 namespace veloz::core {
 
@@ -168,13 +168,13 @@ public:
     total_allocated_bytes_ += sizeof(T);
     size_t current_total = total_allocated_bytes_.load();
     size_t current_peak = peak_allocated_bytes_.load();
-    while (current_total > current_peak && !peak_allocated_bytes_.compare_exchange_weak(current_peak, current_total)) {
+    while (current_total > current_peak &&
+           !peak_allocated_bytes_.compare_exchange_weak(current_peak, current_total)) {
       // Retry if another thread updated it
       current_total = total_allocated_bytes_.load();
       current_peak = peak_allocated_bytes_.load();
     }
-    return std::unique_ptr<T, std::function<void(T*)>>(
-        obj, [this](T* p) { destroy(p); });
+    return std::unique_ptr<T, std::function<void(T*)>>(obj, [this](T* p) { destroy(p); });
   }
 
   /**
@@ -275,8 +275,8 @@ private:
   }
 
   mutable std::mutex mu_;
-  std::vector<void*> blocks_;          // Allocated memory blocks
-  std::vector<void*> free_list_;        // Free slots
+  std::vector<void*> blocks_;    // Allocated memory blocks
+  std::vector<void*> free_list_; // Free slots
   const size_t max_blocks_;
   std::atomic<size_t> total_allocated_bytes_{0};
   std::atomic<size_t> peak_allocated_bytes_{0};
@@ -293,8 +293,7 @@ private:
  * @tparam T Type to allocate
  * @tparam Pool The pool type to use
  */
-template <typename T, typename Pool = FixedSizeMemoryPool<T, 64>>
-class PoolAllocator {
+template <typename T, typename Pool = FixedSizeMemoryPool<T, 64>> class PoolAllocator {
 public:
   using value_type = T;
   using pointer = T*;
@@ -304,19 +303,16 @@ public:
   using size_type = size_t;
   using difference_type = ptrdiff_t;
 
-  template <typename U>
-  struct rebind {
+  template <typename U> struct rebind {
     using other = PoolAllocator<U, Pool>;
   };
 
   PoolAllocator() noexcept = default;
 
   template <typename U>
-  explicit PoolAllocator(const PoolAllocator<U, Pool>& other) noexcept
-      : pool_(other.pool_) {}
+  explicit PoolAllocator(const PoolAllocator<U, Pool>& other) noexcept : pool_(other.pool_) {}
 
-  template <typename U>
-  PoolAllocator& operator=(const PoolAllocator<U, Pool>& other) noexcept {
+  template <typename U> PoolAllocator& operator=(const PoolAllocator<U, Pool>& other) noexcept {
     pool_ = other.pool_;
     return *this;
   }
@@ -340,17 +336,17 @@ public:
     pool_->deallocate(p);
   }
 
-  template <typename U, typename... Args>
-  void construct(U* p, Args&&... args) {
+  template <typename U, typename... Args> void construct(U* p, Args&&... args) {
     ::new (static_cast<void*>(p)) U(std::forward<Args>(args)...);
   }
 
-  template <typename U>
-  void destroy(U* p) noexcept {
+  template <typename U> void destroy(U* p) noexcept {
     p->~U();
   }
 
-  [[nodiscard]] Pool* get_pool() const noexcept { return pool_; }
+  [[nodiscard]] Pool* get_pool() const noexcept {
+    return pool_;
+  }
 
 private:
   Pool* pool_ = get_default_pool();
@@ -360,8 +356,7 @@ private:
     return &instance;
   }
 
-  template <typename U, typename P>
-  friend class PoolAllocator;
+  template <typename U, typename P> friend class PoolAllocator;
 };
 
 template <typename T, typename Pool, typename U, typename OtherPool>
@@ -419,7 +414,8 @@ public:
     total_allocated_bytes_.store(total_allocated_bytes_.load() + size);
     size_t current_peak = peak_allocated_bytes_.load();
     size_t new_total = total_allocated_bytes_.load();
-    while (new_total > current_peak && !peak_allocated_bytes_.compare_exchange_weak(current_peak, new_total)) {
+    while (new_total > current_peak &&
+           !peak_allocated_bytes_.compare_exchange_weak(current_peak, new_total)) {
       // Retry if another thread updated it
     }
     total_allocation_count_.store(total_allocation_count_.load() + 1);
@@ -470,10 +466,18 @@ public:
   /**
    * @brief Get global statistics
    */
-  [[nodiscard]] size_t total_allocated_bytes() const { return total_allocated_bytes_; }
-  [[nodiscard]] size_t peak_allocated_bytes() const { return peak_allocated_bytes_; }
-  [[nodiscard]] uint64_t total_allocation_count() const { return total_allocation_count_; }
-  [[nodiscard]] uint64_t total_deallocation_count() const { return total_deallocation_count_; }
+  [[nodiscard]] size_t total_allocated_bytes() const {
+    return total_allocated_bytes_;
+  }
+  [[nodiscard]] size_t peak_allocated_bytes() const {
+    return peak_allocated_bytes_;
+  }
+  [[nodiscard]] uint64_t total_allocation_count() const {
+    return total_allocation_count_;
+  }
+  [[nodiscard]] uint64_t total_deallocation_count() const {
+    return total_deallocation_count_;
+  }
   [[nodiscard]] size_t active_sites() const {
     std::scoped_lock lock(mu_);
     return sites_.size();
@@ -512,10 +516,10 @@ public:
     std::ostringstream oss;
     oss << "Memory Usage Report\n";
     oss << "==================\n";
-    oss << std::format("Total Allocated: {} bytes ({:.2f} MB)\n",
-                        total_bytes, total_bytes / 1024.0 / 1024.0);
-    oss << std::format("Peak Allocated: {} bytes ({:.2f} MB)\n",
-                        peak_bytes, peak_bytes / 1024.0 / 1024.0);
+    oss << std::format("Total Allocated: {} bytes ({:.2f} MB)\n", total_bytes,
+                       total_bytes / 1024.0 / 1024.0);
+    oss << std::format("Peak Allocated: {} bytes ({:.2f} MB)\n", peak_bytes,
+                       peak_bytes / 1024.0 / 1024.0);
     oss << std::format("Total Allocations: {}\n", alloc_count);
     oss << std::format("Total Deallocations: {}\n", dealloc_count);
     oss << std::format("Active Sites: {}\n\n", sites_.size());
@@ -531,8 +535,8 @@ public:
     for (size_t i = 0; i < std::min(sorted_sites.size(), size_t(10)); ++i) {
       const auto& [name, bytes] = sorted_sites[i];
       const auto& stats = sites_.at(name);
-      oss << std::format("  {:<30} {:>12} bytes ({:>6} allocs, {:>6} objects)\n",
-                            name, bytes, stats.allocation_count, stats.object_count);
+      oss << std::format("  {:<30} {:>12} bytes ({:>6} allocs, {:>6} objects)\n", name, bytes,
+                         stats.allocation_count, stats.object_count);
     }
 
     return oss.str();
@@ -568,8 +572,7 @@ private:
 /**
  * @brief Helper class to track allocations using RAII
  */
-template <typename T>
-class MemoryTracker {
+template <typename T> class MemoryTracker {
 public:
   explicit MemoryTracker(const std::string& site_name)
       : site_name_(site_name), monitor_(&global_memory_monitor()) {}

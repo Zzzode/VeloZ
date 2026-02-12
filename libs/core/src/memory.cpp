@@ -19,9 +19,9 @@ void* aligned_alloc(size_t size, size_t alignment) {
   if (ptr == nullptr) {
     return nullptr;
   }
-  void** aligned_ptr = reinterpret_cast<void**>(
-      (reinterpret_cast<uintptr_t>(ptr) + alignment + sizeof(void*)) &
-      ~(static_cast<uintptr_t>(alignment) - 1));
+  void** aligned_ptr =
+      reinterpret_cast<void**>((reinterpret_cast<uintptr_t>(ptr) + alignment + sizeof(void*)) &
+                               ~(static_cast<uintptr_t>(alignment) - 1));
   aligned_ptr[-1] = ptr;
   ptr = aligned_ptr;
 #endif

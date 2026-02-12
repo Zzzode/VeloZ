@@ -2,14 +2,14 @@
 
 #include "veloz/exec/order_api.h"
 
+#include <chrono>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <chrono>
-#include <functional>
 
 namespace veloz::oms {
 
@@ -56,18 +56,11 @@ public:
   OrderStore() = default;
 
   void note_order_params(const veloz::exec::PlaceOrderRequest& request);
-  void apply_order_update(std::string_view client_order_id,
-                          std::string_view symbol,
-                          std::string_view side,
-                          std::string_view venue_order_id,
-                          std::string_view status,
-                          std::string_view reason,
-                          std::int64_t ts_ns);
-  void apply_fill(std::string_view client_order_id,
-                  std::string_view symbol,
-                  double qty,
-                  double price,
-                  std::int64_t ts_ns);
+  void apply_order_update(std::string_view client_order_id, std::string_view symbol,
+                          std::string_view side, std::string_view venue_order_id,
+                          std::string_view status, std::string_view reason, std::int64_t ts_ns);
+  void apply_fill(std::string_view client_order_id, std::string_view symbol, double qty,
+                  double price, std::int64_t ts_ns);
   void apply_execution_report(const veloz::exec::ExecutionReport& report);
 
   [[nodiscard]] std::optional<OrderState> get(std::string_view client_order_id) const;

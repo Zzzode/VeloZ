@@ -1,12 +1,11 @@
-#include <gtest/gtest.h>
-
 #include "veloz/core/logger.h"
 
-#include <sstream>
-#include <fstream>
 #include <filesystem>
-#include <memory>
 #include <format>
+#include <fstream>
+#include <gtest/gtest.h>
+#include <memory>
+#include <sstream>
 
 using namespace veloz::core;
 
@@ -21,7 +20,8 @@ protected:
     // Clean up test files
     try {
       std::filesystem::remove_all("test_logs");
-    } catch (...) {}
+    } catch (...) {
+    }
   }
 
   std::unique_ptr<std::stringstream> ss_;
@@ -47,15 +47,13 @@ TEST(LogLevelTest, ToString) {
 
 TEST_F(LoggerTest, TextFormatterFormat) {
   TextFormatter formatter(false, false);
-  LogEntry entry{
-    .level = LogLevel::Info,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Test message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Info,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Test message",
+                 .time_point = std::chrono::system_clock::now()};
 
   std::string formatted = formatter.format(entry);
 
@@ -69,15 +67,13 @@ TEST_F(LoggerTest, TextFormatterFormat) {
 
 TEST_F(LoggerTest, TextFormatterWithFunction) {
   TextFormatter formatter(true, false);
-  LogEntry entry{
-    .level = LogLevel::Debug,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Debug message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Debug,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Debug message",
+                 .time_point = std::chrono::system_clock::now()};
 
   std::string formatted = formatter.format(entry);
 
@@ -86,15 +82,13 @@ TEST_F(LoggerTest, TextFormatterWithFunction) {
 
 TEST_F(LoggerTest, TextFormatterWithColor) {
   TextFormatter formatter(false, true);
-  LogEntry entry{
-    .level = LogLevel::Error,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Error message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Error,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Error message",
+                 .time_point = std::chrono::system_clock::now()};
 
   std::string formatted = formatter.format(entry);
 
@@ -108,15 +102,13 @@ TEST_F(LoggerTest, TextFormatterWithColor) {
 
 TEST_F(LoggerTest, JsonFormatterFormat) {
   JsonFormatter formatter(false);
-  LogEntry entry{
-    .level = LogLevel::Info,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Test message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Info,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Test message",
+                 .time_point = std::chrono::system_clock::now()};
 
   std::string formatted = formatter.format(entry);
 
@@ -131,15 +123,13 @@ TEST_F(LoggerTest, JsonFormatterFormat) {
 
 TEST_F(LoggerTest, JsonFormatterEscape) {
   JsonFormatter formatter(false);
-  LogEntry entry{
-    .level = LogLevel::Info,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Message with \"quotes\" and \\backslashes\\",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Info,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Message with \"quotes\" and \\backslashes\\",
+                 .time_point = std::chrono::system_clock::now()};
 
   std::string formatted = formatter.format(entry);
 
@@ -153,10 +143,7 @@ TEST_F(LoggerTest, JsonFormatterEscape) {
 // ============================================================================
 
 TEST_F(LoggerTest, LoggerBasicLogging) {
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<ConsoleOutput>()
-  );
+  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
 
   // This should not throw
   logger.info("Test info message");
@@ -166,10 +153,7 @@ TEST_F(LoggerTest, LoggerBasicLogging) {
 
 TEST_F(LoggerTest, LoggerLevelFiltering) {
   std::stringstream ss;
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<ConsoleOutput>()
-  );
+  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
   logger.set_level(LogLevel::Warn);
 
   // These should be filtered out
@@ -183,20 +167,14 @@ TEST_F(LoggerTest, LoggerLevelFiltering) {
 }
 
 TEST_F(LoggerTest, LoggerFormattedMessage) {
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<ConsoleOutput>()
-  );
+  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
 
   logger.info(std::format("Hello {}", "World"));
   logger.info(std::format("Value: {}, Name: {}", 42, "Test"));
 }
 
 TEST_F(LoggerTest, LoggerChangeFormatter) {
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<ConsoleOutput>()
-  );
+  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
 
   logger.info("Text formatted message");
 
@@ -212,24 +190,19 @@ TEST_F(LoggerTest, LoggerChangeFormatter) {
 TEST_F(LoggerTest, FileOutputBasic) {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output(
-      "test_logs/test.log",
-      FileOutput::Rotation::None,
-      1024 * 1024, // 1MB
-      3
-  );
+  FileOutput output("test_logs/test.log", FileOutput::Rotation::None,
+                    1024 * 1024, // 1MB
+                    3);
 
   EXPECT_TRUE(output.is_open());
 
-  LogEntry entry{
-    .level = LogLevel::Info,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Test message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Info,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Test message",
+                 .time_point = std::chrono::system_clock::now()};
 
   output.write("Test log line", entry);
   output.flush();
@@ -238,8 +211,7 @@ TEST_F(LoggerTest, FileOutputBasic) {
 
   // Check file content
   std::ifstream ifs("test_logs/test.log");
-  std::string content((std::istreambuf_iterator<char>(ifs)),
-                     std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
   EXPECT_FALSE(content.empty());
   EXPECT_TRUE(content.find("Test log line") != std::string::npos);
 }
@@ -247,23 +219,18 @@ TEST_F(LoggerTest, FileOutputBasic) {
 TEST_F(LoggerTest, FileOutputRotationBySize) {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output(
-      "test_logs/rotate.log",
-      FileOutput::Rotation::Size,
-      100, // 100 bytes
-      3
-  );
+  FileOutput output("test_logs/rotate.log", FileOutput::Rotation::Size,
+                    100, // 100 bytes
+                    3);
 
   TextFormatter formatter;
-  LogEntry entry{
-    .level = LogLevel::Info,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Test message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Info,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Test message",
+                 .time_point = std::chrono::system_clock::now()};
 
   std::string long_message(60, 'X'); // Create a long message
   LogEntry long_entry = entry;
@@ -282,13 +249,9 @@ TEST_F(LoggerTest, FileOutputRotationBySize) {
 TEST_F(LoggerTest, FileOutputRotationByTime) {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output(
-      "test_logs/time_rotate.log",
-      FileOutput::Rotation::Time,
-      1024 * 1024, // 1MB
-      3,
-      FileOutput::RotationInterval::Hourly
-  );
+  FileOutput output("test_logs/time_rotate.log", FileOutput::Rotation::Time,
+                    1024 * 1024, // 1MB
+                    3, FileOutput::RotationInterval::Hourly);
 
   EXPECT_TRUE(output.is_open());
   // Actual time-based rotation would require waiting, we just test setup
@@ -314,15 +277,13 @@ TEST_F(LoggerTest, MultiOutputBasic) {
 
   EXPECT_EQ(multi_output->output_count(), 1);
 
-  LogEntry entry{
-    .level = LogLevel::Info,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 42,
-    .function = "test_func",
-    .message = "Test message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Info,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 42,
+                 .function = "test_func",
+                 .message = "Test message",
+                 .time_point = std::chrono::system_clock::now()};
 
   multi_output->write("Test", entry);
   multi_output->flush();
@@ -353,16 +314,11 @@ TEST_F(LoggerTest, MultiOutputMultipleDestinations) {
 TEST_F(LoggerTest, LoggerWithMultipleOutputs) {
   std::filesystem::create_directories("test_logs");
 
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<ConsoleOutput>()
-  );
+  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
 
   // Add file output
-  logger.add_output(std::make_unique<FileOutput>(
-      "test_logs/multi.log",
-      FileOutput::Rotation::None
-  ));
+  logger.add_output(
+      std::make_unique<FileOutput>("test_logs/multi.log", FileOutput::Rotation::None));
 
   logger.info("Message to both console and file");
 
@@ -399,18 +355,15 @@ TEST_F(LoggerTest, GlobalLoggerConvenienceFunctions) {
 TEST_F(LoggerTest, LoggerFlush) {
   std::filesystem::create_directories("test_logs");
 
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<FileOutput>("test_logs/flush.log")
-  );
+  Logger logger(std::make_unique<TextFormatter>(),
+                std::make_unique<FileOutput>("test_logs/flush.log"));
 
   logger.info("Message before flush");
   logger.flush();
 
   // File should contain the message
   std::ifstream ifs("test_logs/flush.log");
-  std::string content((std::istreambuf_iterator<char>(ifs)),
-                     std::istreambuf_iterator<char>());
+  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
   EXPECT_TRUE(content.find("Message before flush") != std::string::npos);
 }
 
@@ -419,10 +372,7 @@ TEST_F(LoggerTest, LoggerFlush) {
 // ============================================================================
 
 TEST_F(LoggerTest, FormattedLogging) {
-  Logger logger(
-      std::make_unique<TextFormatter>(),
-      std::make_unique<ConsoleOutput>()
-  );
+  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
 
   logger.trace(std::format("Trace: {}", 1));
   logger.debug(std::format("Debug: {}", 2));
@@ -437,15 +387,13 @@ TEST_F(LoggerTest, FormattedLogging) {
 // ============================================================================
 
 TEST_F(LoggerTest, LogEntryConstruction) {
-  LogEntry entry{
-    .level = LogLevel::Error,
-    .timestamp = "2023-01-01T12:00:00.000Z",
-    .file = "test.cpp",
-    .line = 100,
-    .function = "my_function",
-    .message = "Test error message",
-    .time_point = std::chrono::system_clock::now()
-  };
+  LogEntry entry{.level = LogLevel::Error,
+                 .timestamp = "2023-01-01T12:00:00.000Z",
+                 .file = "test.cpp",
+                 .line = 100,
+                 .function = "my_function",
+                 .message = "Test error message",
+                 .time_point = std::chrono::system_clock::now()};
 
   EXPECT_EQ(entry.level, LogLevel::Error);
   EXPECT_EQ(entry.timestamp, "2023-01-01T12:00:00.000Z");

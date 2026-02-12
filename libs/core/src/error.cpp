@@ -4,32 +4,32 @@ namespace veloz::core {
 
 std::string to_string(ErrorCode code) {
   switch (code) {
-    case ErrorCode::Success:
-      return "Success";
-    case ErrorCode::UnknownError:
-      return "Unknown Error";
-    case ErrorCode::NetworkError:
-      return "Network Error";
-    case ErrorCode::ParseError:
-      return "Parse Error";
-    case ErrorCode::ValidationError:
-      return "Validation Error";
-    case ErrorCode::TimeoutError:
-      return "Timeout Error";
-    case ErrorCode::ResourceError:
-      return "Resource Error";
-    case ErrorCode::ProtocolError:
-      return "Protocol Error";
-    case ErrorCode::NotFoundError:
-      return "Not Found Error";
-    case ErrorCode::PermissionError:
-      return "Permission Error";
-    case ErrorCode::ConfigurationError:
-      return "Configuration Error";
-    case ErrorCode::StateError:
-      return "State Error";
-    default:
-      return "Invalid Error Code";
+  case ErrorCode::Success:
+    return "Success";
+  case ErrorCode::UnknownError:
+    return "Unknown Error";
+  case ErrorCode::NetworkError:
+    return "Network Error";
+  case ErrorCode::ParseError:
+    return "Parse Error";
+  case ErrorCode::ValidationError:
+    return "Validation Error";
+  case ErrorCode::TimeoutError:
+    return "Timeout Error";
+  case ErrorCode::ResourceError:
+    return "Resource Error";
+  case ErrorCode::ProtocolError:
+    return "Protocol Error";
+  case ErrorCode::NotFoundError:
+    return "Not Found Error";
+  case ErrorCode::PermissionError:
+    return "Permission Error";
+  case ErrorCode::ConfigurationError:
+    return "Configuration Error";
+  case ErrorCode::StateError:
+    return "State Error";
+  default:
+    return "Invalid Error Code";
   }
 }
 

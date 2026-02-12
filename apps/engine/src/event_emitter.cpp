@@ -67,7 +67,7 @@ std::string order_state_json(const veloz::oms::OrderState& st) {
   return oss.str();
 }
 
-} 
+} // namespace
 
 EventEmitter::EventEmitter(std::ostream& out) : out_(out) {}
 
@@ -151,4 +151,4 @@ void EventEmitter::emit_error(std::string_view message, std::int64_t ts_ns) {
   emit_line(oss.str());
 }
 
-}
+} // namespace veloz::engine
