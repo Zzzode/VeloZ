@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <filesystem>
+#include <fstream>
 #include "veloz/backtest/data_source.h"
 
 class DataSourceTest : public ::testing::Test {
@@ -84,7 +86,42 @@ TEST_F(DataSourceTest, BinanceDataSourceGetData) {
 }
 
 TEST_F(DataSourceTest, CSVDataSourceDownloadData) {
-    EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h", "test_data.csv"));
+    // Test download_data with valid parameters for "trade" data type
+    const std::string test_file = "/tmp/test_csv_data_BTCUSDT_trade.csv";
+    std::int64_t start_time = 1704067200000;  // 2024-01-01 00:00:00 UTC
+    std::int64_t end_time = 1704068100000;    // 2024-01-01 00:15:00 UTC (15 minutes)
+
+    // Clean up test file if it exists
+    std::filesystem::remove(test_file);
+
+    // Test successful download for trade data
+    bool result = csv_data_source_->download_data("BTCUSDT", start_time, end_time, "trade", "", test_file);
+    EXPECT_TRUE(result);
+
+    // Verify file was created
+    EXPECT_TRUE(std::filesystem::exists(test_file));
+
+    // Verify file has content (should have header + some data)
+    std::ifstream file(test_file);
+    std::string line;
+    int line_count = 0;
+    while (std::getline(file, line)) {
+        line_count++;
+    }
+    EXPECT_GT(line_count, 1);  // At least header + 1 data line
+    file.close();
+
+    // Clean up test file
+    std::filesystem::remove(test_file);
+}
+
+TEST_F(DataSourceTest, CSVDataSourceDownloadDataInvalidParams) {
+    // Test with invalid parameters
+    EXPECT_FALSE(csv_data_source_->download_data("", 1609459200000, 1640995200000, "trade", "", "test.csv"));  // Empty symbol
+    EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 0, 1640995200000, "trade", "", "test.csv"));  // Invalid start_time
+    EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1609459200000, 0, "trade", "", "test.csv"));  // Invalid end_time
+    EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1640995200000, 1609459200000, "trade", "", "test.csv"));  // end_time < start_time
+    EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h", "test.csv"));  // Unsupported data type
 }
 
 TEST_F(DataSourceTest, BinanceDataSourceDownloadData) {

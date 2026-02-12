@@ -163,7 +163,3 @@ TEST_F(AdvancedStrategiesTest, StrategyFactoriesTest) {
     EXPECT_EQ(arbitrage_factory.get_strategy_type(), "CrossExchangeArbitrageStrategy");
 }
 
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

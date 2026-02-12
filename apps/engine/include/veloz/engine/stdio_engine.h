@@ -1,36 +1,48 @@
 #pragma once
 
-#include "veloz/engine/engine_state.h"
-#include "veloz/engine/event_emitter.h"
-#include "veloz/exec/order_router.h"
-#include "veloz/risk/risk_engine.h"
-#include "veloz/market/order_book.h"
-#include "veloz/market/subscription_manager.h"
-
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <ostream>
+#include <sstream>
 #include <unordered_map>
+#include <iostream>
+#include <chrono>
+#include <algorithm>
+#include <thread>
+#include <ostream>
+#include <functional>
+#include "veloz/engine/command_parser.h"
 
-namespace veloz::engine {
+namespace veloz {
+namespace engine {
 
 class StdioEngine final {
 public:
     explicit StdioEngine(std::ostream& out);
+    ~StdioEngine() = default;
 
     int run(std::atomic<bool>& stop_flag);
 
-private:
-    EngineState state_;
-    EventEmitter emitter_;
-    std::shared_ptr<veloz::exec::OrderRouter> order_router_;
-    std::shared_ptr<veloz::risk::RiskEngine> risk_engine_;
-    std::unordered_map<std::string, veloz::market::OrderBook> order_books_;
-    std::shared_ptr<veloz::market::SubscriptionManager> subscription_manager_;
-    mutable std::mutex market_mu_;
+    // Command handlers
+    using OrderHandler = std::function<void(const ParsedOrder&)>;
+    using CancelHandler = std::function<void(const ParsedCancel&)>;
+    using QueryHandler = std::function<void(const ParsedQuery&)>;
 
-    void handle_market_event(const veloz::market::MarketEvent& event);
+    void set_order_handler(OrderHandler handler) { order_handler_ = handler; }
+    void set_cancel_handler(CancelHandler handler) { cancel_handler_ = handler; }
+    void set_query_handler(QueryHandler handler) { query_handler_ = handler; }
+
+private:
+    std::ostream& out_;
+    std::mutex output_mutex_;
+    OrderHandler order_handler_;
+    CancelHandler cancel_handler_;
+    QueryHandler query_handler_;
+    std::int64_t command_count_;
+
+    void emit_event(const std::string& event_json);
+    void emit_error(const std::string& error_msg);
 };
 
+}
 }

@@ -168,3 +168,130 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+// Additional tests for grid search implementation
+
+TEST_F(ParameterOptimizerTest, GridSearchWithSingleParameter) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    // Set up single parameter range
+    std::map<std::string, std::pair<double, double>> single_range;
+    single_range["lookback_period"] = {5.0, 15.0};
+    optimizer.set_parameter_ranges(single_range);
+
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+
+    auto results = optimizer.get_results();
+    EXPECT_FALSE(results.empty());
+
+    // Should have multiple combinations (10 steps by default)
+    EXPECT_GT(results.size(), 1);
+}
+
+TEST_F(ParameterOptimizerTest, GridSearchWithMultipleParameters) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    // Set up multiple parameter ranges
+    std::map<std::string, std::pair<double, double>> multi_range;
+    multi_range["lookback_period"] = {10.0, 20.0};
+    multi_range["stop_loss"] = {0.01, 0.03};
+    optimizer.set_parameter_ranges(multi_range);
+
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+
+    auto results = optimizer.get_results();
+    EXPECT_FALSE(results.empty());
+
+    // Should have 10*10 = 100 combinations
+    EXPECT_LE(results.size(), 100);
+}
+
+TEST_F(ParameterOptimizerTest, GridSearchMaxIterationsLimit) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    // Set up parameter range that would produce many combinations
+    std::map<std::string, std::pair<double, double>> wide_range;
+    wide_range["param1"] = {1.0, 100.0};
+    wide_range["param2"] = {1.0, 100.0};
+    optimizer.set_parameter_ranges(wide_range);
+
+    // Limit iterations
+    optimizer.set_max_iterations(50);
+
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+
+    auto results = optimizer.get_results();
+    // Should be limited to 50 iterations
+    EXPECT_LE(results.size(), 50);
+}
+
+TEST_F(ParameterOptimizerTest, GridSearchOptimizationTargetSharpe) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    std::map<std::string, std::pair<double, double>> ranges;
+    ranges["lookback_period"] = {10.0, 30.0};
+    optimizer.set_parameter_ranges(ranges);
+    optimizer.set_optimization_target("sharpe");
+
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+
+    auto best_params = optimizer.get_best_parameters();
+    EXPECT_FALSE(best_params.empty());
+}
+
+TEST_F(ParameterOptimizerTest, GridSearchOptimizationTargetReturn) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    std::map<std::string, std::pair<double, double>> ranges;
+    ranges["lookback_period"] = {10.0, 30.0};
+    optimizer.set_parameter_ranges(ranges);
+    optimizer.set_optimization_target("return");
+
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+
+    auto best_params = optimizer.get_best_parameters();
+    EXPECT_FALSE(best_params.empty());
+}
+
+TEST_F(ParameterOptimizerTest, GridSearchOptimizationTargetWinRate) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    std::map<std::string, std::pair<double, double>> ranges;
+    ranges["lookback_period"] = {10.0, 30.0};
+    optimizer.set_parameter_ranges(ranges);
+    optimizer.set_optimization_target("win_rate");
+
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+
+    auto best_params = optimizer.get_best_parameters();
+    EXPECT_FALSE(best_params.empty());
+}
+
+TEST_F(ParameterOptimizerTest, GridSearchClearsPreviousResults) {
+    veloz::backtest::GridSearchOptimizer optimizer;
+    optimizer.initialize(config_);
+
+    std::map<std::string, std::pair<double, double>> ranges;
+    ranges["lookback_period"] = {10.0, 20.0};
+    optimizer.set_parameter_ranges(ranges);
+
+    // Run first optimization
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+    auto first_results = optimizer.get_results();
+    size_t first_count = first_results.size();
+
+    // Run second optimization
+    EXPECT_TRUE(optimizer.optimize(strategy_));
+    auto second_results = optimizer.get_results();
+    size_t second_count = second_results.size();
+
+    // Results should be cleared between runs
+    EXPECT_EQ(first_count, second_count);
+}
+

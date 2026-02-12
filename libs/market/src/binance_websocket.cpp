@@ -1,18 +1,17 @@
 #include "veloz/market/binance_websocket.h"
 
-#include <nlohmann/json.hpp>
 #include <websocketpp/client.hpp>
 #include <websocketpp/config/core_client.hpp>
 #include <iostream>
-#include <sstream>
 #include <algorithm>
 
 namespace veloz::market {
 
-using json = nlohmann::json;
 using websocket_client = websocketpp::client<websocketpp::config::core_client>;
 using websocket_connection_ptr = websocket_client::connection_ptr;
 using websocket_message_ptr = websocket_client::message_ptr;
+
+using namespace veloz::core;
 
 BinanceWebSocket::BinanceWebSocket(bool testnet)
     : connected_(false)
@@ -107,12 +106,12 @@ MarketEventType BinanceWebSocket::parse_stream_name(const std::string& stream_na
 std::string BinanceWebSocket::build_subscription_message(const veloz::common::SymbolId& symbol, MarketEventType event_type) {
     std::string stream = format_symbol(symbol) + event_type_to_stream_name(event_type);
 
-    json j;
-    j["method"] = "SUBSCRIBE";
-    j["params"] = json::array({stream});
-    j["id"] = 1;
+    auto builder = JsonBuilder::object();
+    builder.put("method", "SUBSCRIBE");
+    builder.put_array("params", [&](JsonBuilder& arr) { arr.add(stream); });
+    builder.put("id", 1);
 
-    return j.dump();
+    return builder.build();
 }
 
 bool BinanceWebSocket::subscribe(const veloz::common::SymbolId& symbol, MarketEventType event_type) {
@@ -163,13 +162,13 @@ bool BinanceWebSocket::unsubscribe(const veloz::common::SymbolId& symbol, Market
     // Send unsubscribe message if connected
     if (connected_) {
         std::string stream = format_symbol(symbol) + event_type_to_stream_name(event_type);
-        json j;
-        j["method"] = "UNSUBSCRIBE";
-        j["params"] = json::array({stream});
-        j["id"] = 2;
+        auto builder = JsonBuilder::object();
+        builder.put("method", "UNSUBSCRIBE");
+        builder.put_array("params", [&](JsonBuilder& arr) { arr.add(stream); });
+        builder.put("id", 2);
 
         // In real implementation, send via WebSocket
-        std::cout << "Unsubscribed from stream: " << j.dump() << std::endl;
+        std::cout << "Unsubscribed from stream: " << builder.build() << std::endl;
     }
 
     return true;
@@ -244,164 +243,176 @@ void BinanceWebSocket::run() {
 
 void BinanceWebSocket::handle_message(const std::string& message) {
     try {
-        json j = json::parse(message);
+        auto doc = JsonDocument::parse(message);
+        auto root = doc.root();
 
-        if (j.contains("stream") && j.contains("data")) {
-            std::string stream = j["stream"].get<std::string>();
-            json data = j["data"];
+        auto stream = root["stream"];
+        auto data = root["data"];
 
-            // Parse symbol and event type from stream name
-            size_t separator_pos = stream.find('@');
-            if (separator_pos == std::string::npos) {
-                return;
-            }
-
-            std::string symbol_str = stream.substr(0, separator_pos);
-            std::transform(symbol_str.begin(), symbol_str.end(), symbol_str.begin(), ::toupper);
-            veloz::common::SymbolId symbol(symbol_str);
-
-            MarketEventType event_type = parse_stream_name(stream);
-
-            // Parse message based on event type
-            MarketEvent market_event;
-            switch (event_type) {
-                case MarketEventType::Trade:
-                    market_event = parse_trade_message(data, symbol);
-                    break;
-                case MarketEventType::BookTop:
-                    market_event = parse_book_message(data, symbol, true);
-                    break;
-                case MarketEventType::BookDelta:
-                    market_event = parse_book_message(data, symbol, false);
-                    break;
-                case MarketEventType::Kline:
-                    market_event = parse_kline_message(data, symbol);
-                    break;
-                case MarketEventType::Ticker:
-                    market_event = parse_ticker_message(data, symbol);
-                    break;
-                default:
-                    return; // Unknown event type
-            }
-
-            // Call callback if set
-            if (event_callback_) {
-                event_callback_(market_event);
-            }
-
-            message_count_++;
-            last_message_time_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
+        if (!stream.is_string() || !data.is_valid()) {
+            return;
         }
+
+        std::string stream_str = stream.get_string();
+
+        // Parse symbol and event type from stream name
+        size_t separator_pos = stream_str.find('@');
+        if (separator_pos == std::string::npos) {
+            return;
+        }
+
+        std::string symbol_str = stream_str.substr(0, separator_pos);
+        std::transform(symbol_str.begin(), symbol_str.end(), symbol_str.begin(), ::toupper);
+        veloz::common::SymbolId symbol(symbol_str);
+
+        MarketEventType event_type = parse_stream_name(stream_str);
+
+        // Parse message based on event type
+        MarketEvent market_event;
+        switch (event_type) {
+            case MarketEventType::Trade:
+                market_event = parse_trade_message(data, symbol);
+                break;
+            case MarketEventType::BookTop:
+                market_event = parse_book_message(data, symbol, true);
+                break;
+            case MarketEventType::BookDelta:
+                market_event = parse_book_message(data, symbol, false);
+                break;
+            case MarketEventType::Kline:
+                market_event = parse_kline_message(data, symbol);
+                break;
+            case MarketEventType::Ticker:
+                market_event = parse_ticker_message(data, symbol);
+                break;
+            default:
+                return; // Unknown event type
+        }
+
+        // Call callback if set
+        if (event_callback_) {
+            event_callback_(market_event);
+        }
+
+        message_count_++;
+        last_message_time_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
     } catch (const std::exception& e) {
         std::cerr << "Error parsing WebSocket message: " << e.what() << std::endl;
     }
 }
 
-MarketEvent BinanceWebSocket::parse_trade_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol) {
+MarketEvent BinanceWebSocket::parse_trade_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol) {
     MarketEvent event;
     event.type = MarketEventType::Trade;
     event.venue = veloz::common::Venue::Binance;
     event.symbol = symbol;
     event.market = veloz::common::MarketKind::Spot; // Default to spot
 
-    event.ts_exchange_ns = data.value("T", 0LL) * 1000000;
+    event.ts_exchange_ns = data["T"].get_int(0LL) * 1000000;
     event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     TradeData trade_data;
-    trade_data.price = data.value("p", 0.0);
-    trade_data.qty = data.value("q", 0.0);
-    trade_data.is_buyer_maker = data.value("m", false);
-    trade_data.trade_id = data.value("t", 0LL);
+    trade_data.price = data["p"].get_double(0.0);
+    trade_data.qty = data["q"].get_double(0.0);
+    trade_data.is_buyer_maker = data["m"].get_bool(false);
+    trade_data.trade_id = data["t"].get_int(0LL);
 
     event.data = std::move(trade_data);
-    event.payload = data.dump();
+    // Keep payload empty for now - we could reconstruct if needed
+    event.payload = "";
 
     return event;
 }
 
-MarketEvent BinanceWebSocket::parse_book_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol, bool is_book_top) {
+MarketEvent BinanceWebSocket::parse_book_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol, bool is_book_top) {
     MarketEvent event;
     event.type = is_book_top ? MarketEventType::BookTop : MarketEventType::BookDelta;
     event.venue = veloz::common::Venue::Binance;
     event.symbol = symbol;
     event.market = veloz::common::MarketKind::Spot; // Default to spot
 
-    event.ts_exchange_ns = data.value("E", 0LL) * 1000000;
+    event.ts_exchange_ns = data["E"].get_int(0LL) * 1000000;
     event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     BookData book_data;
     if (is_book_top) {
         // Parse top of book data
-        book_data.bids.emplace_back(BookLevel{data.value("b", 0.0), data.value("B", 0.0)});
-        book_data.asks.emplace_back(BookLevel{data.value("a", 0.0), data.value("A", 0.0)});
-        book_data.sequence = data.value("u", 0LL);
+        book_data.bids.emplace_back(BookLevel{data["b"].get_double(0.0), data["B"].get_double(0.0)});
+        book_data.asks.emplace_back(BookLevel{data["a"].get_double(0.0), data["A"].get_double(0.0)});
+        book_data.sequence = data["u"].get_int(0LL);
     } else {
         // Parse order book delta data
-        if (data.contains("b")) {
-            for (const auto& bid : data["b"]) {
-                book_data.bids.emplace_back(BookLevel{std::stod(bid[0].get<std::string>()), std::stod(bid[1].get<std::string>())});
-            }
+        auto bids = data["b"];
+        if (bids.is_array()) {
+            bids.for_each_array([&](const JsonValue& bid) {
+                double price = std::stod(bid[0].get_string());
+                double qty = std::stod(bid[1].get_string());
+                book_data.bids.emplace_back(BookLevel{price, qty});
+            });
         }
 
-        if (data.contains("a")) {
-            for (const auto& ask : data["a"]) {
-                book_data.asks.emplace_back(BookLevel{std::stod(ask[0].get<std::string>()), std::stod(ask[1].get<std::string>())});
-            }
+        auto asks = data["a"];
+        if (asks.is_array()) {
+            asks.for_each_array([&](const JsonValue& ask) {
+                double price = std::stod(ask[0].get_string());
+                double qty = std::stod(ask[1].get_string());
+                book_data.asks.emplace_back(BookLevel{price, qty});
+            });
         }
 
-        book_data.sequence = data.value("u", 0LL);
+        book_data.sequence = data["u"].get_int(0LL);
     }
 
     event.data = std::move(book_data);
-    event.payload = data.dump();
+    event.payload = "";
 
     return event;
 }
 
-MarketEvent BinanceWebSocket::parse_kline_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol) {
+MarketEvent BinanceWebSocket::parse_kline_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol) {
     MarketEvent event;
     event.type = MarketEventType::Kline;
     event.venue = veloz::common::Venue::Binance;
     event.symbol = symbol;
     event.market = veloz::common::MarketKind::Spot; // Default to spot
 
-    auto& kline = data["k"];
-    event.ts_exchange_ns = data.value("E", 0LL) * 1000000;
+    auto kline = data["k"];
+    event.ts_exchange_ns = data["E"].get_int(0LL) * 1000000;
     event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     KlineData kline_data;
-    kline_data.open = std::stod(kline["o"].get<std::string>());
-    kline_data.high = std::stod(kline["h"].get<std::string>());
-    kline_data.low = std::stod(kline["l"].get<std::string>());
-    kline_data.close = std::stod(kline["c"].get<std::string>());
-    kline_data.volume = std::stod(kline["v"].get<std::string>());
-    kline_data.start_time = kline.value("t", 0LL);
-    kline_data.close_time = kline.value("T", 0LL);
+    kline_data.open = std::stod(kline["o"].get_string());
+    kline_data.high = std::stod(kline["h"].get_string());
+    kline_data.low = std::stod(kline["l"].get_string());
+    kline_data.close = std::stod(kline["c"].get_string());
+    kline_data.volume = std::stod(kline["v"].get_string());
+    kline_data.start_time = kline["t"].get_int(0LL);
+    kline_data.close_time = kline["T"].get_int(0LL);
 
     event.data = std::move(kline_data);
-    event.payload = data.dump();
+    event.payload = "";
 
     return event;
 }
 
-MarketEvent BinanceWebSocket::parse_ticker_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol) {
+MarketEvent BinanceWebSocket::parse_ticker_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol) {
     MarketEvent event;
     event.type = MarketEventType::Ticker;
     event.venue = veloz::common::Venue::Binance;
     event.symbol = symbol;
     event.market = veloz::common::MarketKind::Spot; // Default to spot
 
-    event.ts_exchange_ns = data.value("E", 0LL) * 1000000;
+    event.ts_exchange_ns = data["E"].get_int(0LL) * 1000000;
     event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     // Ticker data structure
     // For Binance miniTicker, we could store relevant fields in payload
-    event.payload = data.dump();
+    event.payload = "";
 
     return event;
 }

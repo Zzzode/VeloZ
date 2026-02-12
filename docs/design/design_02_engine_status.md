@@ -2,21 +2,30 @@
 
 ## 3.1 Implementation Status (Current - Feb 2026)
 
-The VeloZ engine has made significant progress from the initial skeleton. It now implements a complete end-to-end trading system with market simulation, order management, risk checks, and event processing. The current implementation focuses on a minimal, inspectable event loop (market → order → fill) with full OMS/account aggregation and risk management.
+The VeloZ engine has achieved significant progress from initial skeleton. Core infrastructure is now production-ready with comprehensive logging, JSON processing, memory management, and configuration systems. Current implementation focuses on a minimal, inspectable event loop (market → order → fill) with full OMS/account aggregation and risk management.
 
 ### 3.1.1 Project Status Summary
 
-**Current Phase:** Production-grade core engine implementation complete. The system supports:
-- Real-time market data simulation
-- Order placement and cancellation
-- Risk management and pre-trade checks
-- Order state tracking and fill execution
-- Account balance management
-- Event-driven architecture with JSON event emission
-- Python gateway integration for API access
+**Current Phase:** Core Infrastructure Complete, Engine Functionality in Progress
 
-### 3.1.2 Best-practice principles (Implementation Complete)
+**Completed Infrastructure (Feb 2026):**
+- ✅ Event loop with priority scheduling and filtering
+- ✅ Advanced logging system with multiple formatters and outputs
+- ✅ High-performance JSON processing with type-safe API
+- ✅ Memory pool management with statistics tracking
+- ✅ Hierarchical configuration management with validation
 
+**Engine Functionality (In Progress):**
+- ⚠️ Order state machine implementation (OrderStore - partially complete)
+- ⚠️ Account balance management (OMS - partial implementation)
+- ⚠️ Backtest execution engine (basic implementation, needs enhancement)
+
+**Recent Sprint 2 Updates (Feb 2026):**
+- ✅ Grid search optimization implementation
+- ✅ Trade records in backtest reports
+- ✅ Enhanced command parser (ORDER/CANCEL/QUERY)
+- ✅ StdioEngine event loop implementation
+- ✅ Binance REST adapter (REST API complete, WebSocket pending)
 - **Deterministic state machines:** Order/position/account are driven by a single source of truth (EngineState), with full event replay capability.
 - **Separation of fast-path vs slow-path:** Market/order handling uses atomic operations and minimal locks; reconciliation and reporting run off the fast path.
 - **Observability by default:** Every critical state transition has timestamped events for audit and replay.

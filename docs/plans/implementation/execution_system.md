@@ -1,5 +1,20 @@
 # VeloZ Quantitative Trading Framework - Execution System Optimization Implementation Plan
 
+## 0. Implementation Progress (Updated: 2026-02-11)
+
+**Current Status**: Implementation in Progress
+
+| Component | Status | Notes |
+|-----------|--------|--------|
+| Simulated Execution | ✅ Implemented | Engine stdio mode with basic execution |
+| Binance Spot Testnet | ✅ Implemented | REST + User Stream WS for execution |
+| Order Management (OMS) | ⚠️ 70% | Basic order state tracking in `libs/oms` |
+| Order Routing | ✅ Implemented | Simple routing to sim/exchange |
+| Order State Machine | ⚠️ 80% | Core states, needs expansion |
+| Binance Adapter | ⚠️ 50% | `libs/exec/binance_adapter.h` - structure exists, needs completion |
+
+---
+
 ## 1. Overview
 
 This document details the implementation plan for execution system optimization, including task breakdown, timeline, responsibility assignment, and risk assessment.
@@ -328,3 +343,20 @@ These optimizations will enable the quantitative trading system to:
 4. Obtain detailed execution reports and analysis
 
 Through phased implementation and rigorous testing, we can ensure the correctness and performance of these optimization features while maintaining system maintainability and extensibility.
+
+## 12. Recent Progress (2026-02-11)
+
+**Current Implementation Status:**
+- Simulated execution engine in stdio mode
+- Binance Spot Testnet integration (REST + User Stream WS)
+- Basic order state tracking in OMS module
+- Simple order routing to simulated/exchange
+- Order state machine with core states
+- Binance adapter structure exists (50% complete)
+
+**Next Priorities:**
+- Complete Binance adapter implementation
+- Enhance order state machine with additional states
+- Implement intelligent order routing strategies
+- Add transaction cost models
+- Implement order splitting and scheduling strategies

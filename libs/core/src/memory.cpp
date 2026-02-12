@@ -1,4 +1,4 @@
-#include "veloz/core/memory.h"
+#include "veloz/core/memory_pool.h"
 
 #include <cstdlib>
 
@@ -43,14 +43,14 @@ void aligned_free(void* ptr) {
 #endif
 }
 
-// Global memory statistics instance
-static MemoryStats* g_memory_stats = nullptr;
+// Global memory monitor instance
+static MemoryMonitor* g_memory_monitor = nullptr;
 
-MemoryStats& global_memory_stats() {
-  if (g_memory_stats == nullptr) {
-    g_memory_stats = new MemoryStats();
+MemoryMonitor& global_memory_monitor() {
+  if (g_memory_monitor == nullptr) {
+    g_memory_monitor = new MemoryMonitor();
   }
-  return *g_memory_stats;
+  return *g_memory_monitor;
 }
 
 } // namespace veloz::core

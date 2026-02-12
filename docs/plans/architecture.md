@@ -435,10 +435,10 @@ public:
 | Function | Recommended Library | Reason |
 |----------|-------------------|--------|
 | Network Communication | libcurl / Boost.Beast | High performance, stable |
-| JSON Processing | nlohmann/json | Easy to use, good performance |
+| JSON Processing | yyjson (custom wrapper) | **High performance, lightweight** - replaces nlohmann/json |
 | Concurrency Programming | C++23 Standard Library / Folly | Modern C++ feature support |
 | Logging | spdlog | High performance, easy to use |
-| Configuration | YAML-CPP | Supports complex configuration structures |
+| Configuration | Custom implementation | **Type-safe, validation, hot-reload** - replaces YAML-CPP |
 | Testing | GoogleTest / Catch2 | Mature, easy to use |
 
 ### 4.2 Python Library Selection

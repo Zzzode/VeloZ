@@ -88,3 +88,115 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+// Tests for trade records in reports
+
+TEST_F(BacktestReporterTest, HTMLReportContainsTradeHistory) {
+    std::string html = reporter_->generate_html_report(result_);
+
+    // Check that trade history section exists
+    EXPECT_NE(html.find("Trade History"), std::string::npos);
+    EXPECT_NE(html.find("<th>Time</th>"), std::string::npos);
+    EXPECT_NE(html.find("<th>Symbol</th>"), std::string::npos);
+    EXPECT_NE(html.find("<th>Side</th>"), std::string::npos);
+    EXPECT_NE(html.find("<th>Price</th>"), std::string::npos);
+    EXPECT_NE(html.find("<th>Quantity</th>"), std::string::npos);
+    EXPECT_NE(html.find("<th>Fee</th>"), std::string::npos);
+    EXPECT_NE(html.find("<th>P&L</th>"), std::string::npos);
+}
+
+TEST_F(BacktestReporterTest, HTMLReportContainsTradeData) {
+    std::string html = reporter_->generate_html_report(result_);
+
+    // Check that sample trade data is present
+    EXPECT_NE(html.find("BTCUSDT"), std::string::npos);
+    EXPECT_NE(html.find("buy"), std::string::npos);
+    EXPECT_NE(html.find("sell"), std::string::npos);
+    EXPECT_NE(html.find("0.001"), std::string::npos); // Fee
+}
+
+TEST_F(BacktestReporterTest, HTMLReportTradePnLColoring) {
+    std::string html = reporter_->generate_html_report(result_);
+
+    // Check that positive and negative P&L have proper classes
+    EXPECT_NE(html.find("positive"), std::string::npos);
+    EXPECT_NE(html.find("negative"), std::string::npos);
+}
+
+TEST_F(BacktestReporterTest, JSONReportContainsTradeHistory) {
+    std::string json = reporter_->generate_json_report(result_);
+
+    // Check that trades array exists
+    EXPECT_NE(json.find("\"trades\""), std::string::npos);
+    EXPECT_NE(json.find("\"timestamp\""), std::string::npos);
+    EXPECT_NE(json.find("\"symbol\""), std::string::npos);
+    EXPECT_NE(json.find("\"side\""), std::string::npos);
+    EXPECT_NE(json.find("\"price\""), std::string::npos);
+    EXPECT_NE(json.find("\"quantity\""), std::string::npos);
+    EXPECT_NE(json.find("\"fee\""), std::string::npos);
+    EXPECT_NE(json.find("\"pnl\""), std::string::npos);
+}
+
+TEST_F(BacktestReporterTest, JSONReportContainsTradeData) {
+    std::string json = reporter_->generate_json_report(result_);
+
+    // Check that sample trade data is present
+    EXPECT_NE(json.find("BTCUSDT"), std::string::npos);
+    EXPECT_NE(json.find("test_strategy"), std::string::npos);
+}
+
+TEST_F(BacktestReporterTest, EmptyTradeHistory) {
+    veloz::backtest::BacktestResult result = create_sample_result();
+    result.trades.clear();
+
+    std::string html = reporter_->generate_html_report(result);
+    std::string json = reporter_->generate_json_report(result);
+
+    // Both reports should handle empty trade arrays
+    EXPECT_NE(html.find("Trade History"), std::string::npos);
+    EXPECT_NE(json.find("\"trades\""), std::string::npos);
+}
+
+TEST_F(BacktestReporterTest, SingleTradeReport) {
+    veloz::backtest::BacktestResult result = create_sample_result();
+    result.trades = std::vector<veloz::backtest::TradeRecord>{result.trades[0]};
+    result.trade_count = 1;
+    result.win_count = 1;
+    result.lose_count = 0;
+
+    std::string html = reporter_->generate_html_report(result);
+    std::string json = reporter_->generate_json_report(result);
+
+    // Both reports should handle single trade
+    EXPECT_NE(html.find("1"), std::string::npos);
+    EXPECT_NE(json.find("1"), std::string::npos);
+}
+
+TEST_F(BacktestReporterTest, LargeTradeHistory) {
+    veloz::backtest::BacktestResult result = create_sample_result();
+    // Create 1000 trades
+    result.trades.clear();
+    for (int i = 0; i < 1000; ++i) {
+        veloz::backtest::TradeRecord trade;
+        trade.timestamp = 1609459200000 + i * 1000;
+        trade.symbol = "BTCUSDT";
+        trade.side = (i % 2 == 0) ? "buy" : "sell";
+        trade.price = 50000.0;
+        trade.quantity = 0.01;
+        trade.fee = 0.001;
+        trade.pnl = (i % 3 == 0) ? 100.0 : -50.0;
+        trade.strategy_id = "test_strategy";
+        result.trades.push_back(trade);
+    }
+    result.trade_count = 1000;
+    result.win_count = 667; // 66.7% win rate
+    result.lose_count = 333;
+
+    std::string html = reporter_->generate_html_report(result);
+    std::string json = reporter_->generate_json_report(result);
+
+    // Both reports should handle large trade arrays
+    EXPECT_NE(html.find("1000"), std::string::npos);
+    EXPECT_NE(json.find("1000"), std::string::npos);
+}
+

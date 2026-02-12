@@ -1,5 +1,4 @@
 #include "veloz/engine/engine_app.h"
-
 #include "veloz/core/event_loop.h"
 #include "veloz/core/logger.h"
 #include "veloz/engine/stdio_engine.h"
@@ -7,6 +6,7 @@
 #include <chrono>
 #include <csignal>
 #include <thread>
+#include <algorithm>
 
 namespace {
 
@@ -18,7 +18,7 @@ void handle_signal(int) {
   }
 }
 
-} 
+}
 
 namespace veloz::engine {
 
@@ -33,10 +33,23 @@ void EngineApp::install_signal_handlers() {
 
 int EngineApp::run() {
   install_signal_handlers();
-  veloz::core::Logger logger(config_.stdio_mode ? err_ : out_);
-  logger.set_level(veloz::core::LogLevel::Info);
-  logger_ = &logger;
-  logger.info(config_.stdio_mode ? "VeloZ engine starting (stdio)" : "VeloZ engine starting");
+
+  // Create logger with appropriate output
+  std::unique_ptr<veloz::core::Logger> logger_ptr;
+  if (config_.stdio_mode) {
+    // Logger for stderr
+    auto console_output = std::make_unique<veloz::core::ConsoleOutput>(true);
+    logger_ptr = std::make_unique<veloz::core::Logger>(
+      std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
+  } else {
+    // Logger for stdout
+    auto console_output = std::make_unique<veloz::core::ConsoleOutput>(false);
+    logger_ptr = std::make_unique<veloz::core::Logger>(
+      std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
+  }
+
+  logger_ptr->set_level(veloz::core::LogLevel::Info);
+  logger_ptr->info(config_.stdio_mode ? "VeloZ engine starting (stdio)" : "VeloZ engine starting");
 
   if (config_.stdio_mode) {
     return run_stdio();
@@ -47,17 +60,16 @@ int EngineApp::run() {
 int EngineApp::run_stdio() {
   StdioEngine engine(out_);
   const int rc = engine.run(stop_);
-  logger_->info("shutdown requested");
   return rc;
 }
 
 int EngineApp::run_service() {
   veloz::core::EventLoop loop;
-  std::jthread loop_thread([&] { loop.run(); });
-  std::jthread heartbeat([&] {
+  std::thread loop_thread([&] { loop.run(); });
+  std::thread heartbeat([&] {
     using namespace std::chrono_literals;
     while (!stop_.load()) {
-      loop.post([&] { logger_->info("heartbeat"); });
+      loop.post([&] { /* heartbeat */ });
       std::this_thread::sleep_for(1s);
     }
   });
@@ -66,10 +78,8 @@ int EngineApp::run_service() {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
-  logger_->info("shutdown requested");
   loop.stop();
   loop_thread.join();
-  logger_->info("VeloZ engine stopped");
   return 0;
 }
 

@@ -1,18 +1,24 @@
 #include "veloz/exec/binance_adapter.h"
+#include "veloz/core/json.h"
 
 #ifndef VELOZ_NO_CURL
 #include <curl/curl.h>
 #endif
 
-#include <nlohmann/json.hpp>
+#ifndef VELOZ_NO_OPENSSL
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
+#endif
+
 #include <iostream>
 #include <sstream>
-#include <thread>
 #include <algorithm>
+#include <iomanip>
+#include <vector>
 
 namespace veloz::exec {
 
-using json = nlohmann::json;
+using namespace veloz::core;
 
 #ifndef VELOZ_NO_CURL
 // Static helper for CURL
@@ -52,10 +58,31 @@ BinanceAdapter::~BinanceAdapter() {
 }
 
 std::string BinanceAdapter::build_signature(const std::string& query_string) {
-    // Implement signature generation using HMAC-SHA256
-    // This is a placeholder - should use OpenSSL for actual HMAC calculation
+#ifndef VELOZ_NO_OPENSSL
+    // Implement HMAC-SHA256 signature using OpenSSL
+    unsigned char* digest;
+    unsigned int digest_len;
+
+    digest = HMAC(EVP_sha256(),
+                 secret_key_.c_str(), secret_key_.length(),
+                 reinterpret_cast<const unsigned char*>(query_string.c_str()), query_string.length(),
+                 nullptr, &digest_len);
+
+    // Convert binary digest to hex string
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0') << std::setw(2);
+    for (unsigned int i = 0; i < digest_len; ++i) {
+        oss << static_cast<unsigned int>(digest[i]);
+    }
+
+    return oss.str();
+#else
+    // Placeholder for builds without OpenSSL
+    // In production, this should be implemented with a proper crypto library
     (void)query_string;
+    std::cerr << "Warning: OpenSSL not available, using placeholder signature" << std::endl;
     return "placeholder_signature";
+#endif
 }
 
 std::string BinanceAdapter::http_get(const std::string& endpoint, const std::string& params) {
@@ -282,16 +309,17 @@ std::optional<ExecutionReport> BinanceAdapter::place_order(const PlaceOrderReque
     std::string response = http_post(endpoint, query_string);
 
     try {
-        json j = json::parse(response);
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
 
         ExecutionReport report;
         report.symbol = req.symbol;
         report.client_order_id = req.client_order_id;
-        report.venue_order_id = j.value("orderId", "");
-        report.status = parse_order_status(j.value("status", "NEW"));
-        report.last_fill_qty = j.value("executedQty", 0.0);
-        report.last_fill_price = j.value("price", 0.0);
-        report.ts_exchange_ns = j.value("transactTime", 0LL) * 1000000;
+        report.venue_order_id = root["orderId"].get_string("");
+        report.status = parse_order_status(root["status"].get_string("NEW"));
+        report.last_fill_qty = root["executedQty"].get_double(0.0);
+        report.last_fill_price = root["price"].get_double(0.0);
+        report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
         report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -325,16 +353,17 @@ std::optional<ExecutionReport> BinanceAdapter::cancel_order(const CancelOrderReq
     std::string response = http_delete(endpoint, query_string);
 
     try {
-        json j = json::parse(response);
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
 
         ExecutionReport report;
         report.symbol = req.symbol;
         report.client_order_id = req.client_order_id;
-        report.venue_order_id = j.value("orderId", "");
-        report.status = parse_order_status(j.value("status", "CANCELED"));
-        report.last_fill_qty = j.value("executedQty", 0.0);
-        report.last_fill_price = j.value("price", 0.0);
-        report.ts_exchange_ns = j.value("transactTime", 0LL) * 1000000;
+        report.venue_order_id = root["orderId"].get_string("");
+        report.status = parse_order_status(root["status"].get_string("CANCELED"));
+        report.last_fill_qty = root["executedQty"].get_double(0.0);
+        report.last_fill_price = root["price"].get_double(0.0);
+        report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
         report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -367,8 +396,9 @@ void BinanceAdapter::connect() {
     std::string response = http_get("/api/v3/time");
 
     try {
-        json j = json::parse(response);
-        if (j.contains("serverTime")) {
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
+        if (root["serverTime"].is_valid()) {
             connected_ = true;
             last_activity_time_ = std::chrono::steady_clock::now();
             std::cout << "Binance API connected successfully" << std::endl;
@@ -399,9 +429,13 @@ std::optional<double> BinanceAdapter::get_current_price(const veloz::common::Sym
     std::string response = http_get(endpoint, params);
 
     try {
-        json j = json::parse(response);
-        if (j.contains("price")) {
-            return std::stod(j["price"].get<std::string>());
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
+        auto price_val = root["price"];
+        if (price_val.is_string()) {
+            return std::stod(price_val.get_string());
+        } else if (price_val.is_real()) {
+            return price_val.get_double();
         }
     } catch (const std::exception& e) {
         std::cerr << "Error getting current price: " << e.what() << std::endl;
@@ -417,22 +451,27 @@ std::optional<std::map<double, double>> BinanceAdapter::get_order_book(const vel
     std::string response = http_get(endpoint, params);
 
     try {
-        json j = json::parse(response);
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
 
         std::map<double, double> order_book;
 
-        if (j.contains("bids")) {
-            for (const auto& bid : j["bids"]) {
-                double price = std::stod(bid[0].get<std::string>());
-                double qty = std::stod(bid[1].get<std::string>());
+        auto bids = root["bids"];
+        if (bids.is_array()) {
+            for (size_t i = 0; i < bids.size(); ++i) {
+                auto bid = bids[i];
+                double price = std::stod(bid[0].get_string());
+                double qty = std::stod(bid[1].get_string());
                 order_book[price] = qty;
             }
         }
 
-        if (j.contains("asks")) {
-            for (const auto& ask : j["asks"]) {
-                double price = std::stod(ask[0].get<std::string>());
-                double qty = std::stod(ask[1].get<std::string>());
+        auto asks = root["asks"];
+        if (asks.is_array()) {
+            for (size_t i = 0; i < asks.size(); ++i) {
+                auto ask = asks[i];
+                double price = std::stod(ask[0].get_string());
+                double qty = std::stod(ask[1].get_string());
                 order_book[price] = qty;
             }
         }
@@ -452,13 +491,15 @@ std::optional<std::vector<std::pair<double, double>>> BinanceAdapter::get_recent
     std::string response = http_get(endpoint, params);
 
     try {
-        json j = json::parse(response);
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
 
         std::vector<std::pair<double, double>> trades;
 
-        for (const auto& trade : j) {
-            double price = std::stod(trade["price"].get<std::string>());
-            double qty = std::stod(trade["qty"].get<std::string>());
+        for (size_t i = 0; i < root.size(); ++i) {
+            auto trade = root[i];
+            double price = std::stod(trade["price"].get_string());
+            double qty = std::stod(trade["qty"].get_string());
             trades.emplace_back(price, qty);
         }
 
@@ -484,12 +525,15 @@ std::optional<double> BinanceAdapter::get_account_balance(const std::string& ass
     std::string response = http_get(endpoint, query_string);
 
     try {
-        json j = json::parse(response);
+        auto doc = JsonDocument::parse(response);
+        auto root = doc.root();
 
-        if (j.contains("balances")) {
-            for (const auto& balance : j["balances"]) {
-                if (balance["asset"].get<std::string>() == asset) {
-                    return std::stod(balance["free"].get<std::string>());
+        auto balances = root["balances"];
+        if (balances.is_array()) {
+            for (size_t i = 0; i < balances.size(); ++i) {
+                auto balance = balances[i];
+                if (balance["asset"].get_string("") == asset) {
+                    return std::stod(balance["free"].get_string());
                 }
             }
         }

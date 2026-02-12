@@ -10,7 +10,7 @@ struct BacktestReporter::Impl {
     std::shared_ptr<veloz::core::Logger> logger;
 
     Impl() {
-        logger = std::make_shared<veloz::core::Logger>(std::cout);
+        logger = std::make_shared<veloz::core::Logger>();
     }
 };
 
@@ -201,7 +201,7 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                 <div class="summary">
                     <div class="stat-card">
                         <h3>Initial Balance</h3>
-                        <div class="value">$)" << result.initial_balance << R"(</div>
+                        <div class="value">\$)" << result.initial_balance << R"(</div>
                     </div>
 
                     <div class="stat-card">
@@ -211,22 +211,22 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
 
                     <div class="stat-card">
                         <h3>Total Return</h3>
-                        <div class="value )" << (result.total_return >= 0 ? "positive" : "negative") << R"()">)" << (result.total_return * 100) << R"(%</div>
+                        <div class="value )" << (result.total_return >= 0 ? "positive" : "negative") << ">" << (result.total_return * 100) << R"(%</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Max Drawdown</h3>
-                        <div class="value )" << (result.max_drawdown >= 0 ? "negative" : "positive") << R"()">)" << (result.max_drawdown * 100) << R"(%</div>
+                        <div class="value )" << (result.max_drawdown >= 0 ? "negative" : "positive") << ">" << (result.max_drawdown * 100) << R"(%</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Sharpe Ratio</h3>
-                        <div class="value">)" << result.sharpe_ratio << R"()</div>
+                        <div class="value">)" << result.sharpe_ratio << R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Win Rate</h3>
-                        <div class="value )" << (result.win_rate >= 0.5 ? "positive" : "negative") << R"()">)" << (result.win_rate * 100) << R"(%</div>
+                        <div class="value )" << (result.win_rate >= 0.5 ? "positive" : "negative") << ">" << (result.win_rate * 100) << R"(%</div>
                     </div>
                 </div>
 
@@ -254,15 +254,15 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                                 </tr>
                                 <tr>
                                     <td>Profit Factor</td>
-                                    <td>)" << result.profit_factor << R"()</td>
+                                    <td>)" << result.profit_factor << R"(</td>
                                 </tr>
                                 <tr>
                                     <td>Average Win</td>
-                                    <td>$)" << result.avg_win << R"()</td>
+                                    <td>$)" << result.avg_win << R"(</td>
                                 </tr>
                                 <tr>
                                     <td>Average Loss</td>
-                                    <td class=")" << (result.avg_lose < 0 ? "negative" : "positive") << R"()">$)" << result.avg_lose << R"()</td>
+                                    <td class=")" << (result.avg_lose < 0 ? "negative" : "positive") << ">" << "$)" << result.avg_lose << R"(</td>
                                 </tr>
                             </table>
                         </div>
@@ -298,10 +298,21 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                                     <th>Quantity</th>
                                     <th>Fee</th>
                                     <th>P&L</th>
-                                </tr>
-    )";
+                                </tr>)";
 
-    // TODO: Add trade records to table
+    // Add trade records to table
+    for (const auto& trade : result.trades) {
+        html << R"(
+                                <tr>
+                                    <td>)" << trade.timestamp << R"(</td>
+                                    <td>)" << trade.symbol << R"(</td>
+                                    <td>)" << trade.side << R"(</td>
+                                    <td>$)" << trade.price << R"(</td>
+                                    <td>)" << trade.quantity << R"(</td>
+                                    <td>$)" << trade.fee << R"(</td>
+                                    <td class=)" << (trade.pnl >= 0 ? "positive" : "negative") << ">$" << trade.pnl << R"(</td>
+                                </tr>)";
+    }
 
     html << R"(
                             </table>
@@ -338,7 +349,23 @@ std::string BacktestReporter::generate_json_report(const BacktestResult& result)
         "avg_lose": )" << result.avg_lose << R"(,
         "trades": [)";
 
-    // TODO: Add trade records
+    // Add trade records
+    bool first_trade = true;
+    for (const auto& trade : result.trades) {
+        if (!first_trade) json << ",";
+        first_trade = false;
+        json << R"(
+            {
+                "timestamp": )" << trade.timestamp << R"(,
+                "symbol": ")" << trade.symbol << R"(",
+                "side": ")" << trade.side << R"(",
+                "price": )" << trade.price << R"(,
+                "quantity": )" << trade.quantity << R"(,
+                "fee": )" << trade.fee << R"(,
+                "pnl": )" << trade.pnl << R"(,
+                "strategy_id": ")" << trade.strategy_id << R"("
+            })";
+    }
 
     json << R"(
         ]

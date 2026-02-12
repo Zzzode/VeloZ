@@ -2,7 +2,7 @@
 
 #include "veloz/market/market_event.h"
 #include "veloz/market/subscription_manager.h"
-#include <nlohmann/json.hpp>
+#include "veloz/core/json.h"
 
 #include <string>
 #include <vector>
@@ -57,10 +57,10 @@ private:
 
     // Message handling
     void handle_message(const std::string& message);
-    MarketEvent parse_trade_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol);
-    MarketEvent parse_book_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol, bool is_book_top);
-    MarketEvent parse_kline_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol);
-    MarketEvent parse_ticker_message(const nlohmann::json& data, const veloz::common::SymbolId& symbol);
+    MarketEvent parse_trade_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol);
+    MarketEvent parse_book_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol, bool is_book_top);
+    MarketEvent parse_kline_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol);
+    MarketEvent parse_ticker_message(const veloz::core::JsonValue& data, const veloz::common::SymbolId& symbol);
 
     // Connection state
     std::atomic<bool> connected_;

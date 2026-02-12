@@ -11,7 +11,7 @@
 namespace veloz::strategy {
 
 StrategyManager::StrategyManager() {
-    logger_ = std::make_shared<core::Logger>(std::cout);
+    logger_ = std::make_shared<core::Logger>();
 }
 
 StrategyManager::~StrategyManager() {

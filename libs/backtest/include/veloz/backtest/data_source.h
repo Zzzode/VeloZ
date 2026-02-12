@@ -96,8 +96,23 @@ public:
     void set_api_secret(const std::string& api_secret);
 
 private:
+    // API credentials
     std::string api_key_;
     std::string api_secret_;
+
+    // API configuration
+    std::string base_rest_url_;
+
+    // Retry configuration
+    int max_retries_;
+    int retry_delay_ms_;
+
+    // Rate limiting
+    int rate_limit_per_minute_;
+    int rate_limit_per_second_;
+
+    // Private helper methods
+    void rate_limit_wait();
 };
 
 // Data source factory

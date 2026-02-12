@@ -1,257 +1,149 @@
 #include "veloz/engine/stdio_engine.h"
-#include "veloz/engine/event_emitter.h"
-#include "veloz/exec/order_router.h"
-#include "veloz/risk/risk_engine.h"
-#include "veloz/market/order_book.h"
-#include "veloz/market/subscription_manager.h"
-#include "veloz/exec/binance_adapter.h"
-#include "veloz/exec/order_api.h"
-#include "veloz/core/time.h"
-
-#include <atomic>
-#include <memory>
-#include <mutex>
-#include <mutex>
-#include <sstream>
-#include <unordered_map>
+#include "veloz/core/logger.h"
+#include <ostream>
 #include <iostream>
+#include <atomic>
+#include <thread>
 #include <chrono>
+#include <string>
+#include <sstream>
+#include <iomanip>
 
-namespace veloz::engine {
+namespace veloz {
+namespace engine {
 
 StdioEngine::StdioEngine(std::ostream& out)
-    : emitter_(out) {
-    order_router_ = std::make_shared<veloz::exec::OrderRouter>();
-    risk_engine_ = std::make_shared<veloz::risk::RiskEngine>();
-    subscription_manager_ = std::make_shared<veloz::market::SubscriptionManager>();
+    : out_(out), command_count_(0) {
+}
 
-    // Initialize Binance adapter with empty keys (placeholder for testing)
-    auto binance_adapter = std::make_shared<veloz::exec::BinanceAdapter>("", "", false);
+void StdioEngine::emit_event(const std::string& event_json) {
+    std::lock_guard<std::mutex> lock(output_mutex_);
+    out_ << event_json << std::endl;
+    out_.flush();
+}
 
-    // Register Binance as default venue
-    order_router_->set_default_venue(veloz::common::Venue::Binance);
-    order_router_->register_adapter(veloz::common::Venue::Binance, binance_adapter);
+void StdioEngine::emit_error(const std::string& error_msg) {
+    std::ostringstream oss;
+    oss << R"({
+        "type": "error",
+        "message": ")" << error_msg << R"("
+    })";
+    emit_event(oss.str());
 }
 
 int StdioEngine::run(std::atomic<bool>& stop_flag) {
-    state_.init_balances();
-    emitter_.emit_account(veloz::core::now_unix_ns(), state_.snapshot_balances());
-
-    // Command: SET_BINANCE_KEY <api_key>
-    // Command: BINANCE_CONNECT - Connect to Binance
-    // Command: BINANCE_DISCONNECT - Disconnect from Binance
-    std::unordered_map<std::string, std::function<void(const std::string&)>> commands = {
-        {"SET_BINANCE_KEY", [&](const std::string& /* unused args */) {
-            // This would normally configure the adapter
-            // For now, just acknowledge
-            std::cout << "SET_BINANCE_KEY received (not implemented in this demo)" << std::endl;
-        }},
-        {"BINANCE_CONNECT", [&](const std::string& /* unused args */) {
-            auto adapter = order_router_->get_adapter(veloz::common::Venue::Binance);
-            if (adapter) {
-                adapter->connect();
-                std::cout << "Connecting to Binance..." << std::endl;
-            } else {
-                std::cout << "No Binance adapter registered" << std::endl;
-            }
-        }},
-        {"BINANCE_DISCONNECT", [&](const std::string& /* unused args */) {
-            auto adapter = order_router_->get_adapter(veloz::common::Venue::Binance);
-            if (adapter) {
-                adapter->disconnect();
-                std::cout << "Disconnected from Binance" << std::endl;
-            }
-        }},
-    };
-
-    std::jthread market_thread([&] {
-        using namespace std::chrono_literals;
-        std::uint64_t tick = 0;
-        while (!stop_flag.load()) {
-            tick++;
-            const double drift = (static_cast<double>((tick % 19)) - 9.0) * 0.25;
-            const double noise = (static_cast<double>((tick % 7)) - 3.0) * 0.10;
-            double next = state_.price() + drift + noise;
-            next = clamp(next, 1000.0, 100000.0);
-            state_.set_price(next);
-            const auto ts = veloz::core::now_unix_ns();
-            emitter_.emit_market("BTCUSDT", next, ts);
-            std::this_thread::sleep_for(200ms);
-        }
-    });
-
-    std::jthread fill_thread([&] {
-        using namespace std::chrono_literals;
-        while (!stop_flag.load()) {
-            const auto now = veloz::core::now_unix_ns();
-            auto due = state_.collect_due_fills(now);
-            for (const auto& po : due) {
-                const auto ts = veloz::core::now_unix_ns();
-                const double fill_price = state_.price();
-                emitter_.emit_fill(po.request.client_order_id, po.request.symbol.value, po.request.qty,
-                                   fill_price, ts);
-                state_.apply_fill(po, fill_price, ts);
-                if (const auto st = state_.get_order_state(po.request.client_order_id); st.has_value()) {
-                    emitter_.emit_order_state(st.value());
-                }
-                emitter_.emit_account(ts, state_.snapshot_balances());
-            }
-            std::this_thread::sleep_for(20ms);
-        }
-    });
+    std::cout << "VeloZ StdioEngine started - press Ctrl+C to stop" << std::endl;
+    std::cout << "Commands: ORDER <SIDE> <SYMBOL> <QTY> <PRICE> <ID> [TYPE] [TIF]" << std::endl;
+    std::cout << "          CANCEL <ID>" << std::endl;
+    std::cout << "          QUERY <TYPE> [PARAMS]" << std::endl;
+    std::cout << std::endl;
 
     std::string line;
+
+    // Send startup event
+    emit_event(R"({
+        "type": "engine_started",
+        "version": "1.0.0"
+    })");
+
     while (!stop_flag.load() && std::getline(std::cin, line)) {
-        const auto parsed = parse_order_command(line);
-        if (parsed.has_value()) {
-            const auto ts = veloz::core::now_unix_ns();
-
-            // Risk check
-            const auto risk_result = risk_engine_->check_pre_trade(parsed->request);
-            if (!risk_result.allowed) {
-                emitter_.emit_order_update(parsed->request.client_order_id, "REJECTED",
-                                        parsed->request.symbol.value,
-                                        side_to_string(parsed->request.side), parsed->request.qty,
-                                        parsed->request.price.value_or(0.0), "", risk_result.reason, ts);
-                if (const auto st = state_.get_order_state(parsed->request.client_order_id); st.has_value()) {
-                    emitter_.emit_order_state(st.value());
-                }
-                continue;
-            }
-
-            const auto decision = state_.place_order(parsed->request, ts);
-            if (!decision.accepted) {
-                emitter_.emit_order_update(parsed->request.client_order_id, "REJECTED",
-                                        parsed->request.symbol.value,
-                                        side_to_string(parsed->request.side), parsed->request.qty,
-                                        parsed->request.price.value_or(0.0), "", decision.reason, ts);
-                if (const auto st = state_.get_order_state(parsed->request.client_order_id); st.has_value()) {
-                    emitter_.emit_order_state(st.value());
-                }
-                continue;
-            }
-
-            // Route order via OrderRouter
-            const auto execution_report = order_router_->place_order(
-                parsed->request.venue.value_or(veloz::common::Venue::Binance),
-                parsed->request);
-
-            if (execution_report.has_value()) {
-                emitter_.emit_order_update(parsed->request.client_order_id, "ACCEPTED",
-                                        parsed->request.symbol.value,
-                                        side_to_string(parsed->request.side), parsed->request.qty,
-                                        parsed->request.price.value_or(0.0),
-                                        execution_report->venue_order_id, "", ts);
-            } else {
-                emitter_.emit_order_update(parsed->request.client_order_id, "REJECTED",
-                                        parsed->request.symbol.value,
-                                        side_to_string(parsed->request.side), parsed->request.qty,
-                                        parsed->request.price.value_or(0.0), "",
-                                        "No execution report from router", ts);
-            }
-
-            if (const auto st = state_.get_order_state(parsed->request.client_order_id); st.has_value()) {
-                emitter_.emit_order_state(st.value());
-            }
-            emitter_.emit_account(ts, state_.snapshot_balances());
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#') {
             continue;
         }
 
-        const auto cancel = parse_cancel_command(line);
-        if (cancel.has_value()) {
-            const auto ts = veloz::core::now_unix_ns();
-            const auto decision = state_.cancel_order(cancel->client_order_id, ts);
-            if (decision.found && decision.cancelled.has_value()) {
-                const auto& po = decision.cancelled.value();
+        command_count_++;
 
-                // Risk check before cancel
-                const auto risk_result = risk_engine_->check_post_trade(po.position);
-                if (!risk_result.allowed) {
-                    emitter_.emit_order_update(cancel->client_order_id, "REJECTED", "", "",
-                                            std::nullopt, std::nullopt, risk_result.reason, ts);
-                    if (const auto st = state_.get_order_state(cancel->client_order_id); st.has_value()) {
-                        emitter_.emit_order_state(st.value());
+        // Parse the command
+        ParsedCommand command = parse_command(line);
+
+        switch (command.type) {
+            case CommandType::Order:
+                if (command.order) {
+                    // Emit order received event
+                    std::ostringstream oss;
+                    oss << R"({
+                        "type": "order_received",
+                        "command_id": )" << command_count_ << R"(,
+                        "client_order_id": ")" << command.order->request.client_order_id << R"(",
+                        "symbol": ")" << command.order->request.symbol.value << R"(",
+                        "side": ")" << (command.order->request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell") << R"(",
+                        "type": ")" << (command.order->request.type == veloz::exec::OrderType::Market ? "market" : "limit") << R"(",
+                        "quantity": )" << command.order->request.qty << R"(,
+                        "price": )" << command.order->request.price.value_or(0.0) << R"(
+                    })";
+                    emit_event(oss.str());
+
+                    // Call handler if registered
+                    if (order_handler_) {
+                        order_handler_(*command.order);
                     }
-                    continue;
-                }
-
-                // Route cancel via OrderRouter
-                const auto execution_report = order_router_->cancel_order(
-                    po.request.venue.value_or(veloz::common::Venue::Binance),
-                    cancel->request);
-
-                if (execution_report.has_value()) {
-                    emitter_.emit_order_update(po.request.client_order_id, "CANCELED",
-                                            po.request.symbol.value, side_to_string(po.request.side),
-                                            po.request.qty, po.request.price.value_or(0.0), "", "", ts);
                 } else {
-                    emitter_.emit_order_update(cancel->client_order_id, "REJECTED", "", "",
-                                            std::nullopt, std::nullopt,
-                                            "No execution report from router", ts);
+                    emit_error("Failed to parse ORDER command: " + command.error);
                 }
+                break;
 
-                if (const auto st = state_.get_order_state(cancel->client_order_id); st.has_value()) {
-                    emitter_.emit_order_state(st.value());
+            case CommandType::Cancel:
+                if (command.cancel) {
+                    // Emit cancel received event
+                    std::ostringstream oss;
+                    oss << R"({
+                        "type": "cancel_received",
+                        "command_id": )" << command_count_ << R"(,
+                        "client_order_id": ")" << command.cancel->client_order_id << R"("
+                    })";
+                    emit_event(oss.str());
+
+                    // Call handler if registered
+                    if (cancel_handler_) {
+                        cancel_handler_(*command.cancel);
+                    }
+                } else {
+                    emit_error("Failed to parse CANCEL command: " + command.error);
                 }
-                emitter_.emit_account(ts, state_.snapshot_balances());
-            } else {
-                emitter_.emit_order_update(cancel->client_order_id, "REJECTED", "", std::nullopt,
-                                            std::nullopt, "", decision.reason, ts);
-                if (const auto st = state_.get_order_state(cancel->client_order_id); st.has_value()) {
-                    emitter_.emit_order_state(st.value());
+                break;
+
+            case CommandType::Query:
+                if (command.query) {
+                    // Emit query received event
+                    std::ostringstream oss;
+                    oss << R"({
+                        "type": "query_received",
+                        "command_id": )" << command_count_ << R"(,
+                        "query_type": ")" << command.query->query_type << R"(",
+                        "params": ")" << command.query->params << R"("
+                    })";
+                    emit_event(oss.str());
+
+                    // Call handler if registered
+                    if (query_handler_) {
+                        query_handler_(*command.query);
+                    }
+                } else {
+                    emit_error("Failed to parse QUERY command: " + command.error);
                 }
-            }
-            continue;
-        }
+                break;
 
-        // Check for Binance management commands
-        std::istringstream iss(line);
-        std::string cmd;
-        iss >> cmd;
-
-        auto it = commands.find(cmd);
-        if (it != commands.end()) {
-            std::string args;
-            std::getline(iss, args);
-            it->second(args);
-        } else {
-            emitter_.emit_error("unknown_command", veloz::core::now_unix_ns());
+            case CommandType::Unknown:
+                if (!command.error.empty()) {
+                    emit_error(command.error);
+                }
+                break;
         }
     }
 
-    emitter_.emit_error("shutdown_requested", veloz::core::now_unix_ns());
-    stop_flag.store(true);
+    // Send shutdown event
+    {
+        std::ostringstream oss;
+        oss << R"({
+        "type": "engine_stopped",
+        "commands_processed": )" << command_count_ << R"(
+    })";
+        emit_event(oss.str());
+    }
+
     return 0;
 }
 
-void StdioEngine::handle_market_event(const veloz::market::MarketEvent& event) {
-    std::lock_guard<std::mutex> lock(market_mu_);
-
-    // Update order book if BookTop or BookDelta event
-    if (event.type == veloz::market::MarketEventType::BookTop) {
-        auto it = order_books_.find(event.symbol.value);
-        if (it == order_books_.end()) {
-            order_books_[event.symbol.value] = veloz::market::OrderBook();
-            it = order_books_.find(event.symbol.value);
-        }
-
-        if (std::holds_alternative<veloz::market::BookData>(event.data)) {
-            const auto& book_data = std::get<veloz::market::BookData>(event.data);
-            it->second.apply_snapshot(book_data.bids, book_data.asks, book_data.sequence);
-        }
-    } else if (event.type == veloz::market::MarketEventType::BookDelta) {
-        auto it = order_books_.find(event.symbol.value);
-        if (it != order_books_.end() && std::holds_alternative<veloz::market::BookData>(event.data)) {
-            const auto& book_data = std::get<veloz::market::BookData>(event.data);
-            for (const auto& bid : book_data.bids) {
-                it->second.apply_delta(bid, true, book_data.sequence);
-            }
-            for (const auto& ask : book_data.asks) {
-                it->second.apply_delta(ask, false, book_data.sequence);
-            }
-        }
-    } else if (event.type == veloz::market::MarketEventType::Trade) {
-        // Handle trade events
-        // Could trigger fills based on our orders
-    }
-}
+} // namespace engine
+} // namespace veloz
