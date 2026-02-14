@@ -1,12 +1,9 @@
 #include "veloz/oms/order_record.h"
 
-#include <chrono>
-
 namespace veloz::oms {
 
 namespace {
-
-[[nodiscard]] std::string_view side_to_string(veloz::exec::OrderSide side) {
+[[nodiscard]] kj::StringPtr side_to_string(veloz::exec::OrderSide side) {
   return (side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY";
 }
 
@@ -16,11 +13,10 @@ namespace {
          status == veloz::exec::OrderStatus::Rejected ||
          status == veloz::exec::OrderStatus::Expired;
 }
-
 } // namespace
 
 OrderRecord::OrderRecord(veloz::exec::PlaceOrderRequest request)
-    : request_(std::move(request)),
+    : request_(kj::mv(request)),
       last_update_ts_(std::chrono::duration_cast<std::chrono::nanoseconds>(
                           std::chrono::system_clock::now().time_since_epoch())
                           .count()) {}
@@ -29,7 +25,7 @@ const veloz::exec::PlaceOrderRequest& OrderRecord::request() const {
   return request_;
 }
 
-const std::string& OrderRecord::venue_order_id() const {
+kj::StringPtr OrderRecord::venue_order_id() const {
   return venue_order_id_;
 }
 
@@ -54,10 +50,9 @@ bool OrderRecord::is_terminal() const {
 }
 
 void OrderRecord::apply(const veloz::exec::ExecutionReport& report) {
-  if (!report.venue_order_id.empty()) {
-    venue_order_id_ = report.venue_order_id;
+  if (report.venue_order_id.size() > 0) {
+    venue_order_id_ = kj::heapString(report.venue_order_id);
   }
-
   if (report.last_fill_qty > 0.0) {
     const double new_cum = cum_qty_ + report.last_fill_qty;
     const double notional =
@@ -65,30 +60,30 @@ void OrderRecord::apply(const veloz::exec::ExecutionReport& report) {
     cum_qty_ = new_cum;
     avg_price_ = (new_cum > 0.0) ? (notional / new_cum) : 0.0;
   }
-
   status_ = report.status;
   last_update_ts_ = report.ts_recv_ns;
 }
 
 void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request) {
-  if (request.client_order_id.empty()) {
+  if (request.client_order_id.size() == 0) {
     return;
   }
-
-  std::lock_guard<std::mutex> lk(mu_);
-  auto& st = orders_[request.client_order_id];
-  st.client_order_id = request.client_order_id;
+  auto lock = guarded_.lockExclusive();
+  std::string key(request.client_order_id.cStr());
+  auto& st = lock->orders[key];
+  st.client_order_id = kj::heapString(request.client_order_id);
   if (!request.symbol.value.empty()) {
-    st.symbol = request.symbol.value;
+    st.symbol = kj::heapString(request.symbol.value);
   }
-  st.side = std::string(side_to_string(request.side));
+  st.side = kj::heapString(side_to_string(request.side));
   if (request.qty > 0.0) {
     st.order_qty = request.qty;
   }
-  if (request.price.has_value() && request.price.value() > 0.0) {
-    st.limit_price = request.price.value();
+  KJ_IF_MAYBE (price, request.price) {
+    if (*price > 0.0) {
+      st.limit_price = *price;
+    }
   }
-
   // Set creation timestamp if not already set
   if (st.created_ts_ns == 0) {
     st.created_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -97,48 +92,48 @@ void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request
   }
 }
 
-void OrderStore::apply_order_update(std::string_view client_order_id, std::string_view symbol,
-                                    std::string_view side, std::string_view venue_order_id,
-                                    std::string_view status, std::string_view reason,
+void OrderStore::apply_order_update(kj::StringPtr client_order_id, kj::StringPtr symbol,
+                                    kj::StringPtr side, kj::StringPtr venue_order_id,
+                                    kj::StringPtr status, kj::StringPtr reason,
                                     std::int64_t ts_ns) {
-  if (client_order_id.empty()) {
+  if (client_order_id.size() == 0) {
     return;
   }
-
-  std::lock_guard<std::mutex> lk(mu_);
-  auto& st = orders_[std::string(client_order_id)];
-  st.client_order_id = std::string(client_order_id);
-  if (!symbol.empty()) {
-    st.symbol = std::string(symbol);
+  auto lock = guarded_.lockExclusive();
+  std::string key(client_order_id.cStr());
+  auto& st = lock->orders[key];
+  st.client_order_id = kj::heapString(client_order_id);
+  if (symbol.size() > 0) {
+    st.symbol = kj::heapString(symbol);
   }
-  if (!side.empty()) {
-    st.side = std::string(side);
+  if (side.size() > 0) {
+    st.side = kj::heapString(side);
   }
-  if (!venue_order_id.empty()) {
-    st.venue_order_id = std::string(venue_order_id);
+  if (venue_order_id.size() > 0) {
+    st.venue_order_id = kj::heapString(venue_order_id);
   }
-  if (!status.empty()) {
-    st.status = std::string(status);
+  if (status.size() > 0) {
+    st.status = kj::heapString(status);
   }
-  if (!reason.empty()) {
-    st.reason = std::string(reason);
+  if (reason.size() > 0) {
+    st.reason = kj::heapString(reason);
   }
   if (ts_ns > 0) {
     st.last_ts_ns = ts_ns;
   }
 }
 
-void OrderStore::apply_fill(std::string_view client_order_id, std::string_view symbol, double qty,
+void OrderStore::apply_fill(kj::StringPtr client_order_id, kj::StringPtr symbol, double qty,
                             double price, std::int64_t ts_ns) {
-  if (client_order_id.empty() || qty <= 0.0) {
+  if (client_order_id.size() == 0 || qty <= 0.0) {
     return;
   }
-
-  std::lock_guard<std::mutex> lk(mu_);
-  auto& st = orders_[std::string(client_order_id)];
-  st.client_order_id = std::string(client_order_id);
-  if (!symbol.empty()) {
-    st.symbol = std::string(symbol);
+  auto lock = guarded_.lockExclusive();
+  std::string key(client_order_id.cStr());
+  auto& st = lock->orders[key];
+  st.client_order_id = kj::heapString(client_order_id);
+  if (symbol.size() > 0) {
+    st.symbol = kj::heapString(symbol);
   }
   const double new_cum = st.executed_qty + qty;
   const double notional = (st.avg_price * st.executed_qty) + (price * qty);
@@ -147,41 +142,107 @@ void OrderStore::apply_fill(std::string_view client_order_id, std::string_view s
   if (ts_ns > 0) {
     st.last_ts_ns = ts_ns;
   }
-  if (st.order_qty.has_value() && st.order_qty.value() > 0.0) {
-    if (st.executed_qty + 1e-12 >= st.order_qty.value()) {
-      if (st.status != "CANCELLED" && st.status != "REJECTED" && st.status != "EXPIRED") {
-        st.status = "FILLED";
-      }
-    } else if (st.executed_qty > 0.0) {
-      if (st.status != "CANCELLED" && st.status != "REJECTED" && st.status != "EXPIRED") {
-        st.status = "PARTIALLY_FILLED";
+  KJ_IF_MAYBE (order_qty, st.order_qty) {
+    if (*order_qty > 0.0) {
+      if (st.executed_qty + 1e-12 >= *order_qty) {
+        if (st.status != "CANCELED"_kj && st.status != "REJECTED"_kj && st.status != "EXPIRED"_kj) {
+          st.status = kj::heapString("FILLED");
+        }
+      } else if (st.executed_qty > 0.0) {
+        if (st.status != "CANCELED"_kj && st.status != "REJECTED"_kj && st.status != "EXPIRED"_kj) {
+          st.status = kj::heapString("PARTIALLY_FILLED");
+        }
       }
     }
   }
 }
 
-std::optional<OrderState> OrderStore::get(std::string_view client_order_id) const {
-  if (client_order_id.empty()) {
-    return std::nullopt;
+kj::Maybe<OrderState> OrderStore::get(kj::StringPtr client_order_id) const {
+  if (client_order_id.size() == 0) {
+    return nullptr;
   }
-  std::lock_guard<std::mutex> lk(mu_);
-  auto it = orders_.find(std::string(client_order_id));
-  if (it == orders_.end()) {
-    return std::nullopt;
+  auto lock = guarded_.lockExclusive();
+  std::string key(client_order_id.cStr());
+  auto it = lock->orders.find(key);
+  if (it == lock->orders.end()) {
+    return nullptr;
   }
-  return it->second;
+  // Copy the OrderState since we're returning by value
+  OrderState result;
+  result.client_order_id = kj::heapString(it->second.client_order_id);
+  result.symbol = kj::heapString(it->second.symbol);
+  result.side = kj::heapString(it->second.side);
+  result.order_qty = it->second.order_qty;
+  result.limit_price = it->second.limit_price;
+  result.executed_qty = it->second.executed_qty;
+  result.avg_price = it->second.avg_price;
+  result.venue_order_id = kj::heapString(it->second.venue_order_id);
+  result.status = kj::heapString(it->second.status);
+  result.reason = kj::heapString(it->second.reason);
+  result.last_ts_ns = it->second.last_ts_ns;
+  result.created_ts_ns = it->second.created_ts_ns;
+  return result;
+}
+
+kj::Vector<OrderState> OrderStore::list_pending() const {
+  auto lock = guarded_.lockExclusive();
+  kj::Vector<OrderState> out;
+  for (const auto& [_, st] : lock->orders) {
+    if (st.status != "FILLED"_kj && st.status != "CANCELED"_kj && st.status != "REJECTED"_kj &&
+        st.status != "EXPIRED"_kj) {
+      OrderState copy;
+      copy.client_order_id = kj::heapString(st.client_order_id);
+      copy.symbol = kj::heapString(st.symbol);
+      copy.side = kj::heapString(st.side);
+      copy.order_qty = st.order_qty;
+      copy.limit_price = st.limit_price;
+      copy.executed_qty = st.executed_qty;
+      copy.avg_price = st.avg_price;
+      copy.venue_order_id = kj::heapString(st.venue_order_id);
+      copy.status = kj::heapString(st.status);
+      copy.reason = kj::heapString(st.reason);
+      copy.last_ts_ns = st.last_ts_ns;
+      copy.created_ts_ns = st.created_ts_ns;
+      out.add(kj::mv(copy));
+    }
+  }
+  return out;
+}
+
+kj::Vector<OrderState> OrderStore::list_terminal() const {
+  auto lock = guarded_.lockExclusive();
+  kj::Vector<OrderState> out;
+  for (const auto& [_, st] : lock->orders) {
+    if (st.status == "FILLED"_kj || st.status == "CANCELED"_kj || st.status == "REJECTED"_kj ||
+        st.status == "EXPIRED"_kj) {
+      OrderState copy;
+      copy.client_order_id = kj::heapString(st.client_order_id);
+      copy.symbol = kj::heapString(st.symbol);
+      copy.side = kj::heapString(st.side);
+      copy.order_qty = st.order_qty;
+      copy.limit_price = st.limit_price;
+      copy.executed_qty = st.executed_qty;
+      copy.avg_price = st.avg_price;
+      copy.venue_order_id = kj::heapString(st.venue_order_id);
+      copy.status = kj::heapString(st.status);
+      copy.reason = kj::heapString(st.reason);
+      copy.last_ts_ns = st.last_ts_ns;
+      copy.created_ts_ns = st.created_ts_ns;
+      out.add(kj::mv(copy));
+    }
+  }
+  return out;
 }
 
 void OrderStore::apply_execution_report(const veloz::exec::ExecutionReport& report) {
-  if (report.client_order_id.empty()) {
+  if (report.client_order_id.size() == 0) {
     return;
   }
-
-  std::lock_guard<std::mutex> lk(mu_);
-  auto& st = orders_[report.client_order_id];
-  st.client_order_id = report.client_order_id;
-  st.symbol = report.symbol.value;
-
+  auto lock = guarded_.lockExclusive();
+  std::string key(report.client_order_id.cStr());
+  auto& st = lock->orders[key];
+  st.client_order_id = kj::heapString(report.client_order_id);
+  st.symbol = kj::heapString(report.symbol.value);
   if (report.last_fill_qty > 0.0) {
     const double new_cum = st.executed_qty + report.last_fill_qty;
     const double notional =
@@ -189,49 +250,23 @@ void OrderStore::apply_execution_report(const veloz::exec::ExecutionReport& repo
     st.executed_qty = new_cum;
     st.avg_price = (new_cum > 0.0) ? (notional / new_cum) : 0.0;
   }
-
-  if (!report.venue_order_id.empty()) {
-    st.venue_order_id = report.venue_order_id;
+  if (report.venue_order_id.size() > 0) {
+    st.venue_order_id = kj::heapString(report.venue_order_id);
   }
-
   st.last_ts_ns = report.ts_recv_ns;
 }
 
-std::vector<OrderState> OrderStore::list_pending() const {
-  std::lock_guard<std::mutex> lk(mu_);
-  std::vector<OrderState> out;
-  for (const auto& [_, st] : orders_) {
-    if (st.status != "FILLED" && st.status != "CANCELLED" && st.status != "REJECTED" &&
-        st.status != "EXPIRED") {
-      out.push_back(st);
-    }
-  }
-  return out;
-}
-
-std::vector<OrderState> OrderStore::list_terminal() const {
-  std::lock_guard<std::mutex> lk(mu_);
-  std::vector<OrderState> out;
-  for (const auto& [_, st] : orders_) {
-    if (st.status == "FILLED" || st.status == "CANCELLED" || st.status == "REJECTED" ||
-        st.status == "EXPIRED") {
-      out.push_back(st);
-    }
-  }
-  return out;
-}
-
 size_t OrderStore::count() const {
-  std::lock_guard<std::mutex> lk(mu_);
-  return orders_.size();
+  auto lock = guarded_.lockExclusive();
+  return lock->orders.size();
 }
 
 size_t OrderStore::count_pending() const {
-  std::lock_guard<std::mutex> lk(mu_);
+  auto lock = guarded_.lockExclusive();
   size_t count = 0;
-  for (const auto& [_, st] : orders_) {
-    if (st.status != "FILLED" && st.status != "CANCELLED" && st.status != "REJECTED" &&
-        st.status != "EXPIRED") {
+  for (const auto& [_, st] : lock->orders) {
+    if (st.status != "FILLED"_kj && st.status != "CANCELED"_kj && st.status != "REJECTED"_kj &&
+        st.status != "EXPIRED"_kj) {
       count++;
     }
   }
@@ -239,11 +274,11 @@ size_t OrderStore::count_pending() const {
 }
 
 size_t OrderStore::count_terminal() const {
-  std::lock_guard<std::mutex> lk(mu_);
+  auto lock = guarded_.lockExclusive();
   size_t count = 0;
-  for (const auto& [_, st] : orders_) {
-    if (st.status == "FILLED" || st.status == "CANCELLED" || st.status == "REJECTED" ||
-        st.status == "EXPIRED") {
+  for (const auto& [_, st] : lock->orders) {
+    if (st.status == "FILLED"_kj || st.status == "CANCELED"_kj || st.status == "REJECTED"_kj ||
+        st.status == "EXPIRED"_kj) {
       count++;
     }
   }
@@ -251,16 +286,28 @@ size_t OrderStore::count_terminal() const {
 }
 
 void OrderStore::clear() {
-  std::lock_guard<std::mutex> lk(mu_);
-  orders_.clear();
+  auto lock = guarded_.lockExclusive();
+  lock->orders.clear();
 }
 
-std::vector<OrderState> OrderStore::list() const {
-  std::lock_guard<std::mutex> lk(mu_);
-  std::vector<OrderState> out;
-  out.reserve(orders_.size());
-  for (const auto& [_, st] : orders_) {
-    out.push_back(st);
+kj::Vector<OrderState> OrderStore::list() const {
+  auto lock = guarded_.lockExclusive();
+  kj::Vector<OrderState> out;
+  for (const auto& [_, st] : lock->orders) {
+    OrderState copy;
+    copy.client_order_id = kj::heapString(st.client_order_id);
+    copy.symbol = kj::heapString(st.symbol);
+    copy.side = kj::heapString(st.side);
+    copy.order_qty = st.order_qty;
+    copy.limit_price = st.limit_price;
+    copy.executed_qty = st.executed_qty;
+    copy.avg_price = st.avg_price;
+    copy.venue_order_id = kj::heapString(st.venue_order_id);
+    copy.status = kj::heapString(st.status);
+    copy.reason = kj::heapString(st.reason);
+    copy.last_ts_ns = st.last_ts_ns;
+    copy.created_ts_ns = st.created_ts_ns;
+    out.add(kj::mv(copy));
   }
   return out;
 }

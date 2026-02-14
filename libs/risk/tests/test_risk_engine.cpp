@@ -2,7 +2,9 @@
 #include "veloz/oms/position.h"
 #include "veloz/risk/risk_engine.h"
 
-#include <gtest/gtest.h>
+#include <gtest/gtest.h> // Kept for gtest framework compatibility
+#include <kj/string.h>
+#include <string> // Kept for RiskCheckResult::reason (std::string)
 
 using namespace veloz::risk;
 using namespace veloz::exec;

@@ -4,7 +4,7 @@
 
 namespace veloz::oms {
 
-Position::Position(veloz::common::SymbolId symbol) : symbol_(std::move(symbol)) {}
+Position::Position(veloz::common::SymbolId symbol) : symbol_(kj::mv(symbol)) {}
 
 const veloz::common::SymbolId& Position::symbol() const {
   return symbol_;

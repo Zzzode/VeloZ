@@ -5,86 +5,90 @@
 namespace veloz::risk {
 
 bool CircuitBreaker::allow_request() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  auto lock = guarded_.lockExclusive();
 
-  check_auto_reset();
+  check_auto_reset_internal(*lock);
 
-  return state_ != CircuitState::Open;
+  return lock->state != CircuitState::Open;
 }
 
 void CircuitBreaker::record_success() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  auto lock = guarded_.lockExclusive();
 
-  if (state_ == CircuitState::HalfOpen) {
-    success_count_++;
-    if (success_count_ >= success_threshold_) {
-      state_ = CircuitState::Closed;
-      failure_count_ = 0;
-      success_count_ = 0;
+  if (lock->state == CircuitState::HalfOpen) {
+    lock->success_count++;
+    if (lock->success_count >= lock->success_threshold) {
+      lock->state = CircuitState::Closed;
+      lock->failure_count = 0;
+      lock->success_count = 0;
     }
-  } else if (state_ == CircuitState::Closed) {
-    failure_count_ = 0;
+  } else if (lock->state == CircuitState::Closed) {
+    lock->failure_count = 0;
   }
 }
 
 void CircuitBreaker::record_failure() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  auto lock = guarded_.lockExclusive();
 
-  failure_count_++;
+  lock->failure_count++;
 
-  if (state_ == CircuitState::HalfOpen) {
+  if (lock->state == CircuitState::HalfOpen) {
     // Back to open immediately
-    state_ = CircuitState::Open;
-    success_count_ = 0;
-  } else if (state_ == CircuitState::Closed && failure_count_ >= failure_threshold_) {
-    state_ = CircuitState::Open;
+    lock->state = CircuitState::Open;
+    lock->success_count = 0;
+  } else if (lock->state == CircuitState::Closed &&
+             lock->failure_count >= lock->failure_threshold) {
+    lock->state = CircuitState::Open;
   }
 
   auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
                  std::chrono::system_clock::now().time_since_epoch())
                  .count();
-  last_failure_time_ms_ = now;
+  lock->last_failure_time_ms = now;
 }
 
 void CircuitBreaker::reset() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  auto lock = guarded_.lockExclusive();
 
-  state_ = CircuitState::HalfOpen;
-  success_count_ = 0;
+  lock->state = CircuitState::HalfOpen;
+  lock->success_count = 0;
 }
 
 void CircuitBreaker::set_failure_threshold(std::size_t threshold) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  failure_threshold_ = threshold;
+  auto lock = guarded_.lockExclusive();
+  lock->failure_threshold = threshold;
 }
 
 void CircuitBreaker::set_timeout_ms(std::int64_t timeout_ms) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  timeout_ms_ = timeout_ms;
+  auto lock = guarded_.lockExclusive();
+  lock->timeout_ms = timeout_ms;
 }
 
 void CircuitBreaker::set_success_threshold(std::size_t threshold) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  success_threshold_ = threshold;
+  auto lock = guarded_.lockExclusive();
+  lock->success_threshold = threshold;
 }
 
 CircuitState CircuitBreaker::state() const {
-  // Need to cast away const for mutex since we're just reading state
-  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mutex_));
-  return state_;
+  return guarded_.lockExclusive()->state;
 }
 
 void CircuitBreaker::check_auto_reset() {
-  if (state_ != CircuitState::Open)
+  auto lock = guarded_.lockExclusive();
+  check_auto_reset_internal(*lock);
+}
+
+void CircuitBreaker::check_auto_reset_internal(BreakerState& state) {
+  if (state.state != CircuitState::Open)
     return;
 
   auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
                  std::chrono::system_clock::now().time_since_epoch())
                  .count();
 
-  if (now - last_failure_time_ms_ >= timeout_ms_) {
-    state_ = CircuitState::HalfOpen;
-    success_count_ = 0;
+  if (now - state.last_failure_time_ms >= state.timeout_ms) {
+    state.state = CircuitState::HalfOpen;
+    state.success_count = 0;
   }
 }
 

@@ -256,11 +256,11 @@ void RiskEngine::reset_circuit_breaker() {
 }
 
 bool RiskEngine::check_available_funds(const veloz::exec::PlaceOrderRequest& req) const {
-  if (!req.price.has_value()) {
+  if (req.price == nullptr) {
     return true; // Market orders checked elsewhere
   }
 
-  double notional = req.qty * req.price.value();
+  double notional = req.qty * req.price.orDefault(0.0);
   double required_margin = notional / max_leverage_;
   return required_margin <= account_balance_;
 }
@@ -276,11 +276,12 @@ bool RiskEngine::check_max_position(const veloz::exec::PlaceOrderRequest& req) c
 }
 
 bool RiskEngine::check_price_deviation(const veloz::exec::PlaceOrderRequest& req) const {
-  if (reference_price_ <= 0.0 || !req.price.has_value()) {
+  if (reference_price_ <= 0.0 || req.price == nullptr) {
     return true; // No reference price or market order
   }
 
-  double deviation = std::abs((req.price.value() - reference_price_) / reference_price_);
+  double price = req.price.orDefault(0.0);
+  double deviation = std::abs((price - reference_price_) / reference_price_);
   return deviation <= max_price_deviation_;
 }
 

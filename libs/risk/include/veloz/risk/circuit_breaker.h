@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <mutex>
+#include <kj/mutex.h>
 
 namespace veloz::risk {
 
@@ -36,15 +36,20 @@ public:
 private:
   void check_auto_reset();
 
-  std::mutex mutex_;
-  CircuitState state_{CircuitState::Closed};
-  std::size_t failure_count_{0};
-  std::size_t success_count_{0};
-  std::int64_t last_failure_time_ms_{0};
+  // Internal state structure
+  struct BreakerState {
+    CircuitState state{CircuitState::Closed};
+    std::size_t failure_count{0};
+    std::size_t success_count{0};
+    std::int64_t last_failure_time_ms{0};
+    std::size_t failure_threshold{5};
+    std::int64_t timeout_ms{60000};   // 1 minute default
+    std::size_t success_threshold{2}; // Need 2 successes in half-open to close
+  };
 
-  std::size_t failure_threshold_{5};
-  std::int64_t timeout_ms_{60000};   // 1 minute default
-  std::size_t success_threshold_{2}; // Need 2 successes in half-open to close
+  void check_auto_reset_internal(BreakerState& state);
+
+  kj::MutexGuarded<BreakerState> guarded_;
 };
 
 } // namespace veloz::risk
