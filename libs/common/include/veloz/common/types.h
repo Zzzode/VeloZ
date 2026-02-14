@@ -1,5 +1,7 @@
 #pragma once
 
+#include <kj/common.h>
+
 #include <cstdint>
 #include <string>
 
@@ -47,7 +49,7 @@ struct SymbolId final {
 
   SymbolId() = default;
   SymbolId(const char* v) : value(v) {}
-  explicit SymbolId(std::string v) : value(std::move(v)) {}
+  explicit SymbolId(std::string v) : value(kj::mv(v)) {}
 
   SymbolId& operator=(const std::string& v) {
     value = v;
