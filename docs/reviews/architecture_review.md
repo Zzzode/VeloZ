@@ -386,7 +386,7 @@ public:
                 }
 
                 if (!message_queue_.empty()) {
-                    message = std::move(message_queue_.front());
+                    message = kj::mv(message_queue_.front());
                     message_queue_.pop();
                 }
             }

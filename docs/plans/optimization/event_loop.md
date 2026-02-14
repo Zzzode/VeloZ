@@ -58,7 +58,7 @@ public:
 
     // Enqueue operation
     void push(T value) {
-        auto new_node = new Node(std::move(value));
+        auto new_node = new Node(kj::mv(value));
         Node* old_tail = tail_.load();
 
         while (true) {
@@ -92,7 +92,7 @@ public:
 
             if (old_head == head_.load()) {
                 if (head_.compare_exchange_weak(old_head, old_head_next)) {
-                    value = std::move(old_head_next->data);
+                    value = kj::mv(old_head_next->data);
                     delete old_head;
                     return true;
                 }
@@ -110,7 +110,7 @@ public:
 private:
     // Node structure
     struct Node {
-        explicit Node(T data = T()) : data(std::move(data)) {}
+        explicit Node(T data = T()) : data(kj::mv(data)) {}
 
         std::atomic<Node*> next{nullptr};
         T data;
@@ -167,7 +167,7 @@ public:
         uint64_t bucket_index = expiration % BUCKET_COUNT;
 
         std::lock_guard<std::mutex> lock(buckets_mutex_[bucket_index]);
-        buckets_[bucket_index].emplace_back(expiration, std::move(callback));
+        buckets_[bucket_index].emplace_back(expiration, kj::mv(callback));
     }
 
     // Cancel timer (simplified implementation, actual implementation needs more complex logic)
@@ -326,14 +326,14 @@ public:
 
     // Submit task
     void post(std::function<void()> task) {
-        task_queue_.push(std::move(task));
+        task_queue_.push(kj::mv(task));
         wakeup();
     }
 
     // Submit delayed task
     void postDelayed(std::function<void()> task, std::chrono::milliseconds delay) {
-        timer_.addTimer(delay.count(), [this, task = std::move(task)]() {
-            post(std::move(task));
+        timer_.addTimer(delay.count(), [this, task = kj::mv(task)]() {
+            post(kj::mv(task));
         });
     }
 
@@ -526,7 +526,7 @@ private:
                 }
 
                 if (!tasks_.empty()) {
-                    task = std::move(tasks_.front());
+                    task = kj::mv(tasks_.front());
                     tasks_.pop_front();
                 }
             }

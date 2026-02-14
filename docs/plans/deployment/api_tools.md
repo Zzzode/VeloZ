@@ -436,7 +436,7 @@ veloz system config --list
 
 - **C++ API**: RESTbed, cpprestsdk
 - **Python API**: FastAPI, Flask
-- **WebSocket**: Boost.Beast, websocketpp
+- **WebSocket**: Custom implementation using KJ async I/O (RFC 6455)
 
 ### 7.2 Tool Development
 

@@ -15,7 +15,7 @@ The current event loop implementation uses standard mutexes and condition variab
 void EventLoop::post(std::function<void()> task) {
   {
     std::scoped_lock lock(mu_);
-    tasks_.push(std::move(task));
+    tasks_.push(kj::mv(task));
   }
   cv_.notify_one();
 }
@@ -29,12 +29,12 @@ void EventLoop::run() {
       // Handle delayed tasks
       auto now = std::chrono::steady_clock::now();
       if (!delayed_tasks_.empty() && delayed_tasks_.top().deadline <= now) {
-        task = std::move(delayed_tasks_.top().task);
+        task = kj::mv(delayed_tasks_.top().task);
         delayed_tasks_.pop();
       }
       // Handle regular tasks
       else if (!tasks_.empty()) {
-        task = std::move(tasks_.front());
+        task = kj::mv(tasks_.front());
         tasks_.pop();
       }
       // Wait for task
@@ -67,7 +67,7 @@ public:
   bool push(T value) {
     // Use atomic operations for lock-free enqueue
     // Simplified example, actual implementation needs to be more complex
-    auto new_node = new Node(std::move(value));
+    auto new_node = new Node(kj::mv(value));
     Node* old_tail = tail_.load();
     while (!tail_.compare_exchange_weak(old_tail, new_node)) {
       old_tail = tail_.load();
@@ -81,7 +81,7 @@ public:
     Node* old_head = head_.load();
     while (old_head->next) {
       if (head_.compare_exchange_weak(old_head, old_head->next)) {
-        auto value = std::move(old_head->next->value);
+        auto value = kj::mv(old_head->next->value);
         delete old_head;
         return value;
       }
@@ -93,7 +93,7 @@ private:
   struct Node {
     T value;
     Node* next{nullptr};
-    explicit Node(T val) : value(std::move(val)) {}
+    explicit Node(T val) : value(kj::mv(val)) {}
   };
 
   std::atomic<Node*> head_{new Node(T{})};
@@ -106,7 +106,7 @@ public:
   using Task = std::function<void()>;
 
   void post(Task task) {
-    task_queue_.push(std::move(task));
+    task_queue_.push(kj::mv(task));
     cv_.notify_one(); // Still need notification, but lock contention is greatly reduced
   }
 
@@ -141,7 +141,7 @@ void OptimizedEventLoop::run() {
   for (;;) {
     // Batch fetch tasks
     while (auto task = task_queue_.pop()) {
-      tasks.push_back(std::move(*task));
+      tasks.push_back(kj::mv(*task));
       if (tasks.size() >= 64) {
         break; // Reached batch processing threshold
       }
@@ -221,7 +221,7 @@ public:
     auto log_entry = create_log_entry(level, message, location);
     {
       std::scoped_lock lock(mu_);
-      queue_.push(std::move(log_entry));
+      queue_.push(kj::mv(log_entry));
     }
     cv_.notify_one();
   }
@@ -256,7 +256,7 @@ private:
 
         // Batch fetch log entries
         while (!queue_.empty()) {
-          entries.push_back(std::move(queue_.front()));
+          entries.push_back(kj::mv(queue_.front()));
           queue_.pop();
         }
       }
@@ -286,7 +286,7 @@ private:
     {
       std::scoped_lock lock(mu_);
       while (!queue_.empty()) {
-        entries.push_back(std::move(queue_.front()));
+        entries.push_back(kj::mv(queue_.front()));
         queue_.pop();
       }
     }
@@ -316,7 +316,7 @@ public:
   std::shared_ptr<Buffer> acquire() {
     std::scoped_lock lock(mu_);
     if (!pool_.empty()) {
-      auto buffer = std::move(pool_.back());
+      auto buffer = kj::mv(pool_.back());
       pool_.pop_back();
       buffer->clear();
       return buffer;
@@ -327,7 +327,7 @@ public:
   void release(std::shared_ptr<Buffer> buffer) {
     std::scoped_lock lock(mu_);
     if (pool_.size() < 100) { // Limit pool size
-      pool_.push_back(std::move(buffer));
+      pool_.push_back(kj::mv(buffer));
     }
   }
 
@@ -365,7 +365,7 @@ class MetricsRegistry {
 public:
   void register_counter(std::string name, std::string description) {
     std::scoped_lock lock(mu_);
-    counters_[std::move(name)] = std::make_unique<Counter>(name, std::move(description));
+    counters_[kj::mv(name)] = std::make_unique<Counter>(name, kj::mv(description));
   }
 
   Counter* counter(std::string_view name) {
@@ -396,13 +396,13 @@ private:
 class LockFreeMetricsRegistry {
 public:
   void register_counter(std::string name, std::string description) {
-    auto counter = std::make_unique<Counter>(std::move(name), std::move(description));
+    auto counter = std::make_unique<Counter>(kj::mv(name), kj::mv(description));
     auto name_str = counter->name();
 
     // Use atomic operations for insertion
     std::unique_ptr<Counter> expected = nullptr;
     if (counters_.find(name_str) == counters_.end()) {
-      counters_.try_emplace(name_str, std::move(counter));
+      counters_.try_emplace(name_str, kj::mv(counter));
     }
   }
 
@@ -475,7 +475,7 @@ public:
   ObjectPtr acquire() {
     std::scoped_lock lock(mu_);
     if (!pool_.empty()) {
-      auto obj = std::move(pool_.back());
+      auto obj = kj::mv(pool_.back());
       pool_.pop_back();
       return obj;
     }
@@ -485,7 +485,7 @@ public:
   void release(ObjectPtr obj) {
     std::scoped_lock lock(mu_);
     if (pool_.size() < max_size_) {
-      pool_.push_back(std::move(obj));
+      pool_.push_back(kj::mv(obj));
     }
   }
 
