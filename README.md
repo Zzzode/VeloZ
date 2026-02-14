@@ -13,8 +13,7 @@ Required:
 
 Optional:
 
-- GTest (only if building tests)
-- OpenSSL (only if enabling TLS in websocketpp)
+- OpenSSL (for TLS support in WebSocket connections via KJ)
 
 Ubuntu/Debian:
 
