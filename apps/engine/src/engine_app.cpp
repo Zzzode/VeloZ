@@ -41,12 +41,12 @@ int EngineApp::run() {
     // Logger for stderr
     auto console_output = std::make_unique<veloz::core::ConsoleOutput>(true);
     logger_ptr = std::make_unique<veloz::core::Logger>(
-        std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
+        std::make_unique<veloz::core::TextFormatter>(), kj::mv(console_output));
   } else {
     // Logger for stdout
     auto console_output = std::make_unique<veloz::core::ConsoleOutput>(false);
     logger_ptr = std::make_unique<veloz::core::Logger>(
-        std::make_unique<veloz::core::TextFormatter>(), std::move(console_output));
+        std::make_unique<veloz::core::TextFormatter>(), kj::mv(console_output));
   }
 
   logger_ptr->set_level(veloz::core::LogLevel::Info);

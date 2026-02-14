@@ -2,17 +2,13 @@
 
 #include "veloz/engine/command_parser.h"
 
-#include <algorithm>
 #include <atomic>
-#include <chrono>
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <mutex>
+#include <cstdint>
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/mutex.h>
+#include <kj/string.h>
 #include <ostream>
-#include <sstream>
-#include <thread>
-#include <unordered_map>
 
 namespace veloz {
 namespace engine {
@@ -25,30 +21,31 @@ public:
   int run(std::atomic<bool>& stop_flag);
 
   // Command handlers
-  using OrderHandler = std::function<void(const ParsedOrder&)>;
-  using CancelHandler = std::function<void(const ParsedCancel&)>;
-  using QueryHandler = std::function<void(const ParsedQuery&)>;
+  using OrderHandler = kj::Function<void(const ParsedOrder&)>;
+  using CancelHandler = kj::Function<void(const ParsedCancel&)>;
+  using QueryHandler = kj::Function<void(const ParsedQuery&)>;
 
   void set_order_handler(OrderHandler handler) {
-    order_handler_ = handler;
+    order_handler_ = kj::mv(handler);
   }
   void set_cancel_handler(CancelHandler handler) {
-    cancel_handler_ = handler;
+    cancel_handler_ = kj::mv(handler);
   }
   void set_query_handler(QueryHandler handler) {
-    query_handler_ = handler;
+    query_handler_ = kj::mv(handler);
   }
 
 private:
+  // std::ostream used for external API compatibility with C++ standard output
   std::ostream& out_;
-  std::mutex output_mutex_;
-  OrderHandler order_handler_;
-  CancelHandler cancel_handler_;
-  QueryHandler query_handler_;
+  kj::MutexGuarded<int> output_mutex_;
+  kj::Maybe<OrderHandler> order_handler_;
+  kj::Maybe<CancelHandler> cancel_handler_;
+  kj::Maybe<QueryHandler> query_handler_;
   std::int64_t command_count_;
 
-  void emit_event(const std::string& event_json);
-  void emit_error(const std::string& error_msg);
+  void emit_event(kj::StringPtr event_json);
+  void emit_error(kj::StringPtr error_msg);
 };
 
 } // namespace engine

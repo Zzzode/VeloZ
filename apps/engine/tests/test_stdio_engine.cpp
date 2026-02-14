@@ -4,17 +4,25 @@
 #include <atomic>
 #include <chrono>
 #include <gtest/gtest.h>
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <memory>
 #include <sstream>
 #include <thread>
 
 namespace veloz::engine {
 
 class StdioEngineTest : public ::testing::Test {
+public:
+  ~StdioEngineTest() noexcept override = default;
+
 protected:
   void SetUp() override {
     // Create a string stream to capture output
     output_ = std::make_shared<std::ostringstream>();
-    engine_ = std::make_unique<StdioEngine>(*output_);
+    engine_ = kj::heap<StdioEngine>(*output_);
 
     order_received = false;
     cancel_received = false;
@@ -22,12 +30,12 @@ protected:
   }
 
   void TearDown() override {
-    engine_.reset();
+    engine_ = nullptr;
     output_.reset();
   }
 
   std::shared_ptr<std::ostringstream> output_;
-  std::unique_ptr<StdioEngine> engine_;
+  kj::Own<StdioEngine> engine_;
   bool order_received;
   bool cancel_received;
   bool query_received;

@@ -1,10 +1,5 @@
 # Tests for engine module
-
-# Find GTest
-find_package(GTest REQUIRED)
-
-# Include GTest directories
-include_directories(${GTEST_INCLUDE_DIRS})
+# GTest is provided via FetchContent in root CMakeLists.txt
 
 # Create test executables
 add_executable(test_command_parser
@@ -14,7 +9,8 @@ add_executable(test_command_parser
 target_link_libraries(test_command_parser
     PRIVATE
     veloz_engine_lib
-    ${GTEST_LIBRARIES}
+    GTest::gtest
+    GTest::gtest_main
 )
 
 add_executable(test_stdio_engine
@@ -24,10 +20,10 @@ add_executable(test_stdio_engine
 target_link_libraries(test_stdio_engine
     PRIVATE
     veloz_engine_lib
-    ${GTEST_LIBRARIES}
+    GTest::gtest
+    GTest::gtest_main
 )
 
 # Register tests
-include(GoogleTest)
 gtest_discover_tests(test_command_parser)
 gtest_discover_tests(test_stdio_engine)

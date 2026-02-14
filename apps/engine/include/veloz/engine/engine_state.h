@@ -6,19 +6,21 @@
 
 #include <atomic>
 #include <cstdint>
+#include <kj/common.h> // kj::Maybe is defined here
+#include <kj/mutex.h>
+#include <kj/string.h>
+#include <kj/vector.h>
 #include <mutex>
-#include <optional>
-#include <string>
-#include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace veloz::engine {
 
 struct Balance final {
-  std::string asset;
+  kj::String asset;
   double free{0.0};
   double locked{0.0};
+
+  Balance() : asset(kj::str("")) {}
 };
 
 struct PendingOrder final {
@@ -30,15 +32,19 @@ struct PendingOrder final {
 
 struct OrderDecision final {
   bool accepted{false};
-  std::string reason;
-  std::string venue_order_id;
+  kj::String reason;
+  kj::String venue_order_id;
   PendingOrder pending;
+
+  OrderDecision() : reason(kj::str("")), venue_order_id(kj::str("")) {}
 };
 
 struct CancelDecision final {
   bool found{false};
-  std::optional<PendingOrder> cancelled;
-  std::string reason;
+  kj::Maybe<PendingOrder> cancelled;
+  kj::String reason;
+
+  CancelDecision() : reason(kj::str("")) {}
 };
 
 class EngineState final {
@@ -46,31 +52,33 @@ public:
   EngineState();
 
   void init_balances();
-  [[nodiscard]] std::vector<Balance> snapshot_balances() const;
+  [[nodiscard]] kj::Vector<Balance> snapshot_balances() const;
   [[nodiscard]] double price() const;
   void set_price(double value);
 
   [[nodiscard]] OrderDecision place_order(const veloz::exec::PlaceOrderRequest& request,
                                           std::int64_t ts_ns);
-  [[nodiscard]] CancelDecision cancel_order(std::string_view client_order_id, std::int64_t ts_ns);
+  [[nodiscard]] CancelDecision cancel_order(kj::StringPtr client_order_id, std::int64_t ts_ns);
   void apply_fill(const PendingOrder& po, double fill_price, std::int64_t ts_ns);
-  [[nodiscard]] std::vector<PendingOrder> collect_due_fills(std::int64_t now_ns);
-  [[nodiscard]] std::optional<veloz::oms::OrderState>
-  get_order_state(std::string_view client_order_id) const;
+  [[nodiscard]] kj::Vector<PendingOrder> collect_due_fills(std::int64_t now_ns);
+  [[nodiscard]] kj::Maybe<veloz::oms::OrderState>
+  get_order_state(kj::StringPtr client_order_id) const;
 
 private:
   veloz::risk::RiskEngine risk_engine_;
   veloz::oms::OrderStore order_store_;
   std::atomic<double> price_{42000.0};
+  // std::mutex used for thread synchronization with std::unordered_map
   mutable std::mutex account_mu_;
+  // std::unordered_map used for O(1) lookup by string key
   std::unordered_map<std::string, Balance> balances_;
   mutable std::mutex orders_mu_;
   std::unordered_map<std::string, PendingOrder> pending_;
   std::uint64_t venue_counter_{0};
 
-  bool has_duplicate(std::string_view client_order_id) const;
+  bool has_duplicate(kj::StringPtr client_order_id) const;
   bool reserve_for_order(const veloz::exec::PlaceOrderRequest& request, std::int64_t ts_ns,
-                         std::string& reason);
+                         kj::String& reason);
   void release_on_cancel(const PendingOrder& po);
 };
 

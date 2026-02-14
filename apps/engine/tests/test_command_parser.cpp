@@ -1,9 +1,29 @@
 #include "veloz/engine/command_parser.h"
 
 #include <gtest/gtest.h>
+#include <kj/common.h>
 #include <sstream>
 
 namespace veloz::engine {
+
+// Helper to check if kj::Maybe has a value
+template <typename T> bool has_value(const kj::Maybe<T>& maybe) {
+  bool result = false;
+  KJ_IF_MAYBE (val, maybe) {
+    (void)val;
+    result = true;
+  }
+  return result;
+}
+
+// Helper to extract value from kj::Maybe with a default
+template <typename T> T maybe_or(const kj::Maybe<T>& maybe, T default_value) {
+  T result = default_value;
+  KJ_IF_MAYBE (val, maybe) {
+    result = *val;
+  }
+  return result;
+}
 
 class CommandParserTest : public ::testing::Test {
 protected:
@@ -12,258 +32,259 @@ protected:
 };
 
 TEST_F(CommandParserTest, ParseOrderCommandBuy) {
-  std::string line = "ORDER BUY BTCUSDT 0.5 50000.0 order001";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order001"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.symbol.value, "BTCUSDT");
-  EXPECT_EQ(result->request.side, veloz::exec::OrderSide::Buy);
-  EXPECT_DOUBLE_EQ(result->request.qty, 0.5);
-  EXPECT_DOUBLE_EQ(result->request.price.value_or(0.0), 50000.0);
-  EXPECT_EQ(result->request.client_order_id, "order001");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.symbol.value, "BTCUSDT");
+    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Buy);
+    EXPECT_DOUBLE_EQ(order->request.qty, 0.5);
+    EXPECT_DOUBLE_EQ(maybe_or(order->request.price, 0.0), 50000.0);
+    EXPECT_EQ(order->request.client_order_id, "order001");
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandSell) {
-  std::string line = "ORDER SELL ETHUSDT 10.0 3000.0 order002";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER SELL ETHUSDT 10.0 3000.0 order002"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.symbol.value, "ETHUSDT");
-  EXPECT_EQ(result->request.side, veloz::exec::OrderSide::Sell);
-  EXPECT_DOUBLE_EQ(result->request.qty, 10.0);
-  EXPECT_DOUBLE_EQ(result->request.price.value_or(0.0), 3000.0);
-  EXPECT_EQ(result->request.client_order_id, "order002");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.symbol.value, "ETHUSDT");
+    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Sell);
+    EXPECT_DOUBLE_EQ(order->request.qty, 10.0);
+    EXPECT_DOUBLE_EQ(maybe_or(order->request.price, 0.0), 3000.0);
+    EXPECT_EQ(order->request.client_order_id, "order002");
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandBuyShortcut) {
-  std::string line = "BUY BTCUSDT 0.5 50000.0 order003";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("BUY BTCUSDT 0.5 50000.0 order003"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.symbol.value, "BTCUSDT");
-  EXPECT_EQ(result->request.side, veloz::exec::OrderSide::Buy);
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.symbol.value, "BTCUSDT");
+    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Buy);
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandSellShortcut) {
-  std::string line = "SELL ETHUSDT 10.0 3000.0 order004";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("SELL ETHUSDT 10.0 3000.0 order004"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.symbol.value, "ETHUSDT");
-  EXPECT_EQ(result->request.side, veloz::exec::OrderSide::Sell);
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.symbol.value, "ETHUSDT");
+    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Sell);
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandWithOrderType) {
-  std::string line = "ORDER BUY BTCUSDT 0.5 50000.0 order005 MARKET GTC";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order005 MARKET GTC"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.type, veloz::exec::OrderType::Market);
-  EXPECT_EQ(result->request.tif, veloz::exec::TimeInForce::GTC);
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.type, veloz::exec::OrderType::Market);
+    EXPECT_EQ(order->request.tif, veloz::exec::TimeInForce::GTC);
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandWithMarketType) {
-  std::string line = "BUY BTCUSDT 0.5 0.0 order006 MARKET";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("BUY BTCUSDT 0.5 0.0 order006 MARKET"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.type, veloz::exec::OrderType::Market);
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.type, veloz::exec::OrderType::Market);
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandWithIOCTif) {
-  std::string line = "ORDER BUY BTCUSDT 0.5 50000.0 order007 LIMIT IOC";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order007 LIMIT IOC"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->request.tif, veloz::exec::TimeInForce::IOC);
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (order, result) {
+    EXPECT_EQ(order->request.tif, veloz::exec::TimeInForce::IOC);
+  }
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandInvalidSide) {
-  std::string line = "ORDER INVALID BTCUSDT 0.5 50000.0 order008";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER INVALID BTCUSDT 0.5 50000.0 order008"_kj);
 
-  EXPECT_FALSE(result.has_value());
+  EXPECT_FALSE(has_value(result));
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandInvalidQuantity) {
-  std::string line = "ORDER BUY BTCUSDT -0.5 50000.0 order009";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER BUY BTCUSDT -0.5 50000.0 order009"_kj);
 
-  EXPECT_FALSE(result.has_value());
+  EXPECT_FALSE(has_value(result));
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandInvalidPrice) {
-  std::string line = "ORDER BUY BTCUSDT 0.5 -50000.0 order010";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 -50000.0 order010"_kj);
 
-  EXPECT_FALSE(result.has_value());
+  EXPECT_FALSE(has_value(result));
 }
 
 TEST_F(CommandParserTest, ParseOrderCommandMissingClientId) {
-  std::string line = "ORDER BUY BTCUSDT 0.5 50000.0";
-  auto result = parse_order_command(line);
+  auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0"_kj);
 
-  EXPECT_FALSE(result.has_value());
+  EXPECT_FALSE(has_value(result));
 }
 
 TEST_F(CommandParserTest, ParseCancelCommand) {
-  std::string line = "CANCEL order001";
-  auto result = parse_cancel_command(line);
+  auto result = parse_cancel_command("CANCEL order001"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->client_order_id, "order001");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (cancel, result) {
+    EXPECT_EQ(cancel->client_order_id, "order001"_kj);
+  }
 }
 
 TEST_F(CommandParserTest, ParseCancelCommandShortcut) {
-  std::string line = "C order002";
-  auto result = parse_cancel_command(line);
+  auto result = parse_cancel_command("C order002"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->client_order_id, "order002");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (cancel, result) {
+    EXPECT_EQ(cancel->client_order_id, "order002"_kj);
+  }
 }
 
 TEST_F(CommandParserTest, ParseCancelCommandMissingId) {
-  std::string line = "CANCEL";
-  auto result = parse_cancel_command(line);
+  auto result = parse_cancel_command("CANCEL"_kj);
 
-  EXPECT_FALSE(result.has_value());
+  EXPECT_FALSE(has_value(result));
 }
 
 TEST_F(CommandParserTest, ParseQueryCommand) {
-  std::string line = "QUERY account";
-  auto result = parse_query_command(line);
+  auto result = parse_query_command("QUERY account"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->query_type, "account");
-  EXPECT_EQ(result->params, "");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (query, result) {
+    EXPECT_EQ(query->query_type, "account"_kj);
+    EXPECT_EQ(query->params, ""_kj);
+  }
 }
 
 TEST_F(CommandParserTest, ParseQueryCommandWithParams) {
-  std::string line = "QUERY order BTCUSDT";
-  auto result = parse_query_command(line);
+  auto result = parse_query_command("QUERY order BTCUSDT"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->query_type, "order");
-  EXPECT_EQ(result->params, "BTCUSDT");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (query, result) {
+    EXPECT_EQ(query->query_type, "order"_kj);
+    EXPECT_EQ(query->params, "BTCUSDT"_kj);
+  }
 }
 
 TEST_F(CommandParserTest, ParseQueryCommandShortcut) {
-  std::string line = "Q balance";
-  auto result = parse_query_command(line);
+  auto result = parse_query_command("Q balance"_kj);
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->query_type, "balance");
+  ASSERT_TRUE(has_value(result));
+  KJ_IF_MAYBE (query, result) {
+    EXPECT_EQ(query->query_type, "balance"_kj);
+  }
 }
 
 TEST_F(CommandParserTest, ParseCommandOrder) {
-  std::string line = "ORDER BUY BTCUSDT 0.5 50000.0 order001";
-  auto result = parse_command(line);
+  auto result = parse_command("ORDER BUY BTCUSDT 0.5 50000.0 order001"_kj);
 
   EXPECT_EQ(result.type, CommandType::Order);
-  EXPECT_TRUE(result.order.has_value());
+  EXPECT_TRUE(has_value(result.order));
 }
 
 TEST_F(CommandParserTest, ParseCommandCancel) {
-  std::string line = "CANCEL order001";
-  auto result = parse_command(line);
+  auto result = parse_command("CANCEL order001"_kj);
 
   EXPECT_EQ(result.type, CommandType::Cancel);
-  EXPECT_TRUE(result.cancel.has_value());
+  EXPECT_TRUE(has_value(result.cancel));
 }
 
 TEST_F(CommandParserTest, ParseCommandQuery) {
-  std::string line = "QUERY account";
-  auto result = parse_command(line);
+  auto result = parse_command("QUERY account"_kj);
 
   EXPECT_EQ(result.type, CommandType::Query);
-  EXPECT_TRUE(result.query.has_value());
+  EXPECT_TRUE(has_value(result.query));
 }
 
 TEST_F(CommandParserTest, ParseCommandUnknown) {
-  std::string line = "INVALID_COMMAND";
-  auto result = parse_command(line);
+  auto result = parse_command("INVALID_COMMAND"_kj);
 
   EXPECT_EQ(result.type, CommandType::Unknown);
-  EXPECT_FALSE(result.error.empty());
+  EXPECT_TRUE(result.error.size() > 0);
 }
 
 TEST_F(CommandParserTest, ParseCommandEmptyLine) {
-  std::string line = "";
-  auto result = parse_command(line);
+  auto result = parse_command(""_kj);
 
   EXPECT_EQ(result.type, CommandType::Unknown);
 }
 
 TEST_F(CommandParserTest, ParseCommandCommentLine) {
-  std::string line = "# This is a comment";
-  auto result = parse_command(line);
+  auto result = parse_command("# This is a comment"_kj);
 
   EXPECT_EQ(result.type, CommandType::Unknown);
 }
 
 TEST_F(CommandParserTest, OrderSideToLowerCase) {
-  EXPECT_EQ(parse_order_side("BUY"), veloz::exec::OrderSide::Buy);
-  EXPECT_EQ(parse_order_side("buy"), veloz::exec::OrderSide::Buy);
-  EXPECT_EQ(parse_order_side("Buy"), veloz::exec::OrderSide::Buy);
-  EXPECT_EQ(parse_order_side("b"), veloz::exec::OrderSide::Buy);
-  EXPECT_EQ(parse_order_side("SELL"), veloz::exec::OrderSide::Sell);
-  EXPECT_EQ(parse_order_side("sell"), veloz::exec::OrderSide::Sell);
-  EXPECT_EQ(parse_order_side("Sell"), veloz::exec::OrderSide::Sell);
-  EXPECT_EQ(parse_order_side("s"), veloz::exec::OrderSide::Sell);
+  EXPECT_EQ(parse_order_side("BUY"_kj), veloz::exec::OrderSide::Buy);
+  EXPECT_EQ(parse_order_side("buy"_kj), veloz::exec::OrderSide::Buy);
+  EXPECT_EQ(parse_order_side("Buy"_kj), veloz::exec::OrderSide::Buy);
+  EXPECT_EQ(parse_order_side("b"_kj), veloz::exec::OrderSide::Buy);
+  EXPECT_EQ(parse_order_side("SELL"_kj), veloz::exec::OrderSide::Sell);
+  EXPECT_EQ(parse_order_side("sell"_kj), veloz::exec::OrderSide::Sell);
+  EXPECT_EQ(parse_order_side("Sell"_kj), veloz::exec::OrderSide::Sell);
+  EXPECT_EQ(parse_order_side("s"_kj), veloz::exec::OrderSide::Sell);
 }
 
 TEST_F(CommandParserTest, OrderTypeToLowerCase) {
-  EXPECT_EQ(parse_order_type("LIMIT"), veloz::exec::OrderType::Limit);
-  EXPECT_EQ(parse_order_type("limit"), veloz::exec::OrderType::Limit);
-  EXPECT_EQ(parse_order_type("l"), veloz::exec::OrderType::Limit);
-  EXPECT_EQ(parse_order_type("MARKET"), veloz::exec::OrderType::Market);
-  EXPECT_EQ(parse_order_type("market"), veloz::exec::OrderType::Market);
-  EXPECT_EQ(parse_order_type("m"), veloz::exec::OrderType::Market);
+  EXPECT_EQ(parse_order_type("LIMIT"_kj), veloz::exec::OrderType::Limit);
+  EXPECT_EQ(parse_order_type("limit"_kj), veloz::exec::OrderType::Limit);
+  EXPECT_EQ(parse_order_type("l"_kj), veloz::exec::OrderType::Limit);
+  EXPECT_EQ(parse_order_type("MARKET"_kj), veloz::exec::OrderType::Market);
+  EXPECT_EQ(parse_order_type("market"_kj), veloz::exec::OrderType::Market);
+  EXPECT_EQ(parse_order_type("m"_kj), veloz::exec::OrderType::Market);
 }
 
 TEST_F(CommandParserTest, TifToLowerCase) {
-  EXPECT_EQ(parse_tif("GTC"), veloz::exec::TimeInForce::GTC);
-  EXPECT_EQ(parse_tif("gtc"), veloz::exec::TimeInForce::GTC);
-  EXPECT_EQ(parse_tif("g"), veloz::exec::TimeInForce::GTC);
-  EXPECT_EQ(parse_tif("IOC"), veloz::exec::TimeInForce::IOC);
-  EXPECT_EQ(parse_tif("ioc"), veloz::exec::TimeInForce::IOC);
-  EXPECT_EQ(parse_tif("FOK"), veloz::exec::TimeInForce::FOK);
-  EXPECT_EQ(parse_tif("fok"), veloz::exec::TimeInForce::FOK);
-  EXPECT_EQ(parse_tif("GTX"), veloz::exec::TimeInForce::GTX);
-  EXPECT_EQ(parse_tif("gtx"), veloz::exec::TimeInForce::GTX);
+  EXPECT_EQ(parse_tif("GTC"_kj), veloz::exec::TimeInForce::GTC);
+  EXPECT_EQ(parse_tif("gtc"_kj), veloz::exec::TimeInForce::GTC);
+  EXPECT_EQ(parse_tif("g"_kj), veloz::exec::TimeInForce::GTC);
+  EXPECT_EQ(parse_tif("IOC"_kj), veloz::exec::TimeInForce::IOC);
+  EXPECT_EQ(parse_tif("ioc"_kj), veloz::exec::TimeInForce::IOC);
+  EXPECT_EQ(parse_tif("FOK"_kj), veloz::exec::TimeInForce::FOK);
+  EXPECT_EQ(parse_tif("fok"_kj), veloz::exec::TimeInForce::FOK);
+  EXPECT_EQ(parse_tif("GTX"_kj), veloz::exec::TimeInForce::GTX);
+  EXPECT_EQ(parse_tif("gtx"_kj), veloz::exec::TimeInForce::GTX);
 }
 
 TEST_F(CommandParserTest, IsValidOrderSide) {
-  EXPECT_TRUE(is_valid_order_side("BUY"));
-  EXPECT_TRUE(is_valid_order_side("buy"));
-  EXPECT_TRUE(is_valid_order_side("b"));
-  EXPECT_TRUE(is_valid_order_side("SELL"));
-  EXPECT_TRUE(is_valid_order_side("sell"));
-  EXPECT_TRUE(is_valid_order_side("s"));
-  EXPECT_FALSE(is_valid_order_side("INVALID"));
+  EXPECT_TRUE(is_valid_order_side("BUY"_kj));
+  EXPECT_TRUE(is_valid_order_side("buy"_kj));
+  EXPECT_TRUE(is_valid_order_side("b"_kj));
+  EXPECT_TRUE(is_valid_order_side("SELL"_kj));
+  EXPECT_TRUE(is_valid_order_side("sell"_kj));
+  EXPECT_TRUE(is_valid_order_side("s"_kj));
+  EXPECT_FALSE(is_valid_order_side("INVALID"_kj));
 }
 
 TEST_F(CommandParserTest, IsValidOrderType) {
-  EXPECT_TRUE(is_valid_order_type("LIMIT"));
-  EXPECT_TRUE(is_valid_order_type("limit"));
-  EXPECT_TRUE(is_valid_order_type("l"));
-  EXPECT_TRUE(is_valid_order_type("MARKET"));
-  EXPECT_TRUE(is_valid_order_type("market"));
-  EXPECT_TRUE(is_valid_order_type("m"));
-  EXPECT_FALSE(is_valid_order_type("INVALID"));
+  EXPECT_TRUE(is_valid_order_type("LIMIT"_kj));
+  EXPECT_TRUE(is_valid_order_type("limit"_kj));
+  EXPECT_TRUE(is_valid_order_type("l"_kj));
+  EXPECT_TRUE(is_valid_order_type("MARKET"_kj));
+  EXPECT_TRUE(is_valid_order_type("market"_kj));
+  EXPECT_TRUE(is_valid_order_type("m"_kj));
+  EXPECT_FALSE(is_valid_order_type("INVALID"_kj));
 }
 
 TEST_F(CommandParserTest, IsValidTif) {
-  EXPECT_TRUE(is_valid_tif("GTC"));
-  EXPECT_TRUE(is_valid_tif("gtc"));
-  EXPECT_TRUE(is_valid_tif("g"));
-  EXPECT_TRUE(is_valid_tif("IOC"));
-  EXPECT_TRUE(is_valid_tif("ioc"));
-  EXPECT_TRUE(is_valid_tif("FOK"));
-  EXPECT_TRUE(is_valid_tif("fok"));
-  EXPECT_TRUE(is_valid_tif("GTX"));
-  EXPECT_TRUE(is_valid_tif("gtx"));
-  EXPECT_FALSE(is_valid_tif("INVALID"));
+  EXPECT_TRUE(is_valid_tif("GTC"_kj));
+  EXPECT_TRUE(is_valid_tif("gtc"_kj));
+  EXPECT_TRUE(is_valid_tif("g"_kj));
+  EXPECT_TRUE(is_valid_tif("IOC"_kj));
+  EXPECT_TRUE(is_valid_tif("ioc"_kj));
+  EXPECT_TRUE(is_valid_tif("FOK"_kj));
+  EXPECT_TRUE(is_valid_tif("fok"_kj));
+  EXPECT_TRUE(is_valid_tif("GTX"_kj));
+  EXPECT_TRUE(is_valid_tif("gtx"_kj));
+  EXPECT_FALSE(is_valid_tif("INVALID"_kj));
 }
 
 int main(int argc, char** argv) {
