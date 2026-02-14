@@ -8,6 +8,8 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <kj/common.h>
+#include <kj/memory.h>
 
 namespace veloz::core {
 
@@ -205,7 +207,7 @@ std::vector<std::string> ConfigManager::validation_errors() const {
 
 void ConfigManager::add_hot_reload_callback(HotReloadCallback callback) {
   std::scoped_lock lock(mu_);
-  hot_reload_callbacks_.push_back(std::move(callback));
+  hot_reload_callbacks_.push_back(kj::mv(callback));
 }
 
 void ConfigManager::trigger_hot_reload() {
@@ -251,7 +253,7 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
     }
     auto new_group = std::make_unique<ConfigGroup>(std::string(name));
     auto* raw = new_group.get();
-    parent->add_group(std::move(new_group));
+    parent->add_group(kj::mv(new_group));
     return raw;
   };
 
@@ -383,7 +385,7 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
   }
 
   ConfigItemBase* created_raw = created.get();
-  current_group->add_item(std::move(created));
+  current_group->add_item(kj::mv(created));
   created_raw->from_string(str_val);
 }
 

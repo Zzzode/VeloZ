@@ -1,5 +1,8 @@
 #include "veloz/core/memory_pool.h"
 
+#include <kj/common.h>
+#include <kj/memory.h>
+
 namespace veloz::core {
 
 // Global memory monitor instance

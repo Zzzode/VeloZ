@@ -18,16 +18,20 @@
 
 #include <atomic>
 #include <filesystem>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <optional>
+#include <functional> // std::function used for ConfigValidator, ConfigChangeCallback, HotReloadCallback
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <memory>   // std::unique_ptr used for polymorphic ownership (ConfigItemBase)
+#include <mutex>    // std::mutex used for condition_variable compatibility
+#include <optional> // std::optional used for nullable config values
 #include <shared_mutex>
 #include <stdexcept>
-#include <string>
+#include <string> // std::string used for std::unordered_map key compatibility
 #include <unordered_map>
 #include <variant>
-#include <vector>
+#include <vector> // std::vector used for validation_errors() return type
 
 namespace veloz::core {
 
@@ -155,13 +159,13 @@ public:
   class Builder {
   public:
     Builder(std::string key, std::string description)
-        : key_(std::move(key)), description_(std::move(description)) {}
+        : key_(kj::mv(key)), description_(kj::mv(description)) {}
 
     /**
      * @brief Set the default value
      */
     Builder& default_value(T value) {
-      default_ = std::move(value);
+      default_ = kj::mv(value);
       has_default_ = true;
       return *this;
     }
@@ -178,7 +182,7 @@ public:
      * @brief Set a validator function
      */
     Builder& validator(ConfigValidator<T> validator) {
-      validator_ = std::move(validator);
+      validator_ = kj::mv(validator);
       return *this;
     }
 
@@ -186,7 +190,7 @@ public:
      * @brief Add a change callback
      */
     Builder& on_change(ConfigChangeCallback<T> callback) {
-      on_change_callbacks_.push_back(std::move(callback));
+      on_change_callbacks_.push_back(kj::mv(callback));
       return *this;
     }
 
@@ -194,16 +198,16 @@ public:
      * @brief Build the ConfigItem
      */
     std::unique_ptr<ConfigItem<T>> build() {
-      auto item = std::make_unique<ConfigItem<T>>(std::move(key_), std::move(description_),
-                                                  required_, has_default_);
+      auto item = std::make_unique<ConfigItem<T>>(kj::mv(key_), kj::mv(description_), required_,
+                                                  has_default_);
 
       if (has_default_) {
-        item->default_value_ = std::move(default_);
+        item->default_value_ = kj::mv(default_);
         item->value_ = item->default_value_;
       }
 
-      item->validator_ = std::move(validator_);
-      item->on_change_callbacks_ = std::move(on_change_callbacks_);
+      item->validator_ = kj::mv(validator_);
+      item->on_change_callbacks_ = kj::mv(on_change_callbacks_);
 
       return item;
     }
@@ -222,7 +226,7 @@ public:
    * @brief Constructor (use Builder instead)
    */
   ConfigItem(std::string key, std::string description, bool required, bool has_default)
-      : key_(std::move(key)), description_(std::move(description)), required_(required),
+      : key_(kj::mv(key)), description_(kj::mv(description)), required_(required),
         has_default_(has_default) {
     is_set_.store(has_default);
   }
@@ -260,7 +264,7 @@ public:
    */
   [[nodiscard]] T get_or(T default_value) const {
     std::lock_guard<std::mutex> lock(mu_);
-    return is_set_ ? value_ : std::move(default_value);
+    return is_set_ ? value_ : kj::mv(default_value);
   }
 
   /**
@@ -297,7 +301,7 @@ public:
    */
   bool set(T&& value) {
     std::scoped_lock lock(mu_);
-    return set_locked(std::move(value));
+    return set_locked(kj::mv(value));
   }
 
   void reset() override {
@@ -407,7 +411,7 @@ public:
    */
   void add_callback(ConfigChangeCallback<T> callback) {
     std::scoped_lock lock(mu_);
-    on_change_callbacks_.push_back(std::move(callback));
+    on_change_callbacks_.push_back(kj::mv(callback));
   }
 
   /**
@@ -586,7 +590,7 @@ template <typename T> ConfigItemType ConfigItem<T>::type() const noexcept {
 class ConfigGroup final {
 public:
   explicit ConfigGroup(std::string name, std::string description = "")
-      : name_(std::move(name)), description_(std::move(description)) {}
+      : name_(kj::mv(name)), description_(kj::mv(description)) {}
 
   /**
    * @brief Add a config item to this group
@@ -595,7 +599,7 @@ public:
   void add_item(std::unique_ptr<ConfigItemBase> item) {
     std::scoped_lock lock(mu_);
     std::string key_str = std::string(item->key());
-    items_[key_str] = std::move(item);
+    items_[key_str] = kj::mv(item);
   }
 
   /**
@@ -604,7 +608,7 @@ public:
    */
   void add_group(std::unique_ptr<ConfigGroup> group) {
     std::scoped_lock lock(mu_);
-    groups_[group->name_] = std::move(group);
+    groups_[group->name_] = kj::mv(group);
   }
 
   /**
@@ -718,7 +722,7 @@ using HotReloadCallback = std::function<void()>;
  */
 class ConfigManager final {
 public:
-  explicit ConfigManager(std::string name = "default") : name_(std::move(name)) {
+  explicit ConfigManager(std::string name = "default") : name_(kj::mv(name)) {
     root_group_ = std::make_unique<ConfigGroup>("root", "Root configuration group");
   }
 

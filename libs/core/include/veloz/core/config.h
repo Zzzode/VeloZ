@@ -1,13 +1,15 @@
 #pragma once
 
 #include <filesystem>
-#include <map>
-#include <optional>
+#include <kj/common.h>
+#include <kj/string.h>
+#include <map>      // std::map used for ordered key iteration
+#include <optional> // std::optional used for nullable config values
 #include <stdexcept>
-#include <string>
+#include <string> // std::string used for std::map key and std::variant compatibility
 #include <string_view>
 #include <variant>
-#include <vector>
+#include <vector> // std::vector used for array config values in std::variant
 
 namespace veloz::core {
 
@@ -62,7 +64,7 @@ public:
 
   template <typename T> T get_or(std::string_view key, T default_value) const {
     auto opt = get<T>(key);
-    return opt.value_or(std::move(default_value));
+    return opt.value_or(kj::mv(default_value));
   }
 
   // Nested configuration access

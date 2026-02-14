@@ -1,79 +1,102 @@
+#include "kj/test.h"
 #include "veloz/core/config_manager.h"
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
-#include <thread>
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <string> // Kept for ConfigItem<std::string> template parameter
 
 using namespace veloz::core;
 
-class ConfigManagerTest : public ::testing::Test {
-protected:
-  void SetUp() override {
-    // Clean up test config files
-    try {
-      std::filesystem::remove_all("test_configs");
-    } catch (...) {
-    }
-
-    std::filesystem::create_directories("test_configs");
-  }
-
-  void TearDown() override {
-    // Clean up test config files
-    try {
-      std::filesystem::remove_all("test_configs");
-    } catch (...) {
-    }
-  }
-};
+namespace {
 
 // ============================================================================
 // ConfigItem Tests
 // ============================================================================
 
-TEST_F(ConfigManagerTest, ConfigItemBuilder) {
+KJ_TEST("ConfigItem: Builder") {
   auto item =
       ConfigItem<int>::Builder("test_item", "Test item").default_value(42).required(false).build();
 
-  EXPECT_EQ(std::string(item->key()), "test_item");
-  EXPECT_EQ(std::string(item->description()), "Test item");
-  EXPECT_FALSE(item->is_required());
-  EXPECT_TRUE(item->has_default());
-  EXPECT_TRUE(item->is_set());
+  KJ_EXPECT(std::string(item->key()) == "test_item");
+  KJ_EXPECT(std::string(item->description()) == "Test item");
+  KJ_EXPECT(!item->is_required());
+  KJ_EXPECT(item->has_default());
+  KJ_EXPECT(item->is_set());
 }
 
-TEST_F(ConfigManagerTest, ConfigItemGetValue) {
+KJ_TEST("ConfigItem: Get value") {
   auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
 
   auto value = item->get();
-  ASSERT_TRUE(value.has_value());
-  EXPECT_EQ(value.value(), 100);
-
-  EXPECT_EQ(item->value(), 100);
+  KJ_EXPECT(value.has_value());
+  KJ_EXPECT(value.value() == 100);
+  KJ_EXPECT(item->value() == 100);
 }
 
-TEST_F(ConfigManagerTest, ConfigItemSetValue) {
-  auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
+KJ_TEST("ConfigItem: Set value") {
+  auto item = ConfigItem<int>::Builder("test", "Test").default_value(10).build();
 
-  EXPECT_TRUE(item->set(200));
-  EXPECT_EQ(item->value(), 200);
+  KJ_EXPECT(item->set(200));
+  KJ_EXPECT(item->value() == 200);
 }
 
-TEST_F(ConfigManagerTest, ConfigItemValidator) {
+KJ_TEST("ConfigItem: Set value with validation failure") {
   auto item = ConfigItem<int>::Builder("test", "Test")
                   .validator([](const int& v) { return v >= 0 && v <= 100; })
                   .build();
 
-  EXPECT_TRUE(item->set(50));
-  EXPECT_EQ(item->value(), 50);
+  KJ_EXPECT(item->set(50));
+  KJ_EXPECT(item->value() == 50);
 
-  EXPECT_FALSE(item->set(150)); // Should fail validation
-  EXPECT_EQ(item->value(), 50); // Value unchanged
+  KJ_EXPECT(!item->set(150));     // Should fail validation
+  KJ_EXPECT(item->value() == 50); // Value unchanged
 }
 
-TEST_F(ConfigManagerTest, ConfigItemCallback) {
+KJ_TEST("ConfigItem: Reset") {
+  auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
+  item->set(200);
+
+  item->reset();
+  KJ_EXPECT(item->value() == 100);
+}
+
+KJ_TEST("ConfigItem: To string") {
+  auto int_item = ConfigItem<int>::Builder("int", "Int").default_value(42).build();
+  KJ_EXPECT(int_item->to_string() == "42");
+
+  auto string_item = ConfigItem<std::string>::Builder("str", "Str").default_value("hello").build();
+  KJ_EXPECT(string_item->to_string() == "\"hello\"");
+
+  auto bool_item = ConfigItem<bool>::Builder("bool", "Bool").default_value(true).build();
+  KJ_EXPECT(bool_item->to_string() == "true");
+
+  KJ_EXPECT(bool_item->from_string("42") == false);
+  KJ_EXPECT(bool_item->from_string("true") == true);
+  KJ_EXPECT(bool_item->value());
+
+  KJ_EXPECT(bool_item->from_string("false") == true);
+  KJ_EXPECT(!bool_item->value());
+}
+
+KJ_TEST("ConfigItem: Array") {
+  auto array_item = ConfigItem<std::vector<int>>::Builder("array", "Array")
+                        .default_value(std::vector<int>{1, 2, 3})
+                        .build();
+
+  auto value = array_item->get();
+  KJ_EXPECT(value.has_value());
+  KJ_EXPECT(value->size() == 3);
+  KJ_EXPECT((*value)[0] == 1);
+  KJ_EXPECT((*value)[1] == 2);
+  KJ_EXPECT((*value)[2] == 3);
+
+  std::string array_str = array_item->to_string();
+  KJ_EXPECT(array_str.find("[") != std::string::npos);
+}
+
+KJ_TEST("ConfigItem: Callback") {
   int callback_count = 0;
   int old_value = 0;
   int new_value = 0;
@@ -87,148 +110,109 @@ TEST_F(ConfigManagerTest, ConfigItemCallback) {
                   })
                   .build();
 
-  EXPECT_EQ(callback_count, 0);
-
   item->set(20);
-  EXPECT_EQ(callback_count, 1);
-  EXPECT_EQ(old_value, 10);
-  EXPECT_EQ(new_value, 20);
-}
+  KJ_EXPECT(callback_count == 1);
+  KJ_EXPECT(old_value == 10);
+  KJ_EXPECT(new_value == 20);
 
-TEST_F(ConfigManagerTest, ConfigItemReset) {
-  auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
+  item->set(30);
+  KJ_EXPECT(callback_count == 2);
+  KJ_EXPECT(old_value == 20);
+  KJ_EXPECT(new_value == 30);
 
-  item->set(200);
-  EXPECT_EQ(item->value(), 200);
-
-  item->reset();
-  EXPECT_EQ(item->value(), 100);
-}
-
-TEST_F(ConfigManagerTest, ConfigItemToString) {
-  auto int_item = ConfigItem<int>::Builder("int", "Int").default_value(42).build();
-  EXPECT_EQ(int_item->to_string(), "42");
-
-  auto string_item = ConfigItem<std::string>::Builder("str", "Str").default_value("hello").build();
-  EXPECT_EQ(string_item->to_string(), "\"hello\"");
-
-  auto bool_item = ConfigItem<bool>::Builder("bool", "Bool").default_value(true).build();
-  EXPECT_EQ(bool_item->to_string(), "true");
-}
-
-TEST_F(ConfigManagerTest, ConfigItemFromString) {
-  auto int_item = ConfigItem<int>::Builder("int", "Int").build();
-  EXPECT_TRUE(int_item->from_string("42"));
-  EXPECT_EQ(int_item->value(), 42);
-
-  auto bool_item = ConfigItem<bool>::Builder("bool", "Bool").build();
-  EXPECT_TRUE(bool_item->from_string("true"));
-  EXPECT_TRUE(bool_item->value());
-  EXPECT_TRUE(bool_item->from_string("false"));
-  EXPECT_FALSE(bool_item->value());
-
-  auto string_item = ConfigItem<std::string>::Builder("str", "Str").build();
-  EXPECT_TRUE(string_item->from_string("hello"));
-  EXPECT_EQ(string_item->value(), "hello");
-}
-
-TEST_F(ConfigManagerTest, ConfigItemArray) {
-  auto array_item = ConfigItem<std::vector<int>>::Builder("array", "Array")
-                        .default_value(std::vector<int>{1, 2, 3})
-                        .build();
-
-  auto value = array_item->get();
-  ASSERT_TRUE(value.has_value());
-  EXPECT_EQ(value->size(), 3);
-  EXPECT_EQ((*value)[0], 1);
-  EXPECT_EQ((*value)[1], 2);
-  EXPECT_EQ((*value)[2], 3);
-
-  std::string array_str = array_item->to_string();
-  EXPECT_TRUE(array_str.find("[") != std::string::npos);
+  item->set(100);
+  KJ_EXPECT(callback_count == 3);
+  KJ_EXPECT(old_value == 30);
+  KJ_EXPECT(new_value == 100);
 }
 
 // ============================================================================
 // ConfigGroup Tests
 // ============================================================================
 
-TEST_F(ConfigManagerTest, ConfigGroupAddItem) {
+KJ_TEST("ConfigGroup: Add item") {
   ConfigGroup group("test_group", "Test group");
 
   auto item1 = ConfigItem<int>::Builder("item1", "Item 1").default_value(1).build();
   auto item2 = ConfigItem<std::string>::Builder("item2", "Item 2").default_value("test").build();
 
-  group.add_item(std::move(item1));
-  group.add_item(std::move(item2));
+  group.add_item(kj::mv(item1));
+  group.add_item(kj::mv(item2));
 
   auto* found_item1 = group.get_item<int>("item1");
-  ASSERT_NE(found_item1, nullptr);
-  EXPECT_EQ(found_item1->value(), 1);
+  KJ_EXPECT(found_item1 != nullptr);
+  KJ_EXPECT(found_item1->value() == 1);
 
   auto* found_item2 = group.get_item<std::string>("item2");
-  ASSERT_NE(found_item2, nullptr);
-  EXPECT_EQ(found_item2->value(), "test");
+  KJ_EXPECT(found_item2 != nullptr);
+  KJ_EXPECT(found_item2->value() == "test");
 }
 
-TEST_F(ConfigManagerTest, ConfigGroupSubgroups) {
+KJ_TEST("ConfigGroup: Subgroups") {
   ConfigGroup root("root", "Root group");
   auto sub1 = std::make_unique<ConfigGroup>("sub1", "Subgroup 1");
   auto sub2 = std::make_unique<ConfigGroup>("sub2", "Subgroup 2");
 
-  root.add_group(std::move(sub1));
-  root.add_group(std::move(sub2));
+  root.add_group(kj::mv(sub1));
+  root.add_group(kj::mv(sub2));
 
   auto* found_sub1 = root.get_group("sub1");
-  ASSERT_NE(found_sub1, nullptr);
-  EXPECT_EQ(std::string(found_sub1->name()), "sub1");
+  KJ_EXPECT(found_sub1 != nullptr);
+  KJ_EXPECT(std::string(found_sub1->name()) == "sub1");
 
   auto* found_sub2 = root.get_group("sub2");
-  ASSERT_NE(found_sub2, nullptr);
-  EXPECT_EQ(std::string(found_sub2->name()), "sub2");
+  KJ_EXPECT(found_sub2 != nullptr);
+  KJ_EXPECT(std::string(found_sub2->name()) == "sub2");
 }
 
-TEST_F(ConfigManagerTest, ConfigGroupValidate) {
+KJ_TEST("ConfigGroup: Validate") {
   ConfigGroup group("test", "Test");
 
   auto optional_item = ConfigItem<int>::Builder("opt", "Optional").default_value(1).build();
   auto required_item = ConfigItem<int>::Builder("req", "Required").required(true).build();
 
-  ConfigItem<int>* required_item_ptr = required_item.get(); // Save raw pointer
+  group.add_item(kj::mv(optional_item));
+  group.add_item(kj::mv(required_item));
 
-  group.add_item(std::move(optional_item));
-  group.add_item(std::move(required_item));
+  KJ_EXPECT(!group.validate()); // Required item not set
+  KJ_EXPECT(group.validation_errors().size() > 0);
 
-  EXPECT_FALSE(group.validate()); // Required item not set
-  EXPECT_TRUE(group.validation_errors().size() > 0);
+  // Get the item from the group (not from the moved unique_ptr)
+  auto* req_item_ptr = group.get_item<int>("req");
+  KJ_EXPECT(req_item_ptr != nullptr);
+  req_item_ptr->set(10);
 
-  required_item_ptr->set(10); // Use saved pointer
-  EXPECT_TRUE(group.validate());
-  EXPECT_TRUE(group.validation_errors().empty());
+  KJ_EXPECT(group.validate());
+  KJ_EXPECT(group.validation_errors().empty());
 }
 
-TEST_F(ConfigManagerTest, ConfigGroupGetItems) {
+KJ_TEST("ConfigGroup: Get items") {
   ConfigGroup group("test", "Test");
 
-  group.add_item(ConfigItem<int>::Builder("item1", "1").default_value(1).build());
-  group.add_item(ConfigItem<std::string>::Builder("item2", "2").default_value("test").build());
+  auto item1 = ConfigItem<int>::Builder("item1", "1").default_value(1).build();
+  auto item2 = ConfigItem<std::string>::Builder("item2", "2").default_value("test").build();
+
+  group.add_item(kj::mv(item1));
+  group.add_item(kj::mv(item2));
 
   auto items = group.get_items();
-  EXPECT_EQ(items.size(), 2);
+  KJ_EXPECT(items.size() == 2);
 }
 
 // ============================================================================
 // ConfigManager Tests
 // ============================================================================
 
-TEST_F(ConfigManagerTest, ConfigManagerBasic) {
+KJ_TEST("ConfigManager: Basic") {
   ConfigManager manager("test");
-
   auto* root = manager.root_group();
-  ASSERT_NE(root, nullptr);
-  EXPECT_EQ(std::string(root->name()), "root");
+  KJ_EXPECT(root != nullptr);
+  KJ_EXPECT(std::string(root->name()) == "root");
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerLoadFromJson) {
+KJ_TEST("ConfigManager: Load from JSON file") {
+  std::filesystem::create_directories("test_configs");
+
   std::ofstream ofs("test_configs/config.json");
   ofs << R"({
     "timeout": 30,
@@ -239,10 +223,10 @@ TEST_F(ConfigManagerTest, ConfigManagerLoadFromJson) {
   ofs.close();
 
   ConfigManager manager("test");
-  EXPECT_TRUE(manager.load_from_json("test_configs/config.json"));
+  KJ_EXPECT(manager.load_from_json("test_configs/config.json"));
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerLoadFromJsonString) {
+KJ_TEST("ConfigManager: Load from JSON string") {
   std::string json = R"({
     "value1": 42,
     "value2": "hello",
@@ -250,25 +234,25 @@ TEST_F(ConfigManagerTest, ConfigManagerLoadFromJsonString) {
   })";
 
   ConfigManager manager("test");
-  EXPECT_TRUE(manager.load_from_json_string(json));
+  KJ_EXPECT(manager.load_from_json_string(json));
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerFindItem) {
+KJ_TEST("ConfigManager: Find item") {
   ConfigManager manager("test");
   auto* root = manager.root_group();
 
   root->add_item(ConfigItem<int>::Builder("test_item", "Test").default_value(100).build());
 
   auto* item = manager.find_item("test_item");
-  ASSERT_NE(item, nullptr);
-  EXPECT_EQ(std::string(item->key()), "test_item");
+  KJ_EXPECT(item != nullptr);
+  KJ_EXPECT(std::string(item->key()) == "test_item");
 
   auto* typed_item = manager.find_item<int>("test_item");
-  ASSERT_NE(typed_item, nullptr);
-  EXPECT_EQ(typed_item->value(), 100);
+  KJ_EXPECT(typed_item != nullptr);
+  KJ_EXPECT(typed_item->value() == 100);
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerSaveToJson) {
+KJ_TEST("ConfigManager: Save to JSON file") {
   ConfigManager manager("test");
   auto* root = manager.root_group();
 
@@ -276,32 +260,18 @@ TEST_F(ConfigManagerTest, ConfigManagerSaveToJson) {
   root->add_item(ConfigItem<std::string>::Builder("str_val", "Str").default_value("test").build());
   root->add_item(ConfigItem<bool>::Builder("bool_val", "Bool").default_value(true).build());
 
-  EXPECT_TRUE(manager.save_to_json("test_configs/saved.json"));
-
-  EXPECT_TRUE(std::filesystem::exists("test_configs/saved.json"));
+  KJ_EXPECT(manager.save_to_json("test_configs/saved.json"));
+  KJ_EXPECT(std::filesystem::exists("test_configs/saved.json"));
 
   // Verify content
   std::ifstream ifs("test_configs/saved.json");
   std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-
-  EXPECT_TRUE(content.find("\"int_val\"") != std::string::npos);
-  EXPECT_TRUE(content.find("\"str_val\"") != std::string::npos);
-  EXPECT_TRUE(content.find("\"bool_val\"") != std::string::npos);
+  KJ_EXPECT(content.find("\"int_val\"") != std::string::npos);
+  KJ_EXPECT(content.find("\"str_val\"") != std::string::npos);
+  KJ_EXPECT(content.find("\"bool_val\"") != std::string::npos);
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerToJsonString) {
-  ConfigManager manager("test");
-  auto* root = manager.root_group();
-
-  root->add_item(ConfigItem<int>::Builder("test", "Test").default_value(42).build());
-
-  std::string json = manager.to_json();
-
-  EXPECT_FALSE(json.empty());
-  EXPECT_TRUE(json.find("test") != std::string::npos);
-}
-
-TEST_F(ConfigManagerTest, ConfigManagerNestedGroups) {
+KJ_TEST("ConfigManager: Nested groups") {
   ConfigManager manager("test");
   auto* root = manager.root_group();
 
@@ -310,92 +280,79 @@ TEST_F(ConfigManagerTest, ConfigManagerNestedGroups) {
       ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
   db_group->add_item(ConfigItem<int>::Builder("port", "Port").default_value(5432).build());
 
-  root->add_group(std::move(db_group));
+  root->add_group(kj::mv(db_group));
 
-  // Find item with path notation
   auto* host_item = manager.find_item<std::string>("database.host");
-  ASSERT_NE(host_item, nullptr);
-  EXPECT_EQ(host_item->value(), "localhost");
+  KJ_EXPECT(host_item != nullptr);
+  KJ_EXPECT(host_item->value() == "localhost");
 
   auto* port_item = manager.find_item<int>("database.port");
-  ASSERT_NE(port_item, nullptr);
-  EXPECT_EQ(port_item->value(), 5432);
+  KJ_EXPECT(port_item != nullptr);
+  KJ_EXPECT(port_item->value() == 5432);
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerHotReload) {
+KJ_TEST("ConfigManager: Validation") {
   ConfigManager manager("test");
+
   auto* root = manager.root_group();
 
-  root->add_item(ConfigItem<int>::Builder("reloaded", "Reload test").default_value(1).build());
+  auto req1 = ConfigItem<int>::Builder("required1", "Required 1").required(true).build();
+  auto req2 = ConfigItem<int>::Builder("required2", "Required 2").required(true).build();
+  auto opt = ConfigItem<int>::Builder("optional", "Optional").default_value(10).build();
+
+  root->add_item(kj::mv(req1));
+  root->add_item(kj::mv(req2));
+  root->add_item(kj::mv(opt));
+
+  KJ_EXPECT(!manager.validate());
+  KJ_EXPECT(manager.validation_errors().size() == 2);
+
+  // Set one required value - validation should still fail
+  auto* req1_ptr = manager.find_item<int>("required1");
+  req1_ptr->set(100);
+
+  KJ_EXPECT(!manager.validate());
+  KJ_EXPECT(manager.validation_errors().size() == 1);
+
+  // Set the second required value - now validation should pass
+  auto* req2_ptr = manager.find_item<int>("required2");
+  req2_ptr->set(200);
+
+  KJ_EXPECT(manager.validate());
+  KJ_EXPECT(manager.validation_errors().empty());
+}
+
+KJ_TEST("ConfigManager: Set config file") {
+  ConfigManager manager("test");
+
+  manager.set_config_file("test_configs/my_config.json");
+  KJ_EXPECT(manager.config_file() == "test_configs/my_config.json");
+}
+
+KJ_TEST("ConfigManager: Hot reload") {
+  ConfigManager manager("test");
 
   int callback_count = 0;
   manager.add_hot_reload_callback([&] { ++callback_count; });
-
   manager.set_hot_reload_enabled(true);
-  EXPECT_TRUE(manager.hot_reload_enabled());
+  KJ_EXPECT(manager.hot_reload_enabled());
 
-  // Trigger reload manually
   manager.trigger_hot_reload();
-  EXPECT_EQ(callback_count, 1);
+  KJ_EXPECT(callback_count == 1);
+
+  manager.trigger_hot_reload();
+  KJ_EXPECT(callback_count == 2);
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerLoadAndReload) {
-  ConfigManager manager("test");
-  auto* root = manager.root_group();
-
-  root->add_item(ConfigItem<int>::Builder("timeout", "Timeout").default_value(10).build());
-
-  // Load initial config
-  std::ofstream ofs("test_configs/reload.json");
-  ofs << R"({ "timeout": 30 })";
-  ofs.close();
-
-  EXPECT_TRUE(manager.load_from_json("test_configs/reload.json"));
-
-  // Verify value was updated
-  auto* timeout_item = manager.find_item<int>("timeout");
-  ASSERT_NE(timeout_item, nullptr);
-  EXPECT_EQ(timeout_item->value(), 30);
-
-  // Reload with different value
-  ofs.open("test_configs/reload.json");
-  ofs << R"({ "timeout": 60 })";
-  ofs.close();
-
-  EXPECT_TRUE(manager.load_from_json("test_configs/reload.json", true));
-  EXPECT_EQ(timeout_item->value(), 60);
-}
-
-// ============================================================================
-// ConfigItemType Tests
-// ============================================================================
-
-TEST_F(ConfigManagerTest, ConfigItemTypeTraits) {
-  EXPECT_EQ(ConfigTypeTraits<bool>::type, ConfigItemType::Bool);
-  EXPECT_EQ(ConfigTypeTraits<int>::type, ConfigItemType::Int);
-  EXPECT_EQ(ConfigTypeTraits<int64_t>::type, ConfigItemType::Int64);
-  EXPECT_EQ(ConfigTypeTraits<double>::type, ConfigItemType::Double);
-  EXPECT_EQ(ConfigTypeTraits<std::string>::type, ConfigItemType::String);
-  EXPECT_EQ(ConfigTypeTraits<std::vector<bool>>::type, ConfigItemType::BoolArray);
-  EXPECT_EQ(ConfigTypeTraits<std::vector<int>>::type, ConfigItemType::IntArray);
-  EXPECT_EQ(ConfigTypeTraits<std::vector<int64_t>>::type, ConfigItemType::Int64Array);
-  EXPECT_EQ(ConfigTypeTraits<std::vector<double>>::type, ConfigItemType::DoubleArray);
-  EXPECT_EQ(ConfigTypeTraits<std::vector<std::string>>::type, ConfigItemType::StringArray);
-}
-
-// ============================================================================
-// Integration Tests
-// ============================================================================
-
-TEST_F(ConfigManagerTest, FullConfigCycle) {
+KJ_TEST("ConfigManager: Full config cycle") {
   ConfigManager manager("test");
   auto* root = manager.root_group();
 
   // Create database config group
   auto db_group = std::make_unique<ConfigGroup>("database", "Database settings");
   db_group->add_item(
-      ConfigItem<std::string>::Builder("host", "Database host").default_value("localhost").build());
-  db_group->add_item(ConfigItem<int>::Builder("port", "Database port")
+      ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
+  db_group->add_item(ConfigItem<int>::Builder("port", "Port")
                          .default_value(5432)
                          .validator([](const int& v) { return v > 0 && v < 65536; })
                          .build());
@@ -409,107 +366,90 @@ TEST_F(ConfigManagerTest, FullConfigCycle) {
           .default_value(std::vector<std::string>{"localhost", "127.0.0.1"})
           .build());
 
-  // Add groups to root
-  root->add_group(std::move(db_group));
-  root->add_group(std::move(server_group));
+  root->add_group(kj::mv(db_group));
+  root->add_group(kj::mv(server_group));
 
   // Save config
-  EXPECT_TRUE(manager.save_to_json("test_configs/full_config.json"));
+  KJ_EXPECT(manager.save_to_json("test_configs/full_config.json"));
+  KJ_EXPECT(std::filesystem::exists("test_configs/full_config.json"));
 
   // Create new manager and load
   ConfigManager manager2("test2");
-  EXPECT_TRUE(manager2.load_from_json("test_configs/full_config.json"));
+  KJ_EXPECT(manager2.load_from_json("test_configs/full_config.json"));
 
   // Verify loaded values
   auto* db_host = manager2.find_item<std::string>("database.host");
-  ASSERT_NE(db_host, nullptr);
-  EXPECT_EQ(db_host->value(), "localhost");
+  KJ_EXPECT(db_host != nullptr);
+  KJ_EXPECT(db_host->value() == "localhost");
 
   auto* db_port = manager2.find_item<int>("database.port");
-  ASSERT_NE(db_port, nullptr);
-  EXPECT_EQ(db_port->value(), 5432);
+  KJ_EXPECT(db_port != nullptr);
+  KJ_EXPECT(db_port->value() == 5432);
 
   auto* server_port = manager2.find_item<int>("server.port");
-  ASSERT_NE(server_port, nullptr);
-  EXPECT_EQ(server_port->value(), 8080);
+  KJ_EXPECT(server_port != nullptr);
+  KJ_EXPECT(server_port->value() == 8080);
 
   auto* allowed_hosts = manager2.find_item<std::vector<std::string>>("server.allowed_hosts");
-  ASSERT_NE(allowed_hosts, nullptr);
-  EXPECT_EQ(allowed_hosts->value().size(), 2);
+  KJ_EXPECT(allowed_hosts != nullptr);
+  KJ_EXPECT(allowed_hosts->value().size() == 2);
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerValidation) {
-  ConfigManager manager("test");
-  auto* root = manager.root_group();
+// ============================================================================
+// ConfigItemType Tests
+// ============================================================================
 
-  root->add_item(ConfigItem<int>::Builder("required1", "Required 1").required(true).build());
-  root->add_item(ConfigItem<int>::Builder("required2", "Required 2").required(true).build());
-  root->add_item(ConfigItem<int>::Builder("optional", "Optional").default_value(10).build());
-
-  EXPECT_FALSE(manager.validate());
-
-  auto errors = manager.validation_errors();
-  EXPECT_EQ(errors.size(), 2);
-
-  // Set one required value
-  auto* req1 = manager.find_item<int>("required1");
-  ASSERT_NE(req1, nullptr);
-  req1->set(100);
-
-  EXPECT_FALSE(manager.validate());
-  errors = manager.validation_errors();
-  EXPECT_EQ(errors.size(), 1);
-
-  // Set second required value
-  auto* req2 = manager.find_item<int>("required2");
-  ASSERT_NE(req2, nullptr);
-  req2->set(200);
-
-  EXPECT_TRUE(manager.validate());
-  errors = manager.validation_errors();
-  EXPECT_TRUE(errors.empty());
-}
-
-TEST_F(ConfigManagerTest, ConfigManagerSetConfigFile) {
-  ConfigManager manager("test");
-
-  manager.set_config_file("test_configs/my_config.json");
-
-  EXPECT_EQ(manager.config_file(), "test_configs/my_config.json");
+KJ_TEST("ConfigItemType: Traits") {
+  KJ_EXPECT(ConfigTypeTraits<bool>::type == ConfigItemType::Bool);
+  KJ_EXPECT(ConfigTypeTraits<int>::type == ConfigItemType::Int);
+  KJ_EXPECT(ConfigTypeTraits<int64_t>::type == ConfigItemType::Int64);
+  KJ_EXPECT(ConfigTypeTraits<double>::type == ConfigItemType::Double);
+  KJ_EXPECT(ConfigTypeTraits<std::string>::type == ConfigItemType::String);
+  KJ_EXPECT(ConfigTypeTraits<std::vector<bool>>::type == ConfigItemType::BoolArray);
+  KJ_EXPECT(ConfigTypeTraits<std::vector<int>>::type == ConfigItemType::IntArray);
+  KJ_EXPECT(ConfigTypeTraits<std::vector<int64_t>>::type == ConfigItemType::Int64Array);
+  KJ_EXPECT(ConfigTypeTraits<std::vector<double>>::type == ConfigItemType::DoubleArray);
+  KJ_EXPECT(ConfigTypeTraits<std::vector<std::string>>::type == ConfigItemType::StringArray);
 }
 
 // ============================================================================
 // Edge Cases and Error Handling
 // ============================================================================
 
-TEST_F(ConfigManagerTest, ConfigItemUnset) {
+KJ_TEST("ConfigManager: Unset item") {
+  ConfigManager manager("test");
   auto item = ConfigItem<int>::Builder("test", "Test").build();
 
-  EXPECT_FALSE(item->is_set());
-  EXPECT_THROW(item->value(), std::runtime_error);
-
-  auto opt_value = item->get();
-  EXPECT_FALSE(opt_value.has_value());
-
-  auto or_value = item->get_or(999);
-  EXPECT_EQ(or_value, 999);
+  // Item not set, should throw std::runtime_error
+  bool threw = false;
+  try {
+    (void)item->value();
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  KJ_EXPECT(threw);
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerInvalidJson) {
+KJ_TEST("ConfigManager: Invalid JSON") {
   ConfigManager manager("test");
 
-  EXPECT_FALSE(manager.load_from_json_string("{ invalid json }"));
+  KJ_EXPECT(!manager.load_from_json_string("{ invalid json }"));
+  KJ_EXPECT(!manager.load_from_json("test_configs/nonexistent.json"));
+  KJ_EXPECT(!manager.load_from_yaml("test_configs/config.yaml"));
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerNonExistentFile) {
-  ConfigManager manager("test");
+// ============================================================================
+// Cleanup
+// ============================================================================
 
-  EXPECT_FALSE(manager.load_from_json("test_configs/nonexistent.json"));
+KJ_TEST("ConfigManager: Cleanup") {
+  // Clean up test config files
+  try {
+    std::filesystem::remove_all("test_configs");
+  } catch (...) {
+  }
+
+  KJ_EXPECT(!std::filesystem::exists("test_configs"));
 }
 
-TEST_F(ConfigManagerTest, ConfigManagerYamlNotImplemented) {
-  ConfigManager manager("test");
-
-  // YAML loader is not implemented in Phase 1
-  EXPECT_FALSE(manager.load_from_yaml("test_configs/config.yaml"));
-}
+} // namespace

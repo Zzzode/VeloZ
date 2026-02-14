@@ -7,6 +7,8 @@
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <kj/common.h>
+#include <kj/memory.h>
 #include <sstream>
 
 namespace veloz::core {
@@ -207,63 +209,68 @@ void ConsoleOutput::flush() {
 
 FileOutput::FileOutput(const std::filesystem::path& file_path, Rotation rotation, size_t max_size,
                        size_t max_files, RotationInterval interval)
-    : file_path_(file_path), rotation_(rotation), max_size_(max_size), max_files_(max_files),
-      interval_(interval), last_rotation_(std::chrono::system_clock::now()) {
+    : guarded_(FileOutputState(file_path, max_size, rotation, interval)), max_files_(max_files) {
 
   // Open the initial file
-  file_stream_.open(file_path_, std::ios::out | std::ios::app);
-  if (!file_stream_.is_open()) {
-    throw std::runtime_error("Failed to open log file: " + file_path_.string());
+  auto lock = guarded_.lockExclusive();
+  lock->file_stream.open(lock->file_path, std::ios::out | std::ios::app);
+  if (!lock->file_stream.is_open()) {
+    throw std::runtime_error("Failed to open log file: " + lock->file_path.string());
   }
 
   // Get current file size
-  file_stream_.seekp(0, std::ios::end);
-  current_size_ = file_stream_.tellp();
+  lock->file_stream.seekp(0, std::ios::end);
+  lock->current_size = lock->file_stream.tellp();
 }
 
 FileOutput::~FileOutput() {
-  if (file_stream_.is_open()) {
-    file_stream_.close();
+  auto lock = guarded_.lockExclusive();
+  if (lock->file_stream.is_open()) {
+    lock->file_stream.close();
   }
 }
 
 void FileOutput::write(const std::string& formatted, const LogEntry& /* entry */) {
-  std::scoped_lock lock(mu_);
+  auto lock = guarded_.lockExclusive();
+  writeImpl(*lock, formatted);
+}
 
-  check_rotation();
+void FileOutput::writeImpl(FileOutputState& state, const std::string& formatted) {
+  // Rotation is checked in the check_rotation() method, not here
+  // since state is already locked/unlocked
 
-  if (!file_stream_.is_open()) {
+  if (!state.file_stream.is_open()) {
     return;
   }
 
-  file_stream_ << formatted << std::endl;
-  current_size_ += formatted.size() + 1; // +1 for newline
+  state.file_stream << formatted << std::endl;
+  state.current_size += formatted.size() + 1; // +1 for newline
 }
 
 void FileOutput::flush() {
-  std::scoped_lock lock(mu_);
-  if (file_stream_.is_open()) {
-    file_stream_.flush();
+  auto lock = guarded_.lockExclusive();
+  if (lock->file_stream.is_open()) {
+    lock->file_stream.flush();
   }
 }
 
 bool FileOutput::is_open() const {
-  std::scoped_lock lock(mu_);
-  return file_stream_.is_open();
+  return guarded_.lockExclusive()->file_stream.is_open();
 }
 
 void FileOutput::check_rotation() {
+  auto lock = guarded_.lockExclusive();
   bool should_rotate = false;
 
   // Check size-based rotation
-  if (rotation_ == Rotation::Size || rotation_ == Rotation::Both) {
-    if (current_size_ >= max_size_) {
+  if (lock->rotation == Rotation::Size || lock->rotation == Rotation::Both) {
+    if (lock->current_size >= lock->max_size) {
       should_rotate = true;
     }
   }
 
   // Check time-based rotation
-  if ((rotation_ == Rotation::Time || rotation_ == Rotation::Both) && !should_rotate) {
+  if ((lock->rotation == Rotation::Time || lock->rotation == Rotation::Both) && !should_rotate) {
     if (should_rotate_by_time()) {
       should_rotate = true;
     }
@@ -275,10 +282,11 @@ void FileOutput::check_rotation() {
 }
 
 bool FileOutput::should_rotate_by_time() const {
+  auto lock = guarded_.lockExclusive();
   auto now = std::chrono::system_clock::now();
-  auto elapsed = std::chrono::duration_cast<std::chrono::hours>(now - last_rotation_);
+  auto elapsed = std::chrono::duration_cast<std::chrono::hours>(now - lock->last_rotation);
 
-  switch (interval_) {
+  switch (lock->interval) {
   case RotationInterval::Hourly:
     return elapsed >= std::chrono::hours(1);
   case RotationInterval::Daily:
@@ -306,19 +314,23 @@ std::string FileOutput::get_rotation_suffix() const {
 }
 
 std::filesystem::path FileOutput::get_rotated_path(size_t index) const {
+  auto lock = guarded_.lockExclusive();
   std::string suffix = get_rotation_suffix();
 
   if (index == 0) {
-    return file_path_.parent_path() / std::format("{}_{}{}", file_path_.stem().string(), suffix,
-                                                  file_path_.extension().string());
+    return lock->file_path.parent_path() / std::format("{}_{}{}", lock->file_path.stem().string(),
+                                                       suffix,
+                                                       lock->file_path.extension().string());
   }
 
-  return file_path_.parent_path() / std::format("{}_{}.{}{}", file_path_.stem().string(), suffix,
-                                                index, file_path_.extension().string());
+  return lock->file_path.parent_path() / std::format("{}_{}.{}{}", lock->file_path.stem().string(),
+                                                     suffix, index,
+                                                     lock->file_path.extension().string());
 }
 
 void FileOutput::perform_rotation() {
-  file_stream_.close();
+  auto lock = guarded_.lockExclusive();
+  lock->file_stream.close();
 
   // Rename existing backup files
   for (int i = static_cast<int>(max_files_) - 1; i >= 1; --i) {
@@ -332,16 +344,17 @@ void FileOutput::perform_rotation() {
 
   // Rotate current file
   auto rotated_path = get_rotated_path(0);
-  std::filesystem::rename(file_path_, rotated_path);
+  std::filesystem::rename(lock->file_path, rotated_path);
 
   // Open new file
-  file_stream_.open(file_path_, std::ios::out | std::ios::app);
-  if (!file_stream_.is_open()) {
-    throw std::runtime_error("Failed to open new log file after rotation: " + file_path_.string());
+  lock->file_stream.open(lock->file_path, std::ios::out | std::ios::app);
+  if (!lock->file_stream.is_open()) {
+    throw std::runtime_error("Failed to open new log file after rotation: " +
+                             lock->file_path.string());
   }
 
-  current_size_ = 0;
-  last_rotation_ = std::chrono::system_clock::now();
+  lock->current_size = 0;
+  lock->last_rotation = std::chrono::system_clock::now();
 
   // Remove old backup files
   for (size_t i = max_files_; i <= max_files_ + 10; ++i) {
@@ -353,13 +366,12 @@ void FileOutput::perform_rotation() {
 }
 
 void FileOutput::rotate() {
-  std::scoped_lock lock(mu_);
+  auto lock = guarded_.lockExclusive();
   perform_rotation();
 }
 
 std::filesystem::path FileOutput::current_path() const {
-  std::scoped_lock lock(mu_);
-  return file_path_;
+  return guarded_.lockExclusive()->file_path;
 }
 
 // ============================================================================
@@ -367,44 +379,42 @@ std::filesystem::path FileOutput::current_path() const {
 // ============================================================================
 
 void MultiOutput::add_output(std::unique_ptr<LogOutput> output) {
-  std::scoped_lock lock(mu_);
-  outputs_.push_back(std::move(output));
+  auto lock = guarded_.lockExclusive();
+  lock->outputs.push_back(kj::mv(output));
 }
 
 void MultiOutput::remove_output(size_t index) {
-  std::scoped_lock lock(mu_);
-  if (index < outputs_.size()) {
-    outputs_.erase(outputs_.begin() + static_cast<ptrdiff_t>(index));
+  auto lock = guarded_.lockExclusive();
+  if (index < lock->outputs.size()) {
+    lock->outputs.erase(lock->outputs.begin() + static_cast<ptrdiff_t>(index));
   }
 }
 
 void MultiOutput::clear_outputs() {
-  std::scoped_lock lock(mu_);
-  outputs_.clear();
+  auto lock = guarded_.lockExclusive();
+  lock->outputs.clear();
 }
 
 void MultiOutput::write(const std::string& formatted, const LogEntry& entry) {
-  std::scoped_lock lock(mu_);
-  for (auto& output : outputs_) {
+  auto lock = guarded_.lockExclusive();
+  for (auto& output : lock->outputs) {
     output->write(formatted, entry);
   }
 }
 
 void MultiOutput::flush() {
-  std::scoped_lock lock(mu_);
-  for (auto& output : outputs_) {
+  auto lock = guarded_.lockExclusive();
+  for (auto& output : lock->outputs) {
     output->flush();
   }
 }
 
 bool MultiOutput::is_open() const {
-  std::scoped_lock lock(mu_);
-  return !outputs_.empty();
+  return !guarded_.lockExclusive()->outputs.empty();
 }
 
 size_t MultiOutput::output_count() const {
-  std::scoped_lock lock(mu_);
-  return outputs_.size();
+  return guarded_.lockExclusive()->outputs.size();
 }
 
 // ============================================================================
@@ -412,42 +422,38 @@ size_t MultiOutput::output_count() const {
 // ============================================================================
 
 Logger::Logger(std::unique_ptr<LogFormatter> formatter, std::unique_ptr<LogOutput> output)
-    : formatter_(std::move(formatter)) {
-  multi_output_ = std::make_unique<MultiOutput>();
-  multi_output_->add_output(std::move(output));
-}
+    : guarded_(LoggerState(kj::mv(formatter), kj::mv(output))) {}
 
 Logger::~Logger() = default;
 
 void Logger::set_level(LogLevel level) {
-  std::scoped_lock lock(mu_);
-  level_ = level;
+  auto lock = guarded_.lockExclusive();
+  lock->level = level;
 }
 
 LogLevel Logger::level() const {
-  std::scoped_lock lock(mu_);
-  return level_;
+  return guarded_.lockExclusive()->level;
 }
 
 void Logger::set_formatter(std::unique_ptr<LogFormatter> formatter) {
-  std::scoped_lock lock(mu_);
-  formatter_ = std::move(formatter);
+  auto lock = guarded_.lockExclusive();
+  lock->formatter = kj::mv(formatter);
 }
 
 void Logger::set_output(std::unique_ptr<LogOutput> output) {
-  std::scoped_lock lock(mu_);
-  multi_output_ = std::make_unique<MultiOutput>();
-  multi_output_->add_output(std::move(output));
+  auto lock = guarded_.lockExclusive();
+  lock->multi_output = std::make_unique<MultiOutput>();
+  lock->multi_output->add_output(kj::mv(output));
 }
 
 void Logger::add_output(std::unique_ptr<LogOutput> output) {
-  std::scoped_lock lock(mu_);
-  multi_output_->add_output(std::move(output));
+  auto lock = guarded_.lockExclusive();
+  lock->multi_output->add_output(kj::mv(output));
 }
 
 void Logger::log(LogLevel level, std::string_view message, const std::source_location& location) {
-  std::scoped_lock lock(mu_);
-  if (level_ == LogLevel::Off || static_cast<int>(level) < static_cast<int>(level_)) {
+  auto lock = guarded_.lockExclusive();
+  if (lock->level == LogLevel::Off || static_cast<int>(level) < static_cast<int>(lock->level)) {
     return;
   }
 
@@ -462,15 +468,15 @@ void Logger::log(LogLevel level, std::string_view message, const std::source_loc
   auto now = std::chrono::system_clock::now();
   LogEntry entry{.level = level,
                  .timestamp = std::string(now_utc_iso8601()),
-                 .file = std::move(file),
+                 .file = kj::mv(file),
                  .line = static_cast<int_least32_t>(location.line()),
                  .function = std::string(location.function_name()),
                  .message = std::string(message),
                  .time_point = now};
 
   // Format and write
-  std::string formatted = formatter_->format(entry);
-  multi_output_->write(formatted, entry);
+  std::string formatted = lock->formatter->format(entry);
+  lock->multi_output->write(formatted, entry);
 }
 
 void Logger::trace(std::string_view message, const std::source_location& location) {
@@ -498,8 +504,8 @@ void Logger::critical(std::string_view message, const std::source_location& loca
 }
 
 void Logger::flush() {
-  std::scoped_lock lock(mu_);
-  multi_output_->flush();
+  auto lock = guarded_.lockExclusive();
+  lock->multi_output->flush();
 }
 
 // ============================================================================

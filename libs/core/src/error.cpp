@@ -1,5 +1,8 @@
 #include "veloz/core/error.h"
 
+#include <kj/common.h>
+#include <kj/string.h>
+
 namespace veloz::core {
 
 std::string to_string(ErrorCode code) {

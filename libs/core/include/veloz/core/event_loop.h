@@ -2,17 +2,22 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
-#include <functional>
-#include <mutex>
-#include <optional>
+#include <functional> // std::function used for task callbacks, EventFilter, EventRouter
+#include <kj/async.h>
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/mutex.h>
+#include <kj/string.h>
+#include <kj/timer.h>
+#include <kj/vector.h>
+#include <optional> // std::optional used for priority filter
 #include <queue>
 #include <regex>
-#include <string>
+#include <string> // std::string used for EventTag
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
+#include <vector> // std::vector used for EventTag containers
 
 namespace veloz::core {
 
@@ -39,6 +44,7 @@ enum class EventPriority : uint8_t {
  *
  * Events can be tagged with strings to enable filtering and routing
  * based on event types, categories, or sources.
+ * Note: Using std::string for STL container compatibility (priority_queue)
  */
 using EventTag = std::string;
 
@@ -47,6 +53,7 @@ using EventTag = std::string;
  *
  * A filter function that returns true if an event should be processed.
  * The filter receives the event tags and can decide based on them.
+ * Note: Using std::function for STL container compatibility
  */
 using EventFilter = std::function<bool(const std::vector<EventTag>&)>;
 
@@ -54,6 +61,7 @@ using EventFilter = std::function<bool(const std::vector<EventTag>&)>;
  * @brief Event routing function
  *
  * Routes an event to a specific handler based on its tags.
+ * Note: Using std::function for STL container compatibility
  */
 using EventRouter = std::function<void(const std::vector<EventTag>&, std::function<void()>)>;
 
@@ -190,22 +198,55 @@ private:
   bool should_process_task(const Task& task);
   void route_task(Task& task, std::function<void()> wrapped);
 
-  // Filtering
-  std::unordered_set<uint64_t> active_filters_;
-  uint64_t next_filter_id_{1};
+  // KJ TaskSet error handler for async task failures
+  class TaskSetErrorHandler : public kj::TaskSet::ErrorHandler {
+  public:
+    explicit TaskSetErrorHandler(EventStats& stats) : stats_(stats) {}
+    void taskFailed(kj::Exception&& exception) override;
+
+  private:
+    EventStats& stats_;
+  };
+
+  // Internal method to process tasks from the queue using KJ promises
+  kj::Promise<void> process_next_task();
+  kj::Promise<void> schedule_delayed_tasks();
+
+  // Queue state (protected by KJ mutex for thread-safe access)
+  struct QueueState {
+    std::priority_queue<Task, std::vector<Task>, std::greater<>> tasks;
+    std::priority_queue<DelayedTask, std::vector<DelayedTask>, std::greater<>> delayed_tasks;
+  };
+
+  // Filter state (protected by KJ mutex)
+  struct FilterState {
+    std::unordered_set<uint64_t> active_filters;
+    uint64_t next_filter_id = 0;
+    std::unordered_map<uint64_t, std::pair<EventFilter, std::optional<EventPriority>>> filters;
+    std::unordered_map<uint64_t, std::regex> tag_filters;
+    std::optional<EventRouter> router;
+  };
 
   std::atomic<bool> running_{false};
   std::atomic<bool> stop_requested_{false};
 
-  mutable std::mutex mu_;
-  std::condition_variable cv_;
-  std::priority_queue<Task, std::vector<Task>, std::greater<>> tasks_;
-  std::priority_queue<DelayedTask, std::vector<DelayedTask>, std::greater<>> delayed_tasks_;
+  // KJ async primitives - using MutexGuarded for thread-safe queue access
+  kj::MutexGuarded<QueueState> queue_state_;
+  kj::MutexGuarded<FilterState> filter_state_;
 
-  // Filtering and routing
-  std::unordered_map<uint64_t, std::pair<EventFilter, std::optional<EventPriority>>> filters_;
-  std::unordered_map<uint64_t, std::regex> tag_filters_;
-  std::optional<EventRouter> router_;
+  // KJ event loop infrastructure (created on stack in run(), pointer stored for timer access)
+  struct KjAsyncState {
+    kj::EventLoop event_loop;
+    kj::Own<TaskSetErrorHandler> error_handler;
+    kj::Own<kj::TaskSet> task_set;
+    kj::Own<kj::TimerImpl> timer;
+
+    explicit KjAsyncState(EventStats& stats);
+  };
+  KjAsyncState* kj_state_ = nullptr;  // Non-owning pointer to stack-allocated state
+
+  // Cross-thread wake-up using KJ's cross-thread fulfiller
+  kj::MutexGuarded<kj::Maybe<kj::Own<kj::CrossThreadPromiseFulfiller<void>>>> wake_fulfiller_;
 
   // Statistics
   EventStats stats_;

@@ -3,6 +3,8 @@
 #include "veloz/core/json.h"
 
 #include <fstream>
+#include <kj/common.h>
+#include <kj/memory.h>
 
 namespace veloz::core {
 
@@ -190,7 +192,7 @@ bool Config::has_key(std::string_view key) const {
 }
 
 void Config::set(std::string_view key, Value value) {
-  config_[std::string(key)] = std::move(value);
+  config_[std::string(key)] = kj::mv(value);
 }
 
 void Config::remove(std::string_view key) {

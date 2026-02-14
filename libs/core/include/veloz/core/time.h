@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <cstdint>
-#include <string>
+#include <kj/common.h>
+#include <kj/string.h>
+#include <string> // std::string used for ISO8601 format return type compatibility
 
 namespace veloz::core {
 

@@ -2,6 +2,8 @@
 
 #include <ctime>
 #include <iomanip>
+#include <kj/common.h>
+#include <kj/string.h>
 #include <sstream>
 
 namespace veloz::core {

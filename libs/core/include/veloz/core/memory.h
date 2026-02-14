@@ -3,13 +3,88 @@
 #include <atomic>
 #include <cstddef>
 #include <deque>
-#include <functional>
-#include <memory>
-#include <mutex>
+#include <functional> // std::function used for custom deleter in std::unique_ptr
+#include <kj/arena.h>
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/memory.h>
+#include <kj/mutex.h>
+#include <memory> // std::unique_ptr used for custom deleter support in acquire()
 #include <stdexcept>
-#include <vector>
+#include <vector> // std::vector used for internal pool storage
 
 namespace veloz::core {
+
+// =======================================================================================
+// KJ Memory Utilities (RECOMMENDED - use these by default)
+// =======================================================================================
+
+/**
+ * @brief Create a heap-allocated object using KJ's memory management
+ * @tparam T Type to allocate
+ * @tparam Args Constructor argument types
+ * @param args Constructor arguments
+ * @return kj::Own<T> owning pointer to the allocated object
+ *
+ * This is the RECOMMENDED way to allocate heap objects in VeloZ.
+ * Use this instead of std::make_unique or new/delete.
+ *
+ * Example:
+ * @code
+ * auto obj = makeOwn<MyClass>(arg1, arg2);
+ * // obj is automatically freed when it goes out of scope
+ * @endcode
+ */
+template <typename T, typename... Args> [[nodiscard]] kj::Own<T> makeOwn(Args&&... args) {
+  return kj::heap<T>(kj::fwd<Args>(args)...);
+}
+
+/**
+ * @brief Create a heap-allocated array using KJ's memory management
+ * @tparam T Element type
+ * @param size Number of elements
+ * @return kj::Array<T> owning array
+ *
+ * This is the RECOMMENDED way to allocate arrays in VeloZ.
+ * Use this instead of std::vector for fixed-size arrays or new[]/delete[].
+ *
+ * Example:
+ * @code
+ * auto arr = makeArray<int>(100);
+ * // arr is automatically freed when it goes out of scope
+ * @endcode
+ */
+template <typename T> [[nodiscard]] kj::Array<T> makeArray(size_t size) {
+  return kj::heapArray<T>(size);
+}
+
+/**
+ * @brief Create a heap-allocated array with initial values
+ * @tparam T Element type
+ * @param values Initializer list of values
+ * @return kj::Array<T> owning array
+ */
+template <typename T> [[nodiscard]] kj::Array<T> makeArray(std::initializer_list<T> values) {
+  auto arr = kj::heapArray<T>(values.size());
+  size_t i = 0;
+  for (const auto& v : values) {
+    arr[i++] = v;
+  }
+  return arr;
+}
+
+/**
+ * @brief Wrap a raw pointer in a kj::Own without taking ownership
+ * @tparam T Type of the pointed-to object
+ * @param ptr Raw pointer (must outlive the returned Own)
+ * @return kj::Own<T> that does NOT free the pointer
+ *
+ * Use this when you need to pass a non-owned pointer to an API that expects Own<T>.
+ * WARNING: The pointed-to object must outlive the returned Own.
+ */
+template <typename T> [[nodiscard]] kj::Own<T> wrapNonOwning(T* ptr) {
+  return kj::Own<T>(ptr, kj::NullDisposer::instance);
+}
 
 // Memory alignment utilities
 [[nodiscard]] void* aligned_alloc(size_t size, size_t alignment);
@@ -40,37 +115,31 @@ template <typename T> void aligned_delete(T* ptr) {
   aligned_free(ptr);
 }
 
-// Simple object pool implementation
+// Simple object pool implementation using KJ synchronization
 template <typename T> class ObjectPool final {
 public:
   explicit ObjectPool(size_t initial_size = 0, size_t max_size = 0)
-      : max_size_(max_size), size_(0) {
-    if (initial_size > 0) {
-      for (size_t i = 0; i < initial_size; ++i) {
-        pool_.push_back(std::make_unique<T>());
-      }
-      size_ = initial_size;
-    }
-  }
+      : guarded_(PoolState(initial_size)), max_size_(max_size) {}
 
   ~ObjectPool() = default;
 
   // Acquire object from pool
   template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
-    std::scoped_lock lock(mu_);
-
-    if (!pool_.empty()) {
-      auto ptr = pool_.back().release();
-      pool_.pop_back();
+    auto lock = guarded_.lockExclusive();
+    if (!lock->pool.empty()) {
+      auto ptr = lock->pool.back().release();
+      lock->pool.pop_back();
       // Reset object state
       ptr->~T();
       new (ptr) T(std::forward<Args>(args)...);
+      lock.release(); // Release lock before returning
       return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
-    if (max_size_ == 0 || size_ < max_size_) {
+    if (max_size_ == 0 || lock->size < max_size_) {
       auto ptr = new T(std::forward<Args>(args)...);
-      ++size_;
+      ++(lock->size);
+      lock.release(); // Release lock before returning
       return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
@@ -83,25 +152,22 @@ public:
       return;
     }
 
-    std::scoped_lock lock(mu_);
-
-    if (max_size_ > 0 && pool_.size() >= max_size_) {
+    auto lock = guarded_.lockExclusive();
+    if (max_size_ > 0 && lock->pool.size() >= max_size_) {
       delete ptr;
-      --size_;
+      --(lock->size);
     } else {
-      pool_.push_back(std::unique_ptr<T>(ptr));
+      lock->pool.push_back(std::unique_ptr<T>(ptr));
     }
   }
 
   // Get pool status information
   [[nodiscard]] size_t available() const {
-    std::scoped_lock lock(mu_);
-    return pool_.size();
+    return guarded_.lockExclusive()->pool.size();
   }
 
   [[nodiscard]] size_t size() const {
-    std::scoped_lock lock(mu_);
-    return size_;
+    return guarded_.lockExclusive()->size;
   }
 
   [[nodiscard]] size_t max_size() const noexcept {
@@ -110,32 +176,43 @@ public:
 
   // Preallocate objects
   void preallocate(size_t count) {
-    std::scoped_lock lock(mu_);
-    const size_t needed = count > pool_.size() ? count - pool_.size() : 0;
+    auto lock = guarded_.lockExclusive();
+    const size_t needed = count > lock->pool.size() ? count - lock->pool.size() : 0;
     for (size_t i = 0; i < needed; ++i) {
-      if (max_size_ > 0 && size_ >= max_size_) {
+      if (max_size_ > 0 && lock->size >= max_size_) {
         break;
       }
-      pool_.push_back(std::make_unique<T>());
-      ++size_;
+      lock->pool.push_back(std::make_unique<T>());
+      ++(lock->size);
     }
   }
 
   // Clear pool
   void clear() {
-    std::scoped_lock lock(mu_);
-    pool_.clear();
-    size_ = 0;
+    auto lock = guarded_.lockExclusive();
+    lock->pool.clear();
+    lock->size = 0;
   }
 
 private:
-  std::vector<std::unique_ptr<T>> pool_;
-  mutable std::mutex mu_;
+  // Internal state for the pool
+  struct PoolState {
+    std::vector<std::unique_ptr<T>> pool;
+    size_t size;
+
+    explicit PoolState(size_t initial_size) : size(initial_size) {
+      pool.reserve(initial_size);
+      for (size_t i = 0; i < initial_size; ++i) {
+        pool.push_back(std::make_unique<T>());
+      }
+    }
+  };
+
+  kj::MutexGuarded<PoolState> guarded_;
   const size_t max_size_;
-  size_t size_;
 };
 
-// Thread-local object pool
+// Thread-local object pool (no synchronization needed)
 template <typename T> class ThreadLocalObjectPool final {
 public:
   explicit ThreadLocalObjectPool(size_t initial_size = 0, size_t max_size = 0)

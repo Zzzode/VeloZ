@@ -18,13 +18,17 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <string>
+#include <functional> // std::function used for callback APIs (for_each_array, for_each_object)
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <memory>   // std::unique_ptr used for pimpl pattern (JsonBuilder::Impl)
+#include <optional> // std::optional used for nullable return values
+#include <string>   // std::string used for yyjson C API compatibility
 #include <string_view>
 #include <type_traits>
-#include <vector>
+#include <vector> // std::vector used for keys() and parse_as_vector return types
 
 // Forward declarations for yyjson types to avoid including C header
 struct yyjson_doc;

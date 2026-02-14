@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <kj/common.h>
+#include <kj/memory.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -307,11 +309,11 @@ JsonBuilder::JsonBuilder(Type type) : impl_(std::make_unique<Impl>()) {
 
 JsonBuilder::~JsonBuilder() = default;
 
-JsonBuilder::JsonBuilder(JsonBuilder&& other) noexcept : impl_(std::move(other.impl_)) {}
+JsonBuilder::JsonBuilder(JsonBuilder&& other) noexcept : impl_(kj::mv(other.impl_)) {}
 
 JsonBuilder& JsonBuilder::operator=(JsonBuilder&& other) noexcept {
   if (this != &other) {
-    impl_ = std::move(other.impl_);
+    impl_ = kj::mv(other.impl_);
   }
   return *this;
 }
@@ -410,17 +412,16 @@ JsonBuilder& JsonBuilder::put_object(const std::string& key,
                                      std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc);
-    // Create temporary JsonBuilder and directly set impl_ members
-    JsonBuilder nested_builder(Type::Object);
-    if (nested_builder.impl_->doc) {
-      yyjson_mut_doc_free(nested_builder.impl_->doc);
-    }
-    nested_builder.impl_->doc = impl_->doc;
-    nested_builder.impl_->current = nested;
-    nested_builder.impl_->is_object = true;
-    nested_builder.impl_->type = Type::Object;
-    nested_builder.impl_->owns_doc = false;
-    builder(nested_builder);
+    // Save current state
+    yyjson_mut_val* saved_current = impl_->current;
+    bool saved_is_object = impl_->is_object;
+    // Temporarily switch to nested object
+    impl_->current = nested;
+    impl_->is_object = true;
+    builder(*this);
+    // Restore state and add nested object to parent
+    impl_->current = saved_current;
+    impl_->is_object = saved_is_object;
     yyjson_mut_obj_add_val(impl_->doc, impl_->current, key.c_str(), nested);
   }
   return *this;
@@ -430,17 +431,16 @@ JsonBuilder& JsonBuilder::put_array(const std::string& key,
                                     std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc);
-    // Create temporary JsonBuilder and directly set impl_ members
-    JsonBuilder nested_builder(Type::Array);
-    if (nested_builder.impl_->doc) {
-      yyjson_mut_doc_free(nested_builder.impl_->doc);
-    }
-    nested_builder.impl_->doc = impl_->doc;
-    nested_builder.impl_->current = nested;
-    nested_builder.impl_->is_object = false;
-    nested_builder.impl_->type = Type::Array;
-    nested_builder.impl_->owns_doc = false;
-    builder(nested_builder);
+    // Save current state
+    yyjson_mut_val* saved_current = impl_->current;
+    bool saved_is_object = impl_->is_object;
+    // Temporarily switch to nested array
+    impl_->current = nested;
+    impl_->is_object = false;
+    builder(*this);
+    // Restore state and add nested array to parent
+    impl_->current = saved_current;
+    impl_->is_object = saved_is_object;
     yyjson_mut_obj_add_val(impl_->doc, impl_->current, key.c_str(), nested);
   }
   return *this;
@@ -509,16 +509,16 @@ JsonBuilder& JsonBuilder::add(std::nullptr_t) {
 JsonBuilder& JsonBuilder::add_object(std::function<void(JsonBuilder&)> builder) {
   if (!impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc);
-    JsonBuilder nested_builder(Type::Object);
-    if (nested_builder.impl_->doc) {
-      yyjson_mut_doc_free(nested_builder.impl_->doc);
-    }
-    nested_builder.impl_->doc = impl_->doc;
-    nested_builder.impl_->current = nested;
-    nested_builder.impl_->is_object = true;
-    nested_builder.impl_->type = Type::Object;
-    nested_builder.impl_->owns_doc = false;
-    builder(nested_builder);
+    // Save current state
+    yyjson_mut_val* saved_current = impl_->current;
+    bool saved_is_object = impl_->is_object;
+    // Temporarily switch to nested object
+    impl_->current = nested;
+    impl_->is_object = true;
+    builder(*this);
+    // Restore state and add nested object to parent array
+    impl_->current = saved_current;
+    impl_->is_object = saved_is_object;
     yyjson_mut_arr_add_val(impl_->current, nested);
   }
   return *this;
@@ -527,26 +527,39 @@ JsonBuilder& JsonBuilder::add_object(std::function<void(JsonBuilder&)> builder) 
 JsonBuilder& JsonBuilder::add_array(std::function<void(JsonBuilder&)> builder) {
   if (!impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc);
-    JsonBuilder nested_builder(Type::Array);
-    if (nested_builder.impl_->doc) {
-      yyjson_mut_doc_free(nested_builder.impl_->doc);
-    }
-    nested_builder.impl_->doc = impl_->doc;
-    nested_builder.impl_->current = nested;
-    nested_builder.impl_->is_object = false;
-    nested_builder.impl_->type = Type::Array;
-    nested_builder.impl_->owns_doc = false;
-    builder(nested_builder);
+    // Save current state
+    yyjson_mut_val* saved_current = impl_->current;
+    bool saved_is_object = impl_->is_object;
+    // Temporarily switch to nested array
+    impl_->current = nested;
+    impl_->is_object = false;
+    builder(*this);
+    // Restore state and add nested array to parent array
+    impl_->current = saved_current;
+    impl_->is_object = saved_is_object;
     yyjson_mut_arr_add_val(impl_->current, nested);
   }
   return *this;
 }
 
 std::string JsonBuilder::build(bool pretty) const {
+  if (impl_->doc == nullptr) {
+    return "";
+  }
+  if (impl_->current == nullptr) {
+    return "";
+  }
+  // Set the current value as the document root before writing
+  yyjson_mut_doc_set_root(impl_->doc, impl_->current);
   size_t len = 0;
-  char* json = yyjson_mut_val_write(impl_->current, pretty ? YYJSON_WRITE_PRETTY : 0, &len);
+  yyjson_write_flag flags = pretty ? YYJSON_WRITE_PRETTY : 0;
+  yyjson_write_err err;
+  char* json = yyjson_mut_write_opts(impl_->doc, flags, nullptr, &len, &err);
+  if (json == nullptr) {
+    return "";
+  }
   std::string result(json, len);
-  free(json); // free memory allocated by yyjson_mut_val_write
+  free(json); // free memory allocated by yyjson_mut_write_opts
   return result;
 }
 

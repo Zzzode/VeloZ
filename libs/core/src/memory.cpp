@@ -1,6 +1,8 @@
 #include "veloz/core/memory_pool.h"
 
 #include <cstdlib>
+#include <kj/common.h>
+#include <kj/memory.h>
 
 namespace veloz::core {
 
@@ -43,14 +45,12 @@ void aligned_free(void* ptr) {
 #endif
 }
 
-// Global memory monitor instance
-static MemoryMonitor* g_memory_monitor = nullptr;
+// Global memory monitor instance using KJ Lazy for thread-safe lazy initialization
+static kj::Lazy<MemoryMonitor> g_memory_monitor;
 
 MemoryMonitor& global_memory_monitor() {
-  if (g_memory_monitor == nullptr) {
-    g_memory_monitor = new MemoryMonitor();
-  }
-  return *g_memory_monitor;
+  return g_memory_monitor.get(
+      [](kj::SpaceFor<MemoryMonitor>& space) { return kj::heap<MemoryMonitor>(); });
 }
 
 } // namespace veloz::core

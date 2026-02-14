@@ -18,12 +18,15 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <memory>
-#include <mutex>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/mutex.h>
+#include <kj/string.h>
+#include <memory> // std::unique_ptr used for polymorphic ownership (LogFormatter, LogOutput)
 #include <source_location>
-#include <string>
+#include <string> // std::string used for external API compatibility (std::format, std::filesystem)
 #include <string_view>
-#include <vector>
+#include <vector> // std::vector used for STL container compatibility
 
 namespace veloz::core {
 
@@ -242,31 +245,41 @@ public:
    * @brief Get rotation settings
    */
   [[nodiscard]] Rotation rotation() const {
-    return rotation_;
+    return guarded_.getWithoutLock().rotation;
   }
   [[nodiscard]] size_t max_size() const {
-    return max_size_;
+    return guarded_.getWithoutLock().max_size;
   }
   [[nodiscard]] size_t max_files() const {
     return max_files_;
   }
 
 private:
+  // Internal state for FileOutput
+  struct FileOutputState {
+    std::filesystem::path file_path;
+    std::ofstream file_stream;
+    size_t current_size;
+    std::chrono::system_clock::time_point last_rotation;
+    const size_t max_size;
+    const Rotation rotation;
+    const RotationInterval interval;
+
+    FileOutputState(const std::filesystem::path& path, size_t max_sz, Rotation rot,
+                    RotationInterval interv)
+        : file_path(path), current_size(0), last_rotation(std::chrono::system_clock::now()),
+          max_size(max_sz), rotation(rot), interval(interv) {}
+  };
+
+  void writeImpl(FileOutputState& state, const std::string& formatted);
   void check_rotation();
   [[nodiscard]] std::filesystem::path get_rotated_path(size_t index) const;
   void perform_rotation();
   [[nodiscard]] bool should_rotate_by_time() const;
   [[nodiscard]] std::string get_rotation_suffix() const;
 
-  std::filesystem::path file_path_;
-  std::ofstream file_stream_;
-  Rotation rotation_;
-  size_t max_size_;
-  size_t max_files_;
-  RotationInterval interval_;
-  std::atomic<size_t> current_size_{0};
-  std::chrono::system_clock::time_point last_rotation_;
-  mutable std::mutex mu_;
+  kj::MutexGuarded<FileOutputState> guarded_;
+  const size_t max_files_;
 };
 
 /**
@@ -289,8 +302,12 @@ public:
   [[nodiscard]] size_t output_count() const;
 
 private:
-  mutable std::mutex mu_;
-  std::vector<std::unique_ptr<LogOutput>> outputs_;
+  // Internal state for MultiOutput
+  struct MultiOutputState {
+    std::vector<std::unique_ptr<LogOutput>> outputs;
+  };
+
+  kj::MutexGuarded<MultiOutputState> guarded_;
 };
 
 /**
@@ -496,10 +513,20 @@ public:
   void flush();
 
 private:
-  std::unique_ptr<LogFormatter> formatter_;
-  std::unique_ptr<MultiOutput> multi_output_;
-  LogLevel level_{LogLevel::Info};
-  mutable std::mutex mu_;
+  // Internal state for Logger
+  struct LoggerState {
+    std::unique_ptr<LogFormatter> formatter;
+    std::unique_ptr<MultiOutput> multi_output;
+    LogLevel level;
+
+    LoggerState(std::unique_ptr<LogFormatter> fmt, std::unique_ptr<LogOutput> out)
+        : formatter(kj::mv(fmt)), multi_output(std::make_unique<MultiOutput>()),
+          level(LogLevel::Info) {
+      multi_output->add_output(kj::mv(out));
+    }
+  };
+
+  kj::MutexGuarded<LoggerState> guarded_;
 };
 
 /**

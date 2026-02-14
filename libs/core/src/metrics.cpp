@@ -1,14 +1,19 @@
 #include "veloz/core/metrics.h"
 
+#include <iomanip>
+#include <kj/common.h>
+#include <kj/memory.h>
 #include <sstream>
 
 namespace veloz::core {
 
 std::string MetricsRegistry::to_prometheus() const {
+  auto lock = guarded_.lockExclusive();
+
   std::ostringstream oss;
 
   // Export counters
-  for (const auto& [name, counter] : counters_) {
+  for (const auto& [name, counter] : lock->counters) {
     if (!counter->description().empty()) {
       oss << "# HELP " << name << " " << counter->description() << "\n";
     }
@@ -17,7 +22,7 @@ std::string MetricsRegistry::to_prometheus() const {
   }
 
   // Export gauges
-  for (const auto& [name, gauge] : gauges_) {
+  for (const auto& [name, gauge] : lock->gauges) {
     if (!gauge->description().empty()) {
       oss << "# HELP " << name << " " << gauge->description() << "\n";
     }
@@ -26,12 +31,11 @@ std::string MetricsRegistry::to_prometheus() const {
   }
 
   // Export histograms
-  for (const auto& [name, histogram] : histograms_) {
+  for (const auto& [name, histogram] : lock->histograms) {
     if (!histogram->description().empty()) {
       oss << "# HELP " << name << " " << histogram->description() << "\n";
     }
     oss << "# TYPE " << name << " histogram\n";
-
     auto bucket_counts = histogram->bucket_counts();
     for (size_t i = 0; i < histogram->buckets().size(); ++i) {
       oss << name << "_bucket{le=\"" << histogram->buckets()[i] << "\"} " << bucket_counts[i]

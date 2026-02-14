@@ -1,9 +1,12 @@
 #pragma once
 
 #include <format>
+#include <kj/common.h>
+#include <kj/exception.h>
+#include <kj/string.h>
 #include <source_location>
-#include <stdexcept>
-#include <string>
+#include <stdexcept> // std::runtime_error used as base class for exception hierarchy
+#include <string>    // std::string used for std::runtime_error compatibility
 
 namespace veloz::core {
 

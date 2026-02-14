@@ -2,13 +2,14 @@
 
 #include <atomic>
 #include <chrono>
-#include <functional>
+#include <kj/common.h>
+#include <kj/mutex.h>
+#include <kj/string.h>
 #include <map>
-#include <mutex>
 #include <source_location>
-#include <string>
+#include <string> // std::string used for std::map key compatibility
 #include <variant>
-#include <vector>
+#include <vector> // std::vector used for bucket_counts return type compatibility
 
 namespace veloz::core {
 
@@ -19,8 +20,7 @@ enum class MetricType { Counter, Gauge, Histogram, Summary };
 class Metric {
 public:
   explicit Metric(std::string name, std::string description)
-      : name_(std::move(name)), description_(std::move(description)) {}
-
+      : name_(kj::mv(name)), description_(kj::mv(description)) {}
   virtual ~Metric() = default;
 
   [[nodiscard]] const std::string& name() const noexcept {
@@ -40,8 +40,7 @@ private:
 class Counter final : public Metric {
 public:
   explicit Counter(std::string name, std::string description)
-      : Metric(std::move(name), std::move(description)) {}
-
+      : Metric(kj::mv(name), kj::mv(description)) {}
   void increment(int64_t value = 1) noexcept {
     count_ += value;
   }
@@ -62,16 +61,13 @@ private:
 class Gauge final : public Metric {
 public:
   explicit Gauge(std::string name, std::string description)
-      : Metric(std::move(name), std::move(description)) {}
-
+      : Metric(kj::mv(name), kj::mv(description)) {}
   void increment(int64_t value = 1) noexcept {
     value_ += value;
   }
-
   void decrement(int64_t value = 1) noexcept {
     value_ -= value;
   }
-
   void set(int64_t value) noexcept {
     value_.store(value);
   }
@@ -96,7 +92,6 @@ public:
       start();
     }
   }
-
   void start() noexcept {
     start_time_ = std::chrono::steady_clock::now();
   }
@@ -124,7 +119,7 @@ class Histogram final : public Metric {
 public:
   explicit Histogram(std::string name, std::string description,
                      std::vector<double> buckets = default_buckets())
-      : Metric(std::move(name), std::move(description)), buckets_(std::move(buckets)) {
+      : Metric(kj::mv(name), kj::mv(description)), buckets_(kj::mv(buckets)) {
     bucket_counts_.reset(new std::atomic<int64_t>[buckets_.size()]);
     for (size_t i = 0; i < buckets_.size(); ++i) {
       bucket_counts_[i].store(0);
@@ -134,7 +129,6 @@ public:
   void observe(double value) noexcept {
     count_++;
     sum_ += value;
-
     for (size_t i = 0; i < buckets_.size(); ++i) {
       if (value <= buckets_[i]) {
         bucket_counts_[i]++;
@@ -145,15 +139,12 @@ public:
   [[nodiscard]] int64_t count() const noexcept {
     return count_.load();
   }
-
   [[nodiscard]] double sum() const noexcept {
     return sum_.load();
   }
-
   [[nodiscard]] const std::vector<double>& buckets() const noexcept {
     return buckets_;
   }
-
   [[nodiscard]] std::vector<int64_t> bucket_counts() const {
     std::vector<int64_t> counts;
     counts.reserve(buckets_.size());
@@ -186,67 +177,67 @@ public:
 
   // Register metrics
   void register_counter(std::string name, std::string description) {
-    std::scoped_lock lock(mu_);
-    counters_[std::move(name)] = std::make_unique<Counter>(name, std::move(description));
+    auto lock = guarded_.lockExclusive();
+    lock->counters[kj::mv(name)] = std::make_unique<Counter>(name, kj::mv(description));
   }
 
   void register_gauge(std::string name, std::string description) {
-    std::scoped_lock lock(mu_);
-    gauges_[std::move(name)] = std::make_unique<Gauge>(name, std::move(description));
+    auto lock = guarded_.lockExclusive();
+    lock->gauges[kj::mv(name)] = std::make_unique<Gauge>(name, kj::mv(description));
   }
 
   void register_histogram(std::string name, std::string description,
                           std::vector<double> buckets = Histogram::default_buckets()) {
-    std::scoped_lock lock(mu_);
-    histograms_[std::move(name)] =
-        std::make_unique<Histogram>(name, std::move(description), std::move(buckets));
+    auto lock = guarded_.lockExclusive();
+    lock->histograms[kj::mv(name)] =
+        std::make_unique<Histogram>(name, kj::mv(description), kj::mv(buckets));
   }
 
   // Get metrics
   [[nodiscard]] Counter* counter(std::string_view name) {
-    std::scoped_lock lock(mu_);
-    auto it = counters_.find(std::string(name));
-    return it != counters_.end() ? it->second.get() : nullptr;
+    auto lock = guarded_.lockExclusive();
+    auto it = lock->counters.find(std::string(name));
+    return it != lock->counters.end() ? it->second.get() : nullptr;
   }
 
   [[nodiscard]] Gauge* gauge(std::string_view name) {
-    std::scoped_lock lock(mu_);
-    auto it = gauges_.find(std::string(name));
-    return it != gauges_.end() ? it->second.get() : nullptr;
+    auto lock = guarded_.lockExclusive();
+    auto it = lock->gauges.find(std::string(name));
+    return it != lock->gauges.end() ? it->second.get() : nullptr;
   }
 
   [[nodiscard]] Histogram* histogram(std::string_view name) {
-    std::scoped_lock lock(mu_);
-    auto it = histograms_.find(std::string(name));
-    return it != histograms_.end() ? it->second.get() : nullptr;
+    auto lock = guarded_.lockExclusive();
+    auto it = lock->histograms.find(std::string(name));
+    return it != lock->histograms.end() ? it->second.get() : nullptr;
   }
 
   // Get all metric names
   [[nodiscard]] std::vector<std::string> counter_names() const {
-    std::scoped_lock lock(mu_);
+    auto lock = guarded_.lockExclusive();
     std::vector<std::string> names;
-    names.reserve(counters_.size());
-    for (const auto& [name, metric] : counters_) {
+    names.reserve(lock->counters.size());
+    for (const auto& [name, metric] : lock->counters) {
       names.push_back(name);
     }
     return names;
   }
 
   [[nodiscard]] std::vector<std::string> gauge_names() const {
-    std::scoped_lock lock(mu_);
+    auto lock = guarded_.lockExclusive();
     std::vector<std::string> names;
-    names.reserve(gauges_.size());
-    for (const auto& [name, metric] : gauges_) {
+    names.reserve(lock->gauges.size());
+    for (const auto& [name, metric] : lock->gauges) {
       names.push_back(name);
     }
     return names;
   }
 
   [[nodiscard]] std::vector<std::string> histogram_names() const {
-    std::scoped_lock lock(mu_);
+    auto lock = guarded_.lockExclusive();
     std::vector<std::string> names;
-    names.reserve(histograms_.size());
-    for (const auto& [name, metric] : histograms_) {
+    names.reserve(lock->histograms.size());
+    for (const auto& [name, metric] : lock->histograms) {
       names.push_back(name);
     }
     return names;
@@ -256,10 +247,14 @@ public:
   [[nodiscard]] std::string to_prometheus() const;
 
 private:
-  mutable std::mutex mu_;
-  std::map<std::string, std::unique_ptr<Counter>> counters_;
-  std::map<std::string, std::unique_ptr<Gauge>> gauges_;
-  std::map<std::string, std::unique_ptr<Histogram>> histograms_;
+  // Internal state for MetricsRegistry
+  struct RegistryState {
+    std::map<std::string, std::unique_ptr<Counter>> counters;
+    std::map<std::string, std::unique_ptr<Gauge>> gauges;
+    std::map<std::string, std::unique_ptr<Histogram>> histograms;
+  };
+
+  kj::MutexGuarded<RegistryState> guarded_;
 };
 
 // Global metrics registry
