@@ -11,10 +11,374 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import secrets
+import logging
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse, urlencode
 from collections import deque
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from typing import Optional
+from datetime import datetime
+
+# Configure audit logger
+audit_logger = logging.getLogger("veloz.audit")
+audit_logger.setLevel(logging.INFO)
+_audit_handler = logging.StreamHandler()
+_audit_handler.setFormatter(
+    logging.Formatter("%(asctime)s [AUDIT] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
+audit_logger.addHandler(_audit_handler)
+
+
+# =============================================================================
+# JWT Implementation (simplified, using HMAC-SHA256)
+# =============================================================================
+
+
+class JWTManager:
+    """Simple JWT implementation using HMAC-SHA256."""
+
+    def __init__(self, secret_key: str, token_expiry_seconds: int = 3600):
+        self._secret = secret_key.encode("utf-8") if secret_key else secrets.token_bytes(32)
+        self._expiry = token_expiry_seconds
+
+    def _b64url_encode(self, data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    def _b64url_decode(self, data: str) -> bytes:
+        padding = 4 - len(data) % 4
+        if padding != 4:
+            data += "=" * padding
+        return base64.urlsafe_b64decode(data)
+
+    def create_token(self, user_id: str, api_key_id: Optional[str] = None) -> str:
+        """Create a JWT token for the given user."""
+        header = {"alg": "HS256", "typ": "JWT"}
+        now = int(time.time())
+        payload = {
+            "sub": user_id,
+            "iat": now,
+            "exp": now + self._expiry,
+        }
+        if api_key_id:
+            payload["kid"] = api_key_id
+
+        header_b64 = self._b64url_encode(json.dumps(header).encode("utf-8"))
+        payload_b64 = self._b64url_encode(json.dumps(payload).encode("utf-8"))
+        message = f"{header_b64}.{payload_b64}"
+        signature = hmac.new(self._secret, message.encode("utf-8"), hashlib.sha256).digest()
+        sig_b64 = self._b64url_encode(signature)
+        return f"{message}.{sig_b64}"
+
+    def verify_token(self, token: str) -> Optional[dict]:
+        """Verify a JWT token and return the payload if valid."""
+        try:
+            parts = token.split(".")
+            if len(parts) != 3:
+                return None
+
+            header_b64, payload_b64, sig_b64 = parts
+            message = f"{header_b64}.{payload_b64}"
+            expected_sig = hmac.new(self._secret, message.encode("utf-8"), hashlib.sha256).digest()
+            actual_sig = self._b64url_decode(sig_b64)
+
+            if not hmac.compare_digest(expected_sig, actual_sig):
+                return None
+
+            payload = json.loads(self._b64url_decode(payload_b64))
+            if payload.get("exp", 0) < int(time.time()):
+                return None
+
+            return payload
+        except Exception:
+            return None
+
+
+# =============================================================================
+# API Key Management
+# =============================================================================
+
+
+@dataclass
+class APIKey:
+    key_id: str
+    key_hash: str  # Store hash, not the actual key
+    user_id: str
+    name: str
+    created_at: int
+    last_used_at: Optional[int] = None
+    revoked: bool = False
+    permissions: list = field(default_factory=lambda: ["read", "write"])
+
+
+class APIKeyManager:
+    """Manages API keys for authentication."""
+
+    def __init__(self):
+        self._mu = threading.Lock()
+        self._keys: dict[str, APIKey] = {}  # key_id -> APIKey
+        self._key_lookup: dict[str, str] = {}  # key_hash -> key_id
+
+    def _hash_key(self, key: str) -> str:
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+    def create_key(self, user_id: str, name: str, permissions: Optional[list] = None) -> tuple[str, str]:
+        """Create a new API key. Returns (key_id, raw_key)."""
+        key_id = f"vk_{secrets.token_hex(8)}"
+        raw_key = f"veloz_{secrets.token_hex(32)}"
+        key_hash = self._hash_key(raw_key)
+
+        api_key = APIKey(
+            key_id=key_id,
+            key_hash=key_hash,
+            user_id=user_id,
+            name=name,
+            created_at=int(time.time()),
+            permissions=permissions or ["read", "write"],
+        )
+
+        with self._mu:
+            self._keys[key_id] = api_key
+            self._key_lookup[key_hash] = key_id
+
+        audit_logger.info(f"API key created: key_id={key_id}, user={user_id}, name={name}")
+        return key_id, raw_key
+
+    def validate_key(self, raw_key: str) -> Optional[APIKey]:
+        """Validate an API key and return the APIKey object if valid."""
+        key_hash = self._hash_key(raw_key)
+        with self._mu:
+            key_id = self._key_lookup.get(key_hash)
+            if not key_id:
+                return None
+            api_key = self._keys.get(key_id)
+            if not api_key or api_key.revoked:
+                return None
+            api_key.last_used_at = int(time.time())
+            return api_key
+
+    def revoke_key(self, key_id: str) -> bool:
+        """Revoke an API key."""
+        with self._mu:
+            api_key = self._keys.get(key_id)
+            if not api_key:
+                return False
+            api_key.revoked = True
+            if api_key.key_hash in self._key_lookup:
+                del self._key_lookup[api_key.key_hash]
+        audit_logger.info(f"API key revoked: key_id={key_id}")
+        return True
+
+    def list_keys(self, user_id: Optional[str] = None) -> list[dict]:
+        """List all API keys, optionally filtered by user."""
+        with self._mu:
+            keys = []
+            for api_key in self._keys.values():
+                if user_id and api_key.user_id != user_id:
+                    continue
+                keys.append({
+                    "key_id": api_key.key_id,
+                    "user_id": api_key.user_id,
+                    "name": api_key.name,
+                    "created_at": api_key.created_at,
+                    "last_used_at": api_key.last_used_at,
+                    "revoked": api_key.revoked,
+                    "permissions": api_key.permissions,
+                })
+            return keys
+
+
+# =============================================================================
+# Token Bucket Rate Limiter
+# =============================================================================
+
+
+@dataclass
+class TokenBucket:
+    tokens: float
+    last_update: float
+    capacity: float
+    refill_rate: float  # tokens per second
+
+
+class RateLimiter:
+    """Token bucket rate limiter."""
+
+    def __init__(
+        self,
+        capacity: int = 100,
+        refill_rate: float = 10.0,
+        window_seconds: int = 60,
+    ):
+        self._mu = threading.Lock()
+        self._buckets: dict[str, TokenBucket] = {}
+        self._capacity = capacity
+        self._refill_rate = refill_rate
+        self._window = window_seconds
+        self._cleanup_interval = 300  # Cleanup old buckets every 5 minutes
+        self._last_cleanup = time.time()
+
+    def _get_bucket(self, key: str) -> TokenBucket:
+        now = time.time()
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            bucket = TokenBucket(
+                tokens=float(self._capacity),
+                last_update=now,
+                capacity=float(self._capacity),
+                refill_rate=self._refill_rate,
+            )
+            self._buckets[key] = bucket
+        return bucket
+
+    def _refill(self, bucket: TokenBucket) -> None:
+        now = time.time()
+        elapsed = now - bucket.last_update
+        bucket.tokens = min(bucket.capacity, bucket.tokens + elapsed * bucket.refill_rate)
+        bucket.last_update = now
+
+    def check_rate_limit(self, key: str, cost: float = 1.0) -> tuple[bool, dict]:
+        """
+        Check if request is allowed under rate limit.
+        Returns (allowed, headers_dict).
+        """
+        with self._mu:
+            # Periodic cleanup
+            now = time.time()
+            if now - self._last_cleanup > self._cleanup_interval:
+                self._cleanup_old_buckets()
+                self._last_cleanup = now
+
+            bucket = self._get_bucket(key)
+            self._refill(bucket)
+
+            allowed = bucket.tokens >= cost
+            if allowed:
+                bucket.tokens -= cost
+
+            # Calculate reset time (when bucket will be full again)
+            tokens_needed = bucket.capacity - bucket.tokens
+            reset_seconds = int(tokens_needed / bucket.refill_rate) if bucket.refill_rate > 0 else 0
+
+            headers = {
+                "X-RateLimit-Limit": str(int(bucket.capacity)),
+                "X-RateLimit-Remaining": str(max(0, int(bucket.tokens))),
+                "X-RateLimit-Reset": str(int(now) + reset_seconds),
+            }
+
+            if not allowed:
+                headers["Retry-After"] = str(int((cost - bucket.tokens) / bucket.refill_rate) + 1)
+
+            return allowed, headers
+
+    def _cleanup_old_buckets(self) -> None:
+        """Remove buckets that haven't been used recently."""
+        now = time.time()
+        stale_keys = [
+            key for key, bucket in self._buckets.items()
+            if now - bucket.last_update > self._window * 10
+        ]
+        for key in stale_keys:
+            del self._buckets[key]
+
+
+# =============================================================================
+# Authentication Middleware
+# =============================================================================
+
+
+class AuthManager:
+    """Manages authentication for the gateway."""
+
+    def __init__(
+        self,
+        jwt_secret: Optional[str] = None,
+        token_expiry: int = 3600,
+        rate_limit_capacity: int = 100,
+        rate_limit_refill: float = 10.0,
+        auth_enabled: bool = True,
+    ):
+        self._enabled = auth_enabled
+        self._jwt = JWTManager(jwt_secret or secrets.token_hex(32), token_expiry)
+        self._api_keys = APIKeyManager()
+        self._rate_limiter = RateLimiter(capacity=rate_limit_capacity, refill_rate=rate_limit_refill)
+        self._admin_password = os.environ.get("VELOZ_ADMIN_PASSWORD", "")
+
+        # Public endpoints that don't require authentication
+        self._public_endpoints = {"/health", "/api/stream"}
+
+        # Create default admin API key if password is set
+        if self._admin_password:
+            key_id, raw_key = self._api_keys.create_key("admin", "default-admin-key", ["read", "write", "admin"])
+            audit_logger.info(f"Default admin API key created: {key_id}")
+
+    def is_enabled(self) -> bool:
+        return self._enabled
+
+    def is_public_endpoint(self, path: str) -> bool:
+        return path in self._public_endpoints
+
+    def authenticate(self, headers: dict) -> tuple[Optional[dict], str]:
+        """
+        Authenticate a request.
+        Returns (user_info, error_message).
+        user_info contains: user_id, permissions, auth_method
+        """
+        if not self._enabled:
+            return {"user_id": "anonymous", "permissions": ["read", "write"], "auth_method": "disabled"}, ""
+
+        # Check for Bearer token (JWT)
+        auth_header = headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            payload = self._jwt.verify_token(token)
+            if payload:
+                return {
+                    "user_id": payload.get("sub", "unknown"),
+                    "permissions": ["read", "write"],
+                    "auth_method": "jwt",
+                }, ""
+            return None, "invalid_token"
+
+        # Check for API key
+        api_key = headers.get("X-API-Key", "")
+        if api_key:
+            key_obj = self._api_keys.validate_key(api_key)
+            if key_obj:
+                return {
+                    "user_id": key_obj.user_id,
+                    "permissions": key_obj.permissions,
+                    "auth_method": "api_key",
+                    "key_id": key_obj.key_id,
+                }, ""
+            return None, "invalid_api_key"
+
+        return None, "authentication_required"
+
+    def check_rate_limit(self, identifier: str) -> tuple[bool, dict]:
+        """Check rate limit for the given identifier."""
+        return self._rate_limiter.check_rate_limit(identifier)
+
+    def create_token(self, user_id: str, password: str) -> Optional[str]:
+        """Create a JWT token if credentials are valid."""
+        # Simple password check for admin
+        if user_id == "admin" and self._admin_password and password == self._admin_password:
+            token = self._jwt.create_token(user_id)
+            audit_logger.info(f"JWT token created for user: {user_id}")
+            return token
+        return None
+
+    def create_api_key(self, user_id: str, name: str, permissions: Optional[list] = None) -> tuple[str, str]:
+        """Create a new API key."""
+        return self._api_keys.create_key(user_id, name, permissions)
+
+    def revoke_api_key(self, key_id: str) -> bool:
+        """Revoke an API key."""
+        return self._api_keys.revoke_key(key_id)
+
+    def list_api_keys(self, user_id: Optional[str] = None) -> list[dict]:
+        """List API keys."""
+        return self._api_keys.list_keys(user_id)
 
 
 class EngineBridge:
@@ -1176,9 +1540,88 @@ class ExecutionRouter:
 class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-API-Key")
         super().end_headers()
+
+    def _get_client_identifier(self) -> str:
+        """Get a unique identifier for rate limiting."""
+        # Use API key ID if authenticated, otherwise use IP
+        auth_info = getattr(self, "_auth_info", None)
+        if auth_info and auth_info.get("key_id"):
+            return f"key:{auth_info['key_id']}"
+        return f"ip:{self.client_address[0]}"
+
+    def _check_auth_and_rate_limit(self) -> bool:
+        """
+        Check authentication and rate limit.
+        Returns True if request should proceed, False if rejected.
+        Sets self._auth_info and self._rate_limit_headers.
+        """
+        parsed = urlparse(self.path)
+        auth_manager = getattr(self.server, "auth_manager", None)
+
+        # Default rate limit headers
+        self._rate_limit_headers = {}
+        self._auth_info = None
+
+        if not auth_manager or not auth_manager.is_enabled():
+            return True
+
+        # Public endpoints skip auth but still rate limit
+        if auth_manager.is_public_endpoint(parsed.path):
+            identifier = f"ip:{self.client_address[0]}"
+            allowed, headers = auth_manager.check_rate_limit(identifier)
+            self._rate_limit_headers = headers
+            if not allowed:
+                self._send_json(429, {"error": "rate_limit_exceeded"}, headers)
+                return False
+            return True
+
+        # Authenticate
+        request_headers = {k: v for k, v in self.headers.items()}
+        auth_info, error = auth_manager.authenticate(request_headers)
+
+        if not auth_info:
+            audit_logger.warning(
+                f"Auth failed: path={parsed.path}, ip={self.client_address[0]}, error={error}"
+            )
+            self._send_json(401, {"error": error})
+            return False
+
+        self._auth_info = auth_info
+
+        # Check rate limit
+        identifier = self._get_client_identifier()
+        allowed, headers = auth_manager.check_rate_limit(identifier)
+        self._rate_limit_headers = headers
+
+        if not allowed:
+            audit_logger.warning(
+                f"Rate limit exceeded: user={auth_info.get('user_id')}, identifier={identifier}"
+            )
+            self._send_json(429, {"error": "rate_limit_exceeded"}, headers)
+            return False
+
+        return True
+
+    def _audit_log(self, action: str, details: Optional[dict] = None) -> None:
+        """Log an authenticated action for audit."""
+        auth_info = getattr(self, "_auth_info", None)
+        user_id = auth_info.get("user_id", "anonymous") if auth_info else "anonymous"
+        auth_method = auth_info.get("auth_method", "none") if auth_info else "none"
+        ip = self.client_address[0]
+
+        log_data = {
+            "action": action,
+            "user": user_id,
+            "auth_method": auth_method,
+            "ip": ip,
+        }
+        if details:
+            log_data.update(details)
+
+        audit_logger.info(json.dumps(log_data))
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -1186,15 +1629,25 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+
+        # Health check is always public
         if parsed.path == "/health":
             self._send_json(200, {"ok": True})
             return
+
+        # Check auth and rate limit for all other endpoints
+        if not self._check_auth_and_rate_limit():
+            return
+
         if parsed.path == "/api/config":
             out = dict(self.server.bridge.config())
             out.update(self.server.router.config())
+            auth_manager = getattr(self.server, "auth_manager", None)
+            out["auth_enabled"] = auth_manager.is_enabled() if auth_manager else False
             self._send_json(200, out)
             return
         if parsed.path == "/api/orders_state":
+            self._audit_log("list_orders_state")
             self._send_json(200, {"items": self.server.router.orders_state()})
             return
         if parsed.path == "/api/order_state":
@@ -1207,6 +1660,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not st:
                 self._send_json(404, {"error": "not_found"})
                 return
+            self._audit_log("get_order_state", {"client_order_id": cid})
             self._send_json(200, st)
             return
         if parsed.path == "/api/execution/ping":
@@ -1219,10 +1673,15 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(200, self.server.bridge.market())
             return
         if parsed.path == "/api/orders":
+            self._audit_log("list_orders")
             self._send_json(200, {"items": self.server.bridge.orders()})
             return
         if parsed.path == "/api/account":
+            self._audit_log("get_account")
             self._send_json(200, self.server.router.account_state())
+            return
+        if parsed.path == "/api/auth/keys":
+            self._handle_list_api_keys()
             return
         if parsed.path == "/":
             self.path = "/index.html"
@@ -1230,8 +1689,21 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+
+        # Auth endpoints (login doesn't require prior auth)
+        if parsed.path == "/api/auth/login":
+            self._handle_login()
+            return
+
+        # Check auth and rate limit
+        if not self._check_auth_and_rate_limit():
+            return
+
         if parsed.path == "/api/cancel":
             self._handle_cancel()
+            return
+        if parsed.path == "/api/auth/keys":
+            self._handle_create_api_key()
             return
         if parsed.path != "/api/order":
             self.send_error(404)
@@ -1278,6 +1750,13 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(500, {"error": "execution_unavailable"})
             return
 
+        self._audit_log("place_order", {
+            "client_order_id": client_order_id,
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": price,
+        })
         self._send_json(200, r)
 
     def _handle_cancel(self):
@@ -1310,7 +1789,155 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(500, {"error": "execution_unavailable"})
             return
 
+        self._audit_log("cancel_order", {"client_order_id": client_order_id, "symbol": symbol})
         self._send_json(200, r)
+
+    def _handle_login(self):
+        """Handle login request to get JWT token."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        user_id = str(data.get("user_id", "")).strip()
+        password = str(data.get("password", ""))
+
+        if not user_id or not password:
+            self._send_json(400, {"error": "bad_params"})
+            return
+
+        auth_manager = getattr(self.server, "auth_manager", None)
+        if not auth_manager:
+            self._send_json(500, {"error": "auth_not_configured"})
+            return
+
+        token = auth_manager.create_token(user_id, password)
+        if not token:
+            audit_logger.warning(f"Login failed: user={user_id}, ip={self.client_address[0]}")
+            self._send_json(401, {"error": "invalid_credentials"})
+            return
+
+        audit_logger.info(f"Login success: user={user_id}, ip={self.client_address[0]}")
+        self._send_json(200, {"token": token, "token_type": "Bearer"})
+
+    def _handle_create_api_key(self):
+        """Handle API key creation."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        name = str(data.get("name", "")).strip()
+        if not name:
+            self._send_json(400, {"error": "bad_params", "message": "name is required"})
+            return
+
+        permissions = data.get("permissions")
+        if permissions and not isinstance(permissions, list):
+            self._send_json(400, {"error": "bad_params", "message": "permissions must be a list"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission to create keys
+        user_permissions = auth_info.get("permissions", [])
+        if "admin" not in user_permissions:
+            self._send_json(403, {"error": "forbidden", "message": "admin permission required"})
+            return
+
+        auth_manager = getattr(self.server, "auth_manager", None)
+        if not auth_manager:
+            self._send_json(500, {"error": "auth_not_configured"})
+            return
+
+        user_id = auth_info.get("user_id", "unknown")
+        key_id, raw_key = auth_manager.create_api_key(user_id, name, permissions)
+
+        self._audit_log("create_api_key", {"key_id": key_id, "name": name})
+        self._send_json(201, {
+            "key_id": key_id,
+            "api_key": raw_key,
+            "message": "Store this key securely. It will not be shown again.",
+        })
+
+    def _handle_list_api_keys(self):
+        """Handle listing API keys."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        auth_manager = getattr(self.server, "auth_manager", None)
+        if not auth_manager:
+            self._send_json(500, {"error": "auth_not_configured"})
+            return
+
+        # Admin can see all keys, others only their own
+        user_permissions = auth_info.get("permissions", [])
+        if "admin" in user_permissions:
+            keys = auth_manager.list_api_keys()
+        else:
+            keys = auth_manager.list_api_keys(auth_info.get("user_id"))
+
+        self._audit_log("list_api_keys")
+        self._send_json(200, {"keys": keys})
+
+    def do_DELETE(self):
+        """Handle DELETE requests."""
+        parsed = urlparse(self.path)
+
+        if not self._check_auth_and_rate_limit():
+            return
+
+        if parsed.path == "/api/auth/keys":
+            self._handle_revoke_api_key()
+            return
+
+        self.send_error(404)
+
+    def _handle_revoke_api_key(self):
+        """Handle API key revocation."""
+        qs = parse_qs(urlparse(self.path).query or "")
+        key_id = (qs.get("key_id") or [""])[0].strip()
+
+        if not key_id:
+            self._send_json(400, {"error": "bad_params", "message": "key_id is required"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if "admin" not in user_permissions:
+            self._send_json(403, {"error": "forbidden", "message": "admin permission required"})
+            return
+
+        auth_manager = getattr(self.server, "auth_manager", None)
+        if not auth_manager:
+            self._send_json(500, {"error": "auth_not_configured"})
+            return
+
+        success = auth_manager.revoke_api_key(key_id)
+        if not success:
+            self._send_json(404, {"error": "not_found"})
+            return
+
+        self._audit_log("revoke_api_key", {"key_id": key_id})
+        self._send_json(200, {"ok": True, "key_id": key_id})
 
     def _handle_sse(self, parsed):
         qs = parse_qs(parsed.query or "")
@@ -1345,11 +1972,22 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             return
 
-    def _send_json(self, status, obj):
+    def _send_json(self, status, obj, extra_headers: Optional[dict] = None):
         payload = json.dumps(obj).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+
+        # Add rate limit headers if available
+        rate_limit_headers = getattr(self, "_rate_limit_headers", {})
+        for key, value in rate_limit_headers.items():
+            self.send_header(key, value)
+
+        # Add any extra headers
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
+
         self.end_headers()
         self.wfile.write(payload)
 
@@ -1386,6 +2024,14 @@ def main():
     )
     binance_api_key = os.environ.get("VELOZ_BINANCE_API_KEY", "")
     binance_api_secret = os.environ.get("VELOZ_BINANCE_API_SECRET", "")
+
+    # Auth configuration
+    auth_enabled = os.environ.get("VELOZ_AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
+    jwt_secret = os.environ.get("VELOZ_JWT_SECRET", "")
+    token_expiry = int(os.environ.get("VELOZ_TOKEN_EXPIRY", "3600"))
+    rate_limit_capacity = int(os.environ.get("VELOZ_RATE_LIMIT_CAPACITY", "100"))
+    rate_limit_refill = float(os.environ.get("VELOZ_RATE_LIMIT_REFILL", "10.0"))
+
     engine_path = os.path.join(
         repo_root, "build", preset, "apps", "engine", "veloz_engine"
     )
@@ -1413,12 +2059,27 @@ def main():
         account_store=account_store,
     )
 
+    # Initialize auth manager
+    auth_manager = AuthManager(
+        jwt_secret=jwt_secret,
+        token_expiry=token_expiry,
+        rate_limit_capacity=rate_limit_capacity,
+        rate_limit_refill=rate_limit_refill,
+        auth_enabled=auth_enabled,
+    )
+
     host = os.environ.get("VELOZ_HOST", "0.0.0.0")
     port = int(os.environ.get("VELOZ_PORT", "8080"))
 
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.bridge = bridge
     httpd.router = router
+    httpd.auth_manager = auth_manager
+
+    if auth_enabled:
+        audit_logger.info(f"Authentication enabled, rate limit: {rate_limit_capacity} req/min")
+    else:
+        audit_logger.info("Authentication disabled (set VELOZ_AUTH_ENABLED=true to enable)")
 
     try:
         httpd.serve_forever()
