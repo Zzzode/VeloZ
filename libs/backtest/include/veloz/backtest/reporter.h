@@ -2,8 +2,9 @@
 
 #include "veloz/backtest/types.h"
 
-#include <memory>
-#include <string>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/string.h>
 
 namespace veloz::backtest {
 
@@ -12,24 +13,24 @@ class IBacktestReporter {
 public:
   virtual ~IBacktestReporter() = default;
 
-  virtual bool generate_report(const BacktestResult& result, const std::string& output_path) = 0;
-  virtual std::string generate_html_report(const BacktestResult& result) = 0;
-  virtual std::string generate_json_report(const BacktestResult& result) = 0;
+  virtual bool generate_report(const BacktestResult& result, kj::StringPtr output_path) = 0;
+  virtual kj::String generate_html_report(const BacktestResult& result) = 0;
+  virtual kj::String generate_json_report(const BacktestResult& result) = 0;
 };
 
 // Backtest reporter implementation
 class BacktestReporter : public IBacktestReporter {
 public:
   BacktestReporter();
-  ~BacktestReporter() override;
+  ~BacktestReporter() noexcept override;
 
-  bool generate_report(const BacktestResult& result, const std::string& output_path) override;
-  std::string generate_html_report(const BacktestResult& result) override;
-  std::string generate_json_report(const BacktestResult& result) override;
+  bool generate_report(const BacktestResult& result, kj::StringPtr output_path) override;
+  kj::String generate_html_report(const BacktestResult& result) override;
+  kj::String generate_json_report(const BacktestResult& result) override;
 
 private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  kj::Own<Impl> impl_;
 };
 
 } // namespace veloz::backtest

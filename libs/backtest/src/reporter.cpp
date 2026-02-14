@@ -3,7 +3,9 @@
 #include "veloz/core/logger.h"
 
 #include <fstream>
-#include <iostream>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/string.h>
 #include <sstream>
 
 namespace veloz::backtest {
@@ -16,31 +18,30 @@ struct BacktestReporter::Impl {
   }
 };
 
-BacktestReporter::BacktestReporter() : impl_(std::make_unique<Impl>()) {}
+BacktestReporter::BacktestReporter() : impl_(kj::heap<Impl>()) {}
 
-BacktestReporter::~BacktestReporter() {}
+BacktestReporter::~BacktestReporter() noexcept {}
 
-bool BacktestReporter::generate_report(const BacktestResult& result,
-                                       const std::string& output_path) {
-  impl_->logger->info(std::format("Generating report to: {}", output_path));
+bool BacktestReporter::generate_report(const BacktestResult& result, kj::StringPtr output_path) {
+  impl_->logger->info(std::format("Generating report to: {}", output_path.cStr()));
 
   // TODO: Implement report generation
   // For now, just create a simple HTML file
 
-  std::string html_content = generate_html_report(result);
+  kj::String html_content = generate_html_report(result);
 
   // Write to file
   try {
-    std::ofstream out_file(output_path);
+    std::ofstream out_file(output_path.cStr());
     if (!out_file.is_open()) {
-      impl_->logger->error(std::format("Failed to open file: {}", output_path));
+      impl_->logger->error(std::format("Failed to open file: {}", output_path.cStr()));
       return false;
     }
 
-    out_file << html_content;
+    out_file << html_content.cStr();
     out_file.close();
 
-    impl_->logger->info(std::format("Report generated successfully: {}", output_path));
+    impl_->logger->info(std::format("Report generated successfully: {}", output_path.cStr()));
     return true;
   } catch (const std::exception& e) {
     impl_->logger->error(std::format("Failed to write report: {}", e.what()));
@@ -48,7 +49,7 @@ bool BacktestReporter::generate_report(const BacktestResult& result,
   }
 }
 
-std::string BacktestReporter::generate_html_report(const BacktestResult& result) {
+kj::String BacktestReporter::generate_html_report(const BacktestResult& result) {
   std::stringstream html;
 
   html << R"(
@@ -58,6 +59,9 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>VeloZ Backtest Report</title>
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
             <style>
                 * {
                     margin: 0;
@@ -180,16 +184,98 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                     width: 100%;
                     height: 400px;
                     margin-top: 15px;
-                    background-color: #f8f9fa;
+                    background-color: white;
                     border-radius: 4px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
+                    padding: 15px;
+                    position: relative;
                 }
 
-                .chart-placeholder {
-                    text-align: center;
-                    color: #7f8c8d;
+                .chart-controls {
+                    display: flex;
+                    gap: 10px;
+                    margin-bottom: 10px;
+                    flex-wrap: wrap;
+                }
+
+                .chart-controls button {
+                    padding: 8px 16px;
+                    border: 1px solid #3498db;
+                    background-color: white;
+                    color: #3498db;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    transition: all 0.2s ease;
+                }
+
+                .chart-controls button:hover {
+                    background-color: #3498db;
+                    color: white;
+                }
+
+                .chart-controls button.active {
+                    background-color: #3498db;
+                    color: white;
+                }
+
+                .legend-custom {
+                    display: flex;
+                    gap: 20px;
+                    margin-top: 10px;
+                    font-size: 12px;
+                    flex-wrap: wrap;
+                }
+
+                .legend-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                }
+
+                .legend-marker {
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                }
+
+                .legend-marker.buy {
+                    background-color: #27ae60;
+                }
+
+                .legend-marker.sell {
+                    background-color: #e74c3c;
+                }
+
+                .legend-marker.equity {
+                    background-color: #3498db;
+                }
+
+                .legend-marker.drawdown {
+                    background-color: #e74c3c;
+                }
+
+                @media (max-width: 768px) {
+                    .summary {
+                        grid-template-columns: repeat(2, 1fr);
+                    }
+
+                    .chart-container {
+                        height: 300px;
+                    }
+
+                    .header h1 {
+                        font-size: 20px;
+                    }
+                }
+
+                @media (max-width: 480px) {
+                    .summary {
+                        grid-template-columns: 1fr;
+                    }
+
+                    .stat-card .value {
+                        font-size: 20px;
+                    }
                 }
             </style>
         </head>
@@ -198,7 +284,7 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                 <div class="header">
                     <h1>VeloZ Backtest Report</h1>
                     <p>Strategy Name: )"
-       << result.strategy_name << R"( | Trading Pair: )" << result.symbol << R"(</p>
+       << result.strategy_name.cStr() << R"( | Trading Pair: )" << result.symbol.cStr() << R"(</p>
                     <p>Backtest Period: )"
        << result.start_time << R"( - )" << result.end_time << R"(</p>
                 </div>
@@ -291,19 +377,33 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
 
                     <div class="section">
                         <h2>Equity Curve</h2>
+                        <div class="chart-controls">
+                            <button id="resetEquityZoom">Reset Zoom</button>
+                            <button id="toggleEquityMarkers" class="active">Toggle Trade Markers</button>
+                        </div>
                         <div class="chart-container">
-                            <div class="chart-placeholder">
-                                <p>Chart feature in development...</p>
-                            </div>
+                            <canvas id="equityChart"></canvas>
+                        </div>
+                        <div class="legend-custom">
+                            <div class="legend-item"><div class="legend-marker equity"></div><span>Equity</span></div>
+                            <div class="legend-item"><div class="legend-marker buy"></div><span>Buy Trade</span></div>
+                            <div class="legend-item"><div class="legend-marker sell"></div><span>Sell Trade</span></div>
                         </div>
                     </div>
 
                     <div class="section">
                         <h2>Drawdown Curve</h2>
+                        <div class="chart-controls">
+                            <button id="resetDrawdownZoom">Reset Zoom</button>
+                            <button id="toggleDrawdownMarkers" class="active">Toggle Trade Markers</button>
+                        </div>
                         <div class="chart-container">
-                            <div class="chart-placeholder">
-                                <p>Chart feature in development...</p>
-                            </div>
+                            <canvas id="drawdownChart"></canvas>
+                        </div>
+                        <div class="legend-custom">
+                            <div class="legend-item"><div class="legend-marker drawdown"></div><span>Drawdown</span></div>
+                            <div class="legend-item"><div class="legend-marker buy"></div><span>Buy Trade</span></div>
+                            <div class="legend-item"><div class="legend-marker sell"></div><span>Sell Trade</span></div>
                         </div>
                     </div>
 
@@ -328,9 +428,9 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                                     <td>)"
          << trade.timestamp << R"(</td>
                                     <td>)"
-         << trade.symbol << R"(</td>
+         << trade.symbol.cStr() << R"(</td>
                                     <td>)"
-         << trade.side << R"(</td>
+         << trade.side.cStr() << R"(</td>
                                     <td>$)"
          << trade.price << R"(</td>
                                     <td>)"
@@ -348,21 +448,411 @@ std::string BacktestReporter::generate_html_report(const BacktestResult& result)
                     </div>
                 </div>
             </div>
+
+            <script>
+                // Helper function to format timestamp to readable date
+                function formatTimestamp(ts) {
+                    const date = new Date(ts);
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                }
+
+                // Trade markers data
+                const tradeMarkers = [)";
+
+  // Add trade markers data
+  bool first_trade_marker = true;
+  for (const auto& trade : result.trades) {
+    if (!first_trade_marker)
+      html << ",";
+    first_trade_marker = false;
+    html << R"({timestamp:)" << trade.timestamp << R"(,side:')" << trade.side.cStr()
+         << R"(',price:)" << trade.price << R"(,quantity:)" << trade.quantity << R"(,pnl:)"
+         << trade.pnl << R"(})";
+  }
+
+  html << R"(];
+
+                // Generate equity curve data
+                const equityLabels = [)";
+
+  // Add equity curve labels (timestamps)
+  bool first_equity = true;
+  for (const auto& point : result.equity_curve) {
+    if (!first_equity)
+      html << ",";
+    first_equity = false;
+    html << point.timestamp;
+  }
+
+  html << R"(];
+                const equityValues = [)";
+
+  // Add equity curve values
+  first_equity = true;
+  for (const auto& point : result.equity_curve) {
+    if (!first_equity)
+      html << ",";
+    first_equity = false;
+    html << point.equity;
+  }
+
+  html << R"(];
+
+                // Generate drawdown curve data
+                const drawdownLabels = [)";
+
+  // Add drawdown curve labels (timestamps)
+  bool first_drawdown = true;
+  for (const auto& point : result.drawdown_curve) {
+    if (!first_drawdown)
+      html << ",";
+    first_drawdown = false;
+    html << point.timestamp;
+  }
+
+  html << R"(];
+                const drawdownValues = [)";
+
+  // Add drawdown curve values (as percentages)
+  first_drawdown = true;
+  for (const auto& point : result.drawdown_curve) {
+    if (!first_drawdown)
+      html << ",";
+    first_drawdown = false;
+    html << (point.drawdown * 100);
+  }
+
+  html << R"(];
+
+                // Find nearest equity value for a given timestamp
+                function findNearestEquity(timestamp) {
+                    let nearestIdx = 0;
+                    let minDiff = Math.abs(equityLabels[0] - timestamp);
+                    for (let i = 1; i < equityLabels.length; i++) {
+                        const diff = Math.abs(equityLabels[i] - timestamp);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            nearestIdx = i;
+                        }
+                    }
+                    return { index: nearestIdx, value: equityValues[nearestIdx] };
+                }
+
+                // Find nearest drawdown value for a given timestamp
+                function findNearestDrawdown(timestamp) {
+                    let nearestIdx = 0;
+                    let minDiff = Math.abs(drawdownLabels[0] - timestamp);
+                    for (let i = 1; i < drawdownLabels.length; i++) {
+                        const diff = Math.abs(drawdownLabels[i] - timestamp);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            nearestIdx = i;
+                        }
+                    }
+                    return { index: nearestIdx, value: drawdownValues[nearestIdx] };
+                }
+
+                // Create buy/sell marker datasets for equity chart
+                const buyMarkersEquity = tradeMarkers.filter(t => t.side === 'buy').map(t => {
+                    const nearest = findNearestEquity(t.timestamp);
+                    return { x: nearest.index, y: nearest.value, trade: t };
+                });
+                const sellMarkersEquity = tradeMarkers.filter(t => t.side === 'sell').map(t => {
+                    const nearest = findNearestEquity(t.timestamp);
+                    return { x: nearest.index, y: nearest.value, trade: t };
+                });
+
+                // Create buy/sell marker datasets for drawdown chart
+                const buyMarkersDrawdown = tradeMarkers.filter(t => t.side === 'buy').map(t => {
+                    const nearest = findNearestDrawdown(t.timestamp);
+                    return { x: nearest.index, y: nearest.value, trade: t };
+                });
+                const sellMarkersDrawdown = tradeMarkers.filter(t => t.side === 'sell').map(t => {
+                    const nearest = findNearestDrawdown(t.timestamp);
+                    return { x: nearest.index, y: nearest.value, trade: t };
+                });
+
+                // Equity chart data with trade markers
+                const equityData = {
+                    labels: equityLabels.map(String),
+                    datasets: [
+                        {
+                            label: 'Equity ($)',
+                            data: equityValues,
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0,
+                            pointHoverRadius: 5,
+                            order: 2
+                        },
+                        {
+                            label: 'Buy',
+                            data: buyMarkersEquity,
+                            type: 'scatter',
+                            backgroundColor: '#27ae60',
+                            borderColor: '#1e8449',
+                            borderWidth: 2,
+                            pointRadius: 8,
+                            pointHoverRadius: 10,
+                            pointStyle: 'triangle',
+                            order: 1
+                        },
+                        {
+                            label: 'Sell',
+                            data: sellMarkersEquity,
+                            type: 'scatter',
+                            backgroundColor: '#e74c3c',
+                            borderColor: '#c0392b',
+                            borderWidth: 2,
+                            pointRadius: 8,
+                            pointHoverRadius: 10,
+                            pointStyle: 'rectRot',
+                            order: 1
+                        }
+                    ]
+                };
+
+                // Drawdown chart data with trade markers
+                const drawdownData = {
+                    labels: drawdownLabels.map(String),
+                    datasets: [
+                        {
+                            label: 'Drawdown (%)',
+                            data: drawdownValues,
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0,
+                            pointHoverRadius: 5,
+                            order: 2
+                        },
+                        {
+                            label: 'Buy',
+                            data: buyMarkersDrawdown,
+                            type: 'scatter',
+                            backgroundColor: '#27ae60',
+                            borderColor: '#1e8449',
+                            borderWidth: 2,
+                            pointRadius: 8,
+                            pointHoverRadius: 10,
+                            pointStyle: 'triangle',
+                            order: 1
+                        },
+                        {
+                            label: 'Sell',
+                            data: sellMarkersDrawdown,
+                            type: 'scatter',
+                            backgroundColor: '#e74c3c',
+                            borderColor: '#c0392b',
+                            borderWidth: 2,
+                            pointRadius: 8,
+                            pointHoverRadius: 10,
+                            pointStyle: 'rectRot',
+                            order: 1
+                        }
+                    ]
+                };
+
+                // Chart instances storage
+                let equityChart = null;
+                let drawdownChart = null;
+                let showEquityMarkers = true;
+                let showDrawdownMarkers = true;
+
+                // Common chart options with zoom plugin
+                const commonOptions = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const label = context[0].label || context[0].raw?.x;
+                                    return formatTimestamp(parseInt(label));
+                                },
+                                label: function(context) {
+                                    if (context.raw && context.raw.trade) {
+                                        const t = context.raw.trade;
+                                        return [
+                                            context.dataset.label + ' Trade',
+                                            'Price: $' + t.price.toFixed(2),
+                                            'Qty: ' + t.quantity.toFixed(4),
+                                            'P&L: $' + t.pnl.toFixed(2)
+                                        ];
+                                    }
+                                    return context.dataset.label + ': ' + context.formattedValue;
+                                }
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                drag: {
+                                    enabled: true,
+                                    backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                                    borderColor: '#3498db',
+                                    borderWidth: 1
+                                },
+                                mode: 'x'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                maxTicksLimit: 10,
+                                callback: function(value, index) {
+                                    const label = this.getLabelForValue(value);
+                                    return formatTimestamp(parseInt(label));
+                                }
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    }
+                };
+
+                // Reset zoom function
+                function resetZoom(chartType) {
+                    if (chartType === 'equity' && equityChart) {
+                        equityChart.resetZoom();
+                    } else if (chartType === 'drawdown' && drawdownChart) {
+                        drawdownChart.resetZoom();
+                    }
+                }
+
+                // Toggle trade markers function
+                function toggleTradeMarkers(chartType) {
+                    if (chartType === 'equity' && equityChart) {
+                        showEquityMarkers = !showEquityMarkers;
+                        equityChart.data.datasets[1].hidden = !showEquityMarkers;
+                        equityChart.data.datasets[2].hidden = !showEquityMarkers;
+                        equityChart.update();
+                        document.getElementById('toggleEquityMarkers').classList.toggle('active', showEquityMarkers);
+                    } else if (chartType === 'drawdown' && drawdownChart) {
+                        showDrawdownMarkers = !showDrawdownMarkers;
+                        drawdownChart.data.datasets[1].hidden = !showDrawdownMarkers;
+                        drawdownChart.data.datasets[2].hidden = !showDrawdownMarkers;
+                        drawdownChart.update();
+                        document.getElementById('toggleDrawdownMarkers').classList.toggle('active', showDrawdownMarkers);
+                    }
+                }
+
+                // Initialize Equity Chart
+                const equityCtx = document.getElementById('equityChart').getContext('2d');
+                equityChart = new Chart(equityCtx, {
+                    type: 'line',
+                    data: equityData,
+                    options: {
+                        ...commonOptions,
+                        plugins: {
+                            ...commonOptions.plugins,
+                            title: {
+                                display: true,
+                                text: 'Equity Curve Over Time (scroll to zoom, drag to pan)'
+                            }
+                        },
+                        scales: {
+                            ...commonOptions.scales,
+                            y: {
+                                ...commonOptions.scales.y,
+                                title: {
+                                    display: true,
+                                    text: 'Equity ($)'
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Initialize Drawdown Chart
+                const drawdownCtx = document.getElementById('drawdownChart').getContext('2d');
+                drawdownChart = new Chart(drawdownCtx, {
+                    type: 'line',
+                    data: drawdownData,
+                    options: {
+                        ...commonOptions,
+                        plugins: {
+                            ...commonOptions.plugins,
+                            title: {
+                                display: true,
+                                text: 'Drawdown Over Time (scroll to zoom, drag to pan)'
+                            }
+                        },
+                        scales: {
+                            ...commonOptions.scales,
+                            y: {
+                                ...commonOptions.scales.y,
+                                title: {
+                                    display: true,
+                                    text: 'Drawdown (%)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return value.toFixed(2) + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Add event listeners for buttons
+                document.getElementById('resetEquityZoom').addEventListener('click', function() {
+                    resetZoom('equity');
+                });
+                document.getElementById('toggleEquityMarkers').addEventListener('click', function() {
+                    toggleTradeMarkers('equity');
+                });
+                document.getElementById('resetDrawdownZoom').addEventListener('click', function() {
+                    resetZoom('drawdown');
+                });
+                document.getElementById('toggleDrawdownMarkers').addEventListener('click', function() {
+                    toggleTradeMarkers('drawdown');
+                });
+            </script>
         </body>
         </html>
     )";
 
-  return html.str();
+  return kj::str(html.str());
 }
 
-std::string BacktestReporter::generate_json_report(const BacktestResult& result) {
+kj::String BacktestReporter::generate_json_report(const BacktestResult& result) {
   std::stringstream json;
 
   json << R"({
         "strategy_name": ")"
-       << result.strategy_name << R"(",
+       << result.strategy_name.cStr() << R"(",
         "symbol": ")"
-       << result.symbol << R"(",
+       << result.symbol.cStr() << R"(",
         "start_time": )"
        << result.start_time << R"(,
         "end_time": )"
@@ -404,9 +894,9 @@ std::string BacktestReporter::generate_json_report(const BacktestResult& result)
                 "timestamp": )"
          << trade.timestamp << R"(,
                 "symbol": ")"
-         << trade.symbol << R"(",
+         << trade.symbol.cStr() << R"(",
                 "side": ")"
-         << trade.side << R"(",
+         << trade.side.cStr() << R"(",
                 "price": )"
          << trade.price << R"(,
                 "quantity": )"
@@ -416,7 +906,7 @@ std::string BacktestReporter::generate_json_report(const BacktestResult& result)
                 "pnl": )"
          << trade.pnl << R"(,
                 "strategy_id": ")"
-         << trade.strategy_id << R"("
+         << trade.strategy_id.cStr() << R"("
             })";
   }
 
@@ -424,7 +914,7 @@ std::string BacktestReporter::generate_json_report(const BacktestResult& result)
         ]
     })";
 
-  return json.str();
+  return kj::str(json.str());
 }
 
 } // namespace veloz::backtest

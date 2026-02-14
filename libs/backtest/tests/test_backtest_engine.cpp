@@ -9,10 +9,10 @@ public:
   TestStrategy()
       : id_("test_strategy"), name_("TestStrategy"), type_(veloz::strategy::StrategyType::Custom) {}
 
-  std::string get_id() const override {
+  kj::StringPtr get_id() const override {
     return id_;
   }
-  std::string get_name() const override {
+  kj::StringPtr get_name() const override {
     return name_;
   }
   veloz::strategy::StrategyType get_type() const override {
@@ -32,8 +32,8 @@ public:
 
   veloz::strategy::StrategyState get_state() const override {
     veloz::strategy::StrategyState state;
-    state.strategy_id = id_;
-    state.strategy_name = name_;
+    state.strategy_id = kj::str(id_);
+    state.strategy_name = kj::str(name_);
     state.is_running = true;
     state.pnl = 0.0;
     state.max_drawdown = 0.0;
@@ -45,8 +45,8 @@ public:
     return state;
   }
 
-  std::vector<veloz::exec::PlaceOrderRequest> get_signals() override {
-    return {};
+  kj::Vector<veloz::exec::PlaceOrderRequest> get_signals() override {
+    return kj::Vector<veloz::exec::PlaceOrderRequest>();
   }
 
   void reset() override {}
@@ -64,16 +64,16 @@ protected:
     strategy_ = std::make_shared<TestStrategy>();
     data_source_ = veloz::backtest::DataSourceFactory::create_data_source("csv");
 
-    config_.strategy_name = "TestStrategy";
-    config_.symbol = "BTCUSDT";
+    config_.strategy_name = kj::str("TestStrategy");
+    config_.symbol = kj::str("BTCUSDT");
     config_.start_time = 1609459200000; // 2021-01-01
     config_.end_time = 1640995200000;   // 2021-12-31
     config_.initial_balance = 10000.0;
     config_.risk_per_trade = 0.02;
     config_.max_position_size = 0.1;
-    config_.data_source = "csv";
-    config_.data_type = "kline";
-    config_.time_frame = "1h";
+    config_.data_source = kj::str("csv");
+    config_.data_type = kj::str("kline");
+    config_.time_frame = kj::str("1h");
   }
 
   void TearDown() override {

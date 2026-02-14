@@ -1,8 +1,10 @@
 #pragma once
 
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <kj/vector.h>
 #include <memory>
-#include <string>
-#include <vector>
 
 // Include necessary headers
 #include "veloz/backtest/backtest_engine.h"
@@ -19,14 +21,13 @@ public:
   bool connect() override;
   bool disconnect() override;
 
-  virtual std::vector<veloz::market::MarketEvent>
-  get_data(const std::string& symbol, std::int64_t start_time, std::int64_t end_time,
-           const std::string& data_type, const std::string& time_frame) override = 0;
+  virtual kj::Vector<veloz::market::MarketEvent>
+  get_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
+           kj::StringPtr data_type, kj::StringPtr time_frame) override = 0;
 
-  virtual bool download_data(const std::string& symbol, std::int64_t start_time,
-                             std::int64_t end_time, const std::string& data_type,
-                             const std::string& time_frame,
-                             const std::string& output_path) override = 0;
+  virtual bool download_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
+                             kj::StringPtr data_type, kj::StringPtr time_frame,
+                             kj::StringPtr output_path) override = 0;
 
 protected:
   bool is_connected_;
@@ -38,19 +39,18 @@ public:
   CSVDataSource();
   ~CSVDataSource() override;
 
-  std::vector<veloz::market::MarketEvent> get_data(const std::string& symbol,
-                                                   std::int64_t start_time, std::int64_t end_time,
-                                                   const std::string& data_type,
-                                                   const std::string& time_frame) override;
+  kj::Vector<veloz::market::MarketEvent> get_data(kj::StringPtr symbol, std::int64_t start_time,
+                                                  std::int64_t end_time, kj::StringPtr data_type,
+                                                  kj::StringPtr time_frame) override;
 
-  bool download_data(const std::string& symbol, std::int64_t start_time, std::int64_t end_time,
-                     const std::string& data_type, const std::string& time_frame,
-                     const std::string& output_path) override;
+  bool download_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
+                     kj::StringPtr data_type, kj::StringPtr time_frame,
+                     kj::StringPtr output_path) override;
 
-  void set_data_directory(const std::string& directory);
+  void set_data_directory(kj::StringPtr directory);
 
 private:
-  std::string data_directory_;
+  kj::String data_directory_;
 };
 
 // Binance API data source
@@ -59,25 +59,24 @@ public:
   BinanceDataSource();
   ~BinanceDataSource() override;
 
-  std::vector<veloz::market::MarketEvent> get_data(const std::string& symbol,
-                                                   std::int64_t start_time, std::int64_t end_time,
-                                                   const std::string& data_type,
-                                                   const std::string& time_frame) override;
+  kj::Vector<veloz::market::MarketEvent> get_data(kj::StringPtr symbol, std::int64_t start_time,
+                                                  std::int64_t end_time, kj::StringPtr data_type,
+                                                  kj::StringPtr time_frame) override;
 
-  bool download_data(const std::string& symbol, std::int64_t start_time, std::int64_t end_time,
-                     const std::string& data_type, const std::string& time_frame,
-                     const std::string& output_path) override;
+  bool download_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
+                     kj::StringPtr data_type, kj::StringPtr time_frame,
+                     kj::StringPtr output_path) override;
 
-  void set_api_key(const std::string& api_key);
-  void set_api_secret(const std::string& api_secret);
+  void set_api_key(kj::StringPtr api_key);
+  void set_api_secret(kj::StringPtr api_secret);
 
 private:
   // API credentials
-  std::string api_key_;
-  std::string api_secret_;
+  kj::String api_key_;
+  kj::String api_secret_;
 
   // API configuration
-  std::string base_rest_url_;
+  kj::String base_rest_url_;
 
   // Retry configuration
   int max_retries_;
@@ -94,7 +93,8 @@ private:
 // Data source factory
 class DataSourceFactory {
 public:
-  static std::shared_ptr<IDataSource> create_data_source(const std::string& type);
+  // std::shared_ptr used for external API compatibility with IDataSource interface
+  static std::shared_ptr<IDataSource> create_data_source(kj::StringPtr type);
 };
 
 } // namespace veloz::backtest

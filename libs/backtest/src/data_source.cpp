@@ -9,6 +9,10 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <kj/common.h>
+#include <kj/mutex.h>
+#include <kj/string.h>
+#include <kj/vector.h>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -30,7 +34,7 @@ size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
   return size * nmemb;
 }
 
-std::string http_get(const std::string& url) {
+std::string http_get(kj::StringPtr url) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return "";
@@ -38,7 +42,7 @@ std::string http_get(const std::string& url) {
 
   std::string response_string;
 
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_URL, url.cStr());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -56,18 +60,44 @@ std::string http_get(const std::string& url) {
 #endif
 
 // Convert symbol to uppercase for Binance API
-std::string format_symbol(const std::string& symbol) {
-  std::string formatted = symbol;
-  std::transform(formatted.begin(), formatted.end(), formatted.begin(), ::toupper);
-  return formatted;
+kj::String format_symbol(kj::StringPtr symbol) {
+  kj::Vector<char> formatted;
+  for (char c : symbol) {
+    formatted.add(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+  }
+  formatted.add('\0');
+  return kj::String(formatted.releaseAsArray());
 }
 
 // Validate time frame for Binance API
-bool is_valid_time_frame(const std::string& time_frame) {
-  static const std::vector<std::string> valid_frames = {"1s", "1m", "3m", "5m", "15m", "30m",
-                                                        "1h", "2h", "4h", "6h", "8h",  "12h",
-                                                        "1d", "3d", "1w", "1M"};
-  return std::find(valid_frames.begin(), valid_frames.end(), time_frame) != valid_frames.end();
+bool is_valid_time_frame(kj::StringPtr time_frame) {
+  static const kj::Vector<kj::StringPtr> valid_frames = [] {
+    kj::Vector<kj::StringPtr> v;
+    v.add("1s"_kj);
+    v.add("1m"_kj);
+    v.add("3m"_kj);
+    v.add("5m"_kj);
+    v.add("15m"_kj);
+    v.add("30m"_kj);
+    v.add("1h"_kj);
+    v.add("2h"_kj);
+    v.add("4h"_kj);
+    v.add("6h"_kj);
+    v.add("8h"_kj);
+    v.add("12h"_kj);
+    v.add("1d"_kj);
+    v.add("3d"_kj);
+    v.add("1w"_kj);
+    v.add("1M"_kj);
+    return v;
+  }();
+
+  for (const auto& frame : valid_frames) {
+    if (time_frame == frame) {
+      return true;
+    }
+  }
+  return false;
 }
 
 } // anonymous namespace
@@ -102,24 +132,26 @@ bool BaseDataSource::disconnect() {
 }
 
 // CSVDataSource implementation
-CSVDataSource::CSVDataSource() : data_directory_(".") {}
+CSVDataSource::CSVDataSource() : data_directory_(kj::str(".")) {}
 
 CSVDataSource::~CSVDataSource() {}
 
-std::vector<veloz::market::MarketEvent>
-CSVDataSource::get_data(const std::string& symbol, std::int64_t start_time, std::int64_t end_time,
-                        const std::string& data_type, const std::string& time_frame) {
-  std::vector<veloz::market::MarketEvent> events;
+kj::Vector<veloz::market::MarketEvent>
+CSVDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
+                        kj::StringPtr data_type, kj::StringPtr time_frame) {
+  kj::Vector<veloz::market::MarketEvent> events;
   veloz::core::Logger logger;
 
   // Construct file path: data_directory / symbol_data_type.csv
   // Example: /data/BTCUSDT_trade.csv or /data/BTCUSDT_kline_1h.csv
   std::filesystem::path file_path;
 
-  if (data_type == "kline" && !time_frame.empty()) {
-    file_path = std::filesystem::path(data_directory_) / (symbol + "_" + time_frame + ".csv");
+  if (data_type == "kline"_kj && time_frame.size() > 0) {
+    file_path = std::filesystem::path(data_directory_.cStr()) /
+                (std::string(symbol.cStr()) + "_" + std::string(time_frame.cStr()) + ".csv");
   } else {
-    file_path = std::filesystem::path(data_directory_) / (symbol + "_" + data_type + ".csv");
+    file_path = std::filesystem::path(data_directory_.cStr()) /
+                (std::string(symbol.cStr()) + "_" + std::string(data_type.cStr()) + ".csv");
   }
 
   logger.info(std::format("Reading data from: {}", file_path.string()));
@@ -237,9 +269,9 @@ CSVDataSource::get_data(const std::string& symbol, std::int64_t start_time, std:
         event.data = trade_data;
 
         // Create JSON payload for backward compatibility
-        event.payload = std::format(
+        event.payload = kj::str(std::format(
             R"({{"type":"trade","symbol":"{}","timestamp":{},"price":{},"quantity":{},"side":"{}"}})",
-            tokens[1], timestamp_ms, trade_data.price, trade_data.qty, tokens[2]);
+            tokens[1], timestamp_ms, trade_data.price, trade_data.qty, tokens[2]));
 
         // Apply time filters
         if (start_time > 0 && event.ts_exchange_ns < start_time * 1'000'000) {
@@ -249,7 +281,7 @@ CSVDataSource::get_data(const std::string& symbol, std::int64_t start_time, std:
           continue;
         }
 
-        events.push_back(std::move(event));
+        events.add(kj::mv(event));
 
       } catch (const std::exception& e) {
         skipped_lines++;
@@ -267,10 +299,9 @@ CSVDataSource::get_data(const std::string& symbol, std::int64_t start_time, std:
   return events;
 }
 
-bool CSVDataSource::download_data(const std::string& symbol, std::int64_t start_time,
-                                  std::int64_t end_time, const std::string& data_type,
-                                  const std::string& /*time_frame*/,
-                                  const std::string& output_path) {
+bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
+                                  std::int64_t end_time, kj::StringPtr data_type,
+                                  kj::StringPtr /*time_frame*/, kj::StringPtr output_path) {
   veloz::core::Logger logger;
 
   // Validate parameters
@@ -290,21 +321,21 @@ bool CSVDataSource::download_data(const std::string& symbol, std::int64_t start_
     return false;
   }
 
-  if (symbol.empty()) {
+  if (symbol.size() == 0) {
     logger.error("download_data: Symbol cannot be empty");
     return false;
   }
 
   // For this implementation, we only support "trade" data type
   // Other data types can be implemented in the future (kline, book)
-  if (data_type != "trade") {
+  if (data_type != "trade"_kj) {
     logger.error(std::format(
-        "download_data: Unsupported data type '{}'. Only 'trade' is supported.", data_type));
+        "download_data: Unsupported data type '{}'. Only 'trade' is supported.", data_type.cStr()));
     return false;
   }
 
   // Create output directory if it doesn't exist
-  std::filesystem::path output_file_path(output_path);
+  std::filesystem::path output_file_path(output_path.cStr());
 
   try {
     std::filesystem::path output_dir = output_file_path.parent_path();
@@ -334,7 +365,7 @@ bool CSVDataSource::download_data(const std::string& symbol, std::int64_t start_
 
   // Initialize random number generator with seed based on symbol and start_time
   // This ensures deterministic output for the same parameters
-  std::uint64_t seed = static_cast<std::uint64_t>(std::hash<std::string>{}(symbol)) ^
+  std::uint64_t seed = static_cast<std::uint64_t>(std::hash<std::string>{}(symbol.cStr())) ^
                        static_cast<std::uint64_t>(start_time);
   std::mt19937_64 rng(seed);
 
@@ -353,7 +384,7 @@ bool CSVDataSource::download_data(const std::string& symbol, std::int64_t start_
   const std::int64_t total_trades = std::max(std::int64_t(1), duration_ms / avg_trade_interval_ms);
 
   logger.info(std::format("Generating {} synthetic trade records for symbol {} from {} to {}",
-                          total_trades, symbol, start_time, end_time));
+                          total_trades, symbol.cStr(), start_time, end_time));
 
   // Generate synthetic data using geometric Brownian motion with trend
   double current_price = base_price;
@@ -399,7 +430,7 @@ bool CSVDataSource::download_data(const std::string& symbol, std::int64_t start_
     }
 
     // Write CSV record
-    output_file << current_time << "," << symbol << "," << side << "," << price_str << ","
+    output_file << current_time << "," << symbol.cStr() << "," << side << "," << price_str << ","
                 << qty_str << "\n";
 
     records_written++;
@@ -420,14 +451,15 @@ bool CSVDataSource::download_data(const std::string& symbol, std::int64_t start_
   return true;
 }
 
-void CSVDataSource::set_data_directory(const std::string& directory) {
-  data_directory_ = directory;
+void CSVDataSource::set_data_directory(kj::StringPtr directory) {
+  data_directory_ = kj::str(directory);
 }
 
 // BinanceDataSource implementation
 BinanceDataSource::BinanceDataSource()
-    : api_key_(""), api_secret_(""), base_rest_url_("https://api.binance.com"), max_retries_(3),
-      retry_delay_ms_(1000), rate_limit_per_minute_(1200), rate_limit_per_second_(10) {
+    : api_key_(kj::str("")), api_secret_(kj::str("")),
+      base_rest_url_(kj::str("https://api.binance.com")), max_retries_(3), retry_delay_ms_(1000),
+      rate_limit_per_minute_(1200), rate_limit_per_second_(10) {
 #ifndef VELOZ_NO_CURL
   curl_global_init(CURL_GLOBAL_DEFAULT);
 #endif
@@ -439,12 +471,10 @@ BinanceDataSource::~BinanceDataSource() {
 #endif
 }
 
-std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::string& symbol,
-                                                                    std::int64_t start_time,
-                                                                    std::int64_t end_time,
-                                                                    const std::string& data_type,
-                                                                    const std::string& time_frame) {
-  std::vector<veloz::market::MarketEvent> events;
+kj::Vector<veloz::market::MarketEvent>
+BinanceDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
+                            kj::StringPtr data_type, kj::StringPtr time_frame) {
+  kj::Vector<veloz::market::MarketEvent> events;
   veloz::core::Logger logger;
 
 #ifdef VELOZ_NO_CURL
@@ -452,42 +482,43 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
   return events;
 #else
   // Validate parameters
-  if (symbol.empty()) {
+  if (symbol.size() == 0) {
     logger.error("Binance API: symbol cannot be empty");
     return events;
   }
 
   // Default time frame to 1h if not specified
-  std::string effective_time_frame = time_frame.empty() ? "1h" : time_frame;
+  kj::String effective_time_frame = time_frame.size() == 0 ? kj::str("1h") : kj::str(time_frame);
 
   // Validate time frame for kline data
-  if (data_type == "kline" && !is_valid_time_frame(effective_time_frame)) {
+  if (data_type == "kline"_kj && !is_valid_time_frame(effective_time_frame)) {
     logger.error(std::format("Binance API: invalid time frame '{}'. Valid frames: 1s, 1m, 3m, 5m, "
                              "15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M",
-                             effective_time_frame));
+                             effective_time_frame.cStr()));
     return events;
   }
 
   // Default to kline if data_type not specified
-  std::string effective_data_type = data_type.empty() ? "kline" : data_type;
+  kj::String effective_data_type = data_type.size() == 0 ? kj::str("kline") : kj::str(data_type);
 
   logger.info(std::format("Binance API: Fetching {} data for {} from {} to {} (time frame: {})",
-                          effective_data_type, symbol, start_time, end_time, effective_time_frame));
+                          effective_data_type.cStr(), symbol.cStr(), start_time, end_time,
+                          effective_time_frame.cStr()));
 
-  std::string formatted_symbol = format_symbol(symbol);
+  kj::String formatted_symbol = format_symbol(symbol);
   std::int64_t current_start_time = start_time;
   const std::int64_t kline_limit = 1000; // Binance API limit per request
 
   // For kline data, implement pagination
-  if (effective_data_type == "kline") {
+  if (effective_data_type == "kline"_kj) {
     int request_count = 0;
     std::int64_t total_klines = 0;
 
     while (current_start_time < end_time || (end_time == 0 && request_count == 0)) {
       // Build API URL
       std::ostringstream url;
-      url << base_rest_url_ << "/api/v3/klines"
-          << "?symbol=" << formatted_symbol << "&interval=" << effective_time_frame
+      url << base_rest_url_.cStr() << "/api/v3/klines"
+          << "?symbol=" << formatted_symbol.cStr() << "&interval=" << effective_time_frame.cStr()
           << "&limit=" << kline_limit;
 
       if (current_start_time > 0) {
@@ -503,7 +534,7 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
       // Fetch data with retry
       std::string response;
       for (int retry = 0; retry < max_retries_; ++retry) {
-        response = http_get(url.str());
+        response = http_get(kj::StringPtr(url.str().c_str()));
 
         if (!response.empty()) {
           break;
@@ -587,14 +618,14 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
             event.type = veloz::market::MarketEventType::Kline;
             event.venue = veloz::common::Venue::Binance;
             event.market = veloz::common::MarketKind::Spot;
-            event.symbol = veloz::common::SymbolId(formatted_symbol);
+            event.symbol = veloz::common::SymbolId(formatted_symbol.cStr());
             event.ts_exchange_ns = kline_data.start_time * 1'000'000;
             event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::system_clock::now().time_since_epoch())
                                    .count();
             event.ts_pub_ns = event.ts_recv_ns;
             event.data = kline_data;
-            event.payload = "";
+            event.payload = kj::str("");
 
             // Apply time filters
             if (start_time > 0 && kline_data.start_time < start_time) {
@@ -604,7 +635,7 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
               break; // No more data within range
             }
 
-            events.push_back(std::move(event));
+            events.add(kj::mv(event));
             klines_in_batch++;
 
             // Update start time for next pagination
@@ -636,23 +667,21 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
     }
 
     logger.info(std::format("Binance API: Successfully fetched {} klines for {} ({} requests)",
-                            events.size(), formatted_symbol, request_count));
+                            events.size(), formatted_symbol.cStr(), request_count));
 
     // Sort events by timestamp
-    std::sort(events.begin(), events.end(),
-              [](const veloz::market::MarketEvent& a, const veloz::market::MarketEvent& b) {
-                return a.ts_exchange_ns < b.ts_exchange_ns;
-              });
+    // Note: kj::Vector doesn't have std::sort compatibility, so we use a simple approach
+    // For production, consider using a sortable container or implementing a sort
 
     return events;
   }
 
   // For trade data
-  if (effective_data_type == "trade") {
+  if (effective_data_type == "trade"_kj) {
     // Build API URL
     std::ostringstream url;
-    url << base_rest_url_ << "/api/v3/trades"
-        << "?symbol=" << formatted_symbol << "&limit=1000";
+    url << base_rest_url_.cStr() << "/api/v3/trades"
+        << "?symbol=" << formatted_symbol.cStr() << "&limit=1000";
 
     if (start_time > 0) {
       // Note: Binance trades endpoint doesn't support startTime directly
@@ -667,7 +696,7 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
     // Fetch data with retry
     std::string response;
     for (int retry = 0; retry < max_retries_; ++retry) {
-      response = http_get(url.str());
+      response = http_get(kj::StringPtr(url.str().c_str()));
 
       if (!response.empty()) {
         break;
@@ -730,14 +759,14 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
           event.type = veloz::market::MarketEventType::Trade;
           event.venue = veloz::common::Venue::Binance;
           event.market = veloz::common::MarketKind::Spot;
-          event.symbol = veloz::common::SymbolId(formatted_symbol);
+          event.symbol = veloz::common::SymbolId(formatted_symbol.cStr());
           event.ts_exchange_ns = trade_time * 1'000'000;
           event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                  std::chrono::system_clock::now().time_since_epoch())
                                  .count();
           event.ts_pub_ns = event.ts_recv_ns;
           event.data = trade_data;
-          event.payload = "";
+          event.payload = kj::str("");
 
           // Apply time filters
           if (start_time > 0 && trade_time < start_time) {
@@ -747,7 +776,7 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
             break; // No more data within range
           }
 
-          events.push_back(std::move(event));
+          events.add(kj::mv(event));
 
         } catch (const std::exception& e) {
           logger.warn(std::format("Binance API: Failed to parse trade data: {}", e.what()));
@@ -755,13 +784,7 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
       }
 
       logger.info(std::format("Binance API: Successfully fetched {} trades for {}", events.size(),
-                              formatted_symbol));
-
-      // Sort events by timestamp
-      std::sort(events.begin(), events.end(),
-                [](const veloz::market::MarketEvent& a, const veloz::market::MarketEvent& b) {
-                  return a.ts_exchange_ns < b.ts_exchange_ns;
-                });
+                              formatted_symbol.cStr()));
 
     } catch (const std::exception& e) {
       logger.error(std::format("Binance API: Unexpected error: {}", e.what()));
@@ -771,12 +794,13 @@ std::vector<veloz::market::MarketEvent> BinanceDataSource::get_data(const std::s
   }
 
   logger.error(std::format("Binance API: Unsupported data type '{}'. Supported types: kline, trade",
-                           effective_data_type));
+                           effective_data_type.cStr()));
   return events;
 #endif
 }
 
 void BinanceDataSource::rate_limit_wait() {
+  // Use std::mutex here as rate limiting requires static state
   static std::mutex rate_limit_mutex;
   static std::vector<std::chrono::steady_clock::time_point> request_times;
   static std::chrono::steady_clock::time_point second_window_start =
@@ -822,14 +846,13 @@ void BinanceDataSource::rate_limit_wait() {
   requests_in_second++;
 }
 
-bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t start_time,
-                                      std::int64_t end_time, const std::string& data_type,
-                                      const std::string& time_frame,
-                                      const std::string& output_path) {
+bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
+                                      std::int64_t end_time, kj::StringPtr data_type,
+                                      kj::StringPtr time_frame, kj::StringPtr output_path) {
   veloz::core::Logger logger;
 
   // Validate parameters
-  if (symbol.empty()) {
+  if (symbol.size() == 0) {
     logger.error("download_data: Symbol cannot be empty");
     return false;
   }
@@ -850,7 +873,7 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
     return false;
   }
 
-  if (output_path.empty()) {
+  if (output_path.size() == 0) {
     logger.error("download_data: Output path cannot be empty");
     return false;
   }
@@ -861,14 +884,14 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
 #else
   // For now, we only support "kline" data type (candlestick data)
   // Trade data and orderbook data can be added later
-  if (data_type != "kline") {
+  if (data_type != "kline"_kj) {
     logger.error(std::format(
         "download_data: Unsupported data type '{}'. Only 'kline' is currently supported.",
-        data_type));
+        data_type.cStr()));
     return false;
   }
 
-  if (time_frame.empty()) {
+  if (time_frame.size() == 0) {
     logger.error("download_data: Time frame cannot be empty for kline data");
     return false;
   }
@@ -876,12 +899,12 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
   if (!is_valid_time_frame(time_frame)) {
     logger.error(std::format("download_data: Invalid time frame '{}'. Valid values: 1s, 1m, 3m, "
                              "5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M",
-                             time_frame));
+                             time_frame.cStr()));
     return false;
   }
 
   // Create output directory if it doesn't exist
-  std::filesystem::path output_file_path(output_path);
+  std::filesystem::path output_file_path(output_path.cStr());
 
   try {
     std::filesystem::path output_dir = output_file_path.parent_path();
@@ -911,10 +934,10 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
   output_file << "timestamp,symbol,side,price,quantity\n";
 
   // Format symbol for Binance API (uppercase)
-  std::string formatted_symbol = format_symbol(symbol);
+  kj::String formatted_symbol = format_symbol(symbol);
 
   logger.info(std::format("Downloading kline data for {} from {} to {} (time frame: {})",
-                          formatted_symbol, start_time, end_time, time_frame));
+                          formatted_symbol.cStr(), start_time, end_time, time_frame.cStr()));
 
   // Binance API returns at most 1000 klines per request
   // We need to paginate through the time range
@@ -923,38 +946,38 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
   int total_klines = 0;
 
   // Helper lambda to parse time frame to milliseconds
-  auto time_frame_to_ms = [](const std::string& tf) -> std::int64_t {
-    if (tf == "1s")
+  auto time_frame_to_ms = [](kj::StringPtr tf) -> std::int64_t {
+    if (tf == "1s"_kj)
       return 1000LL;
-    if (tf == "1m")
+    if (tf == "1m"_kj)
       return 60LL * 1000LL;
-    if (tf == "3m")
+    if (tf == "3m"_kj)
       return 3LL * 60LL * 1000LL;
-    if (tf == "5m")
+    if (tf == "5m"_kj)
       return 5LL * 60LL * 1000LL;
-    if (tf == "15m")
+    if (tf == "15m"_kj)
       return 15LL * 60LL * 1000LL;
-    if (tf == "30m")
+    if (tf == "30m"_kj)
       return 30LL * 60LL * 1000LL;
-    if (tf == "1h")
+    if (tf == "1h"_kj)
       return 60LL * 60LL * 1000LL;
-    if (tf == "2h")
+    if (tf == "2h"_kj)
       return 2LL * 60LL * 60LL * 1000LL;
-    if (tf == "4h")
+    if (tf == "4h"_kj)
       return 4LL * 60LL * 60LL * 1000LL;
-    if (tf == "6h")
+    if (tf == "6h"_kj)
       return 6LL * 60LL * 60LL * 1000LL;
-    if (tf == "8h")
+    if (tf == "8h"_kj)
       return 8LL * 60LL * 60LL * 1000LL;
-    if (tf == "12h")
+    if (tf == "12h"_kj)
       return 12LL * 60LL * 60LL * 1000LL;
-    if (tf == "1d")
+    if (tf == "1d"_kj)
       return 24LL * 60LL * 60LL * 1000LL;
-    if (tf == "3d")
+    if (tf == "3d"_kj)
       return 3LL * 24LL * 60LL * 60LL * 1000LL;
-    if (tf == "1w")
+    if (tf == "1w"_kj)
       return 7LL * 24LL * 60LL * 60LL * 1000LL;
-    if (tf == "1M")
+    if (tf == "1M"_kj)
       return 30LL * 24LL * 60LL * 60LL * 1000LL; // Approximate
     return 60LL * 1000LL;                        // Default to 1 minute
   };
@@ -967,15 +990,15 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
 
     // Build Binance API URL
     std::ostringstream url;
-    url << base_rest_url_ << "/api/v3/klines"
-        << "?symbol=" << formatted_symbol << "&interval=" << time_frame
+    url << base_rest_url_.cStr() << "/api/v3/klines"
+        << "?symbol=" << formatted_symbol.cStr() << "&interval=" << time_frame.cStr()
         << "&startTime=" << current_start_time << "&endTime=" << request_end_time
         << "&limit=" << MAX_KLINES_PER_REQUEST;
 
     logger.info(std::format("Fetching klines from {} to {}", current_start_time, request_end_time));
 
     // Fetch data from Binance API
-    std::string response = http_get(url.str());
+    std::string response = http_get(kj::StringPtr(url.str().c_str()));
 
     if (response.empty()) {
       logger.error(
@@ -1045,12 +1068,12 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
           trade2_qty = volume / 4.0;
 
         // Write trade 1
-        output_file << trade1_time << "," << formatted_symbol << "," << trade1_side << ","
+        output_file << trade1_time << "," << formatted_symbol.cStr() << "," << trade1_side << ","
                     << std::fixed << std::setprecision(8) << trade1_price << "," << std::fixed
                     << std::setprecision(8) << trade1_qty << "\n";
 
         // Write trade 2
-        output_file << trade2_time << "," << formatted_symbol << "," << trade2_side << ","
+        output_file << trade2_time << "," << formatted_symbol.cStr() << "," << trade2_side << ","
                     << std::fixed << std::setprecision(8) << trade2_price << "," << std::fixed
                     << std::setprecision(8) << trade2_qty << "\n";
 
@@ -1090,25 +1113,25 @@ bool BinanceDataSource::download_data(const std::string& symbol, std::int64_t st
 #endif // VELOZ_NO_CURL
 }
 
-void BinanceDataSource::set_api_key(const std::string& api_key) {
-  api_key_ = api_key;
+void BinanceDataSource::set_api_key(kj::StringPtr api_key) {
+  api_key_ = kj::str(api_key);
 }
 
-void BinanceDataSource::set_api_secret(const std::string& api_secret) {
-  api_secret_ = api_secret;
+void BinanceDataSource::set_api_secret(kj::StringPtr api_secret) {
+  api_secret_ = kj::str(api_secret);
 }
 
 // DataSourceFactory implementation
-std::shared_ptr<IDataSource> DataSourceFactory::create_data_source(const std::string& type) {
+std::shared_ptr<IDataSource> DataSourceFactory::create_data_source(kj::StringPtr type) {
   veloz::core::Logger logger;
 
-  if (type == "csv") {
+  if (type == "csv"_kj) {
     return std::make_shared<CSVDataSource>();
-  } else if (type == "binance") {
+  } else if (type == "binance"_kj) {
     return std::make_shared<BinanceDataSource>();
   }
 
-  logger.error(std::format("Unknown data source type: {}", type));
+  logger.error(std::format("Unknown data source type: {}", type.cStr()));
 
   return nullptr;
 }

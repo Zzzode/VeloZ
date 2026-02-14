@@ -1,6 +1,9 @@
 #include "veloz/backtest/analyzer.h"
 
 #include <cmath>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/vector.h>
 
 namespace veloz::backtest {
 
@@ -13,8 +16,8 @@ struct BacktestAnalyzer::Impl {
     return (result.final_balance - result.initial_balance) / result.initial_balance;
   }
 
-  double calculate_average_profit(const std::vector<TradeRecord>& trades) const {
-    if (trades.empty())
+  double calculate_average_profit(const kj::Vector<TradeRecord>& trades) const {
+    if (trades.size() == 0)
       return 0.0;
 
     double total_profit = 0.0;
@@ -25,7 +28,7 @@ struct BacktestAnalyzer::Impl {
     return total_profit / trades.size();
   }
 
-  double calculate_average_win(const std::vector<TradeRecord>& trades) const {
+  double calculate_average_win(const kj::Vector<TradeRecord>& trades) const {
     double total_win = 0.0;
     int win_count = 0;
 
@@ -40,7 +43,7 @@ struct BacktestAnalyzer::Impl {
     return win_count > 0 ? total_win / win_count : 0.0;
   }
 
-  double calculate_average_loss(const std::vector<TradeRecord>& trades) const {
+  double calculate_average_loss(const kj::Vector<TradeRecord>& trades) const {
     double total_loss = 0.0;
     int lose_count = 0;
 
@@ -56,14 +59,14 @@ struct BacktestAnalyzer::Impl {
   }
 };
 
-BacktestAnalyzer::BacktestAnalyzer() : impl_(std::make_unique<Impl>()) {}
+BacktestAnalyzer::BacktestAnalyzer() : impl_(kj::heap<Impl>()) {}
 
-BacktestAnalyzer::~BacktestAnalyzer() {}
+BacktestAnalyzer::~BacktestAnalyzer() noexcept {}
 
-std::shared_ptr<BacktestResult> BacktestAnalyzer::analyze(const std::vector<TradeRecord>& trades) {
-  auto result = std::make_shared<BacktestResult>();
+kj::Own<BacktestResult> BacktestAnalyzer::analyze(const kj::Vector<TradeRecord>& trades) {
+  auto result = kj::heap<BacktestResult>();
 
-  result->trade_count = trades.size();
+  result->trade_count = static_cast<int>(trades.size());
   result->win_count = 0;
   result->lose_count = 0;
   double total_win = 0.0;
@@ -88,19 +91,19 @@ std::shared_ptr<BacktestResult> BacktestAnalyzer::analyze(const std::vector<Trad
   return result;
 }
 
-std::vector<EquityCurvePoint>
-BacktestAnalyzer::calculate_equity_curve(const std::vector<TradeRecord>& trades,
+kj::Vector<EquityCurvePoint>
+BacktestAnalyzer::calculate_equity_curve(const kj::Vector<TradeRecord>& trades,
                                          double initial_balance) {
-  std::vector<EquityCurvePoint> equity_curve;
+  kj::Vector<EquityCurvePoint> equity_curve;
   double equity = initial_balance;
 
   // Add initial point
-  if (!trades.empty()) {
+  if (trades.size() > 0) {
     EquityCurvePoint initial_point;
     initial_point.timestamp = trades[0].timestamp;
     initial_point.equity = initial_balance;
     initial_point.cumulative_return = 0.0;
-    equity_curve.push_back(initial_point);
+    equity_curve.add(initial_point);
   }
 
   for (const auto& trade : trades) {
@@ -109,17 +112,17 @@ BacktestAnalyzer::calculate_equity_curve(const std::vector<TradeRecord>& trades,
     point.timestamp = trade.timestamp;
     point.equity = equity;
     point.cumulative_return = (equity - initial_balance) / initial_balance;
-    equity_curve.push_back(point);
+    equity_curve.add(point);
   }
 
   return equity_curve;
 }
 
-std::vector<DrawdownPoint>
-BacktestAnalyzer::calculate_drawdown(const std::vector<EquityCurvePoint>& equity_curve) {
-  std::vector<DrawdownPoint> drawdown_curve;
+kj::Vector<DrawdownPoint>
+BacktestAnalyzer::calculate_drawdown(const kj::Vector<EquityCurvePoint>& equity_curve) {
+  kj::Vector<DrawdownPoint> drawdown_curve;
 
-  if (equity_curve.empty()) {
+  if (equity_curve.size() == 0) {
     return drawdown_curve;
   }
 
@@ -133,28 +136,30 @@ BacktestAnalyzer::calculate_drawdown(const std::vector<EquityCurvePoint>& equity
     DrawdownPoint drawdown_point;
     drawdown_point.timestamp = point.timestamp;
     drawdown_point.drawdown = (peak_equity - point.equity) / peak_equity;
-    drawdown_curve.push_back(drawdown_point);
+    drawdown_curve.add(drawdown_point);
   }
 
   return drawdown_curve;
 }
 
-double BacktestAnalyzer::calculate_sharpe_ratio(const std::vector<TradeRecord>& trades) {
+double BacktestAnalyzer::calculate_sharpe_ratio(const kj::Vector<TradeRecord>& trades) {
   if (trades.size() < 2) {
     return 0.0;
   }
 
   // Calculate daily returns (assuming trades are daily)
-  std::vector<double> daily_returns;
+  kj::Vector<double> daily_returns;
   double previous_equity = 0.0;
+  bool first_trade = true;
 
   for (const auto& trade : trades) {
-    if (daily_returns.empty()) {
-      previous_equity = trade.price * trade.quantity;
+    double current_equity = trade.price * trade.quantity;
+    if (first_trade) {
+      previous_equity = current_equity;
+      first_trade = false;
     } else {
-      double current_equity = trade.price * trade.quantity;
       double daily_return = (current_equity - previous_equity) / previous_equity;
-      daily_returns.push_back(daily_return);
+      daily_returns.add(daily_return);
       previous_equity = current_equity;
     }
   }
@@ -189,7 +194,7 @@ double BacktestAnalyzer::calculate_sharpe_ratio(const std::vector<TradeRecord>& 
   return (mean_return - risk_free_rate) / std_dev * std::sqrt(252); // Annualized Sharpe ratio
 }
 
-double BacktestAnalyzer::calculate_max_drawdown(const std::vector<EquityCurvePoint>& equity_curve) {
+double BacktestAnalyzer::calculate_max_drawdown(const kj::Vector<EquityCurvePoint>& equity_curve) {
   auto drawdown_curve = calculate_drawdown(equity_curve);
 
   double max_drawdown = 0.0;
@@ -202,8 +207,8 @@ double BacktestAnalyzer::calculate_max_drawdown(const std::vector<EquityCurvePoi
   return max_drawdown;
 }
 
-double BacktestAnalyzer::calculate_win_rate(const std::vector<TradeRecord>& trades) {
-  if (trades.empty()) {
+double BacktestAnalyzer::calculate_win_rate(const kj::Vector<TradeRecord>& trades) {
+  if (trades.size() == 0) {
     return 0.0;
   }
 
@@ -217,7 +222,7 @@ double BacktestAnalyzer::calculate_win_rate(const std::vector<TradeRecord>& trad
   return static_cast<double>(win_count) / trades.size();
 }
 
-double BacktestAnalyzer::calculate_profit_factor(const std::vector<TradeRecord>& trades) {
+double BacktestAnalyzer::calculate_profit_factor(const kj::Vector<TradeRecord>& trades) {
   double total_win = 0.0;
   double total_loss = 0.0;
 

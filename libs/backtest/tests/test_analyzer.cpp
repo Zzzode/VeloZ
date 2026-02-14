@@ -1,8 +1,13 @@
 #include "veloz/backtest/analyzer.h"
 
 #include <gtest/gtest.h>
+#include <kj/string.h>
+#include <kj/vector.h>
 
 class BacktestAnalyzerTest : public ::testing::Test {
+public:
+  ~BacktestAnalyzerTest() noexcept override = default;
+
 protected:
   void SetUp() override {
     analyzer_ = std::make_unique<veloz::backtest::BacktestAnalyzer>();
@@ -11,27 +16,27 @@ protected:
 
   void TearDown() override {
     analyzer_.reset();
-    trades_.clear();
+    trades_ = kj::Vector<veloz::backtest::TradeRecord>();
   }
 
   std::unique_ptr<veloz::backtest::BacktestAnalyzer> analyzer_;
-  std::vector<veloz::backtest::TradeRecord> trades_;
+  kj::Vector<veloz::backtest::TradeRecord> trades_;
 
-private:
-  std::vector<veloz::backtest::TradeRecord> create_sample_trades() {
-    std::vector<veloz::backtest::TradeRecord> trades;
+protected:
+  kj::Vector<veloz::backtest::TradeRecord> create_sample_trades() {
+    kj::Vector<veloz::backtest::TradeRecord> trades;
 
     for (int i = 0; i < 100; ++i) {
       veloz::backtest::TradeRecord trade;
       trade.timestamp = 1609459200000 + i * 3600000; // 1 hour intervals
-      trade.symbol = "BTCUSDT";
-      trade.side = i % 2 == 0 ? "buy" : "sell";
+      trade.symbol = kj::str("BTCUSDT");
+      trade.side = kj::str(i % 2 == 0 ? "buy" : "sell");
       trade.price = 50000 + i * 100;
       trade.quantity = 0.01;
       trade.fee = 0.001;
       trade.pnl = (i % 3 == 0) ? 100.0 : -50.0; // 66% win rate
-      trade.strategy_id = "test_strategy";
-      trades.push_back(trade);
+      trade.strategy_id = kj::str("test_strategy");
+      trades.add(kj::mv(trade));
     }
 
     return trades;
