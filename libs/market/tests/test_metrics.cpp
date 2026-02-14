@@ -1,33 +1,35 @@
+#include "kj/test.h"
 #include "veloz/market/metrics.h"
-
-#include <gtest/gtest.h>
 
 using namespace veloz::market;
 
-TEST(MarketMetrics, Initialize) {
+namespace {
+
+KJ_TEST("MarketMetrics: Initialize") {
   MarketMetrics metrics;
-  EXPECT_EQ(metrics.event_count(), 0);
-  EXPECT_EQ(metrics.drop_count(), 0);
+
+  KJ_EXPECT(metrics.event_count() == 0);
+  KJ_EXPECT(metrics.drop_count() == 0);
 }
 
-TEST(MarketMetrics, RecordEvent) {
+KJ_TEST("MarketMetrics: Record event") {
   MarketMetrics metrics;
   metrics.record_event_latency_ns(1000);
   metrics.record_event_latency_ns(2000);
   metrics.record_event_latency_ns(3000);
 
-  EXPECT_EQ(metrics.event_count(), 3);
-  EXPECT_EQ(metrics.avg_latency_ns(), 2000);
+  KJ_EXPECT(metrics.event_count() == 3);
+  KJ_EXPECT(metrics.avg_latency_ns() == 2000);
 }
 
-TEST(MarketMetrics, RecordDrop) {
+KJ_TEST("MarketMetrics: Record drop") {
   MarketMetrics metrics;
   metrics.record_drop();
 
-  EXPECT_EQ(metrics.drop_count(), 1);
+  KJ_EXPECT(metrics.drop_count() == 1);
 }
 
-TEST(MarketMetrics, Percentiles) {
+KJ_TEST("MarketMetrics: Percentiles") {
   MarketMetrics metrics;
   for (int i = 1; i <= 100; ++i) {
     metrics.record_event_latency_ns(i * 1000); // 1ms to 100ms
@@ -36,13 +38,15 @@ TEST(MarketMetrics, Percentiles) {
   auto p50 = metrics.percentile_ns(50);
   auto p99 = metrics.percentile_ns(99);
 
-  EXPECT_NEAR(p50, 50000, 1000); // 50ms
-  EXPECT_NEAR(p99, 99000, 1000); // 99ms
+  KJ_EXPECT(p50 >= 50000 - 1000); // 50ms
+  KJ_EXPECT(p99 >= 99000 - 1000); // 99ms
 }
 
-TEST(MarketMetrics, ReconnectTracking) {
+KJ_TEST("MarketMetrics: Reconnect tracking") {
   MarketMetrics metrics;
   metrics.record_reconnect();
 
-  EXPECT_EQ(metrics.reconnect_count(), 1);
+  KJ_EXPECT(metrics.reconnect_count() == 1);
 }
+
+} // namespace

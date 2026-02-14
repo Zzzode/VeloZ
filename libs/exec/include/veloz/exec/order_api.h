@@ -16,8 +16,9 @@
 #include "veloz/common/types.h"
 
 #include <cstdint>
-#include <optional>
-#include <string>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/string.h>
 
 namespace veloz::exec {
 
@@ -66,12 +67,12 @@ struct PlaceOrderRequest final {
   OrderType type{OrderType::Limit};  ///< Order type (default: limit)
   TimeInForce tif{TimeInForce::GTC}; ///< Time in force (default: GTC)
 
-  double qty{0.0};             ///< Order quantity
-  std::optional<double> price; ///< Order price (optional for market orders)
+  double qty{0.0};         ///< Order quantity
+  kj::Maybe<double> price; ///< Order price (optional for market orders)
 
-  std::string client_order_id; ///< Client order ID (for unique identification)
-  bool reduce_only{false};     ///< Reduce-only order (for futures trading only)
-  bool post_only{false};       ///< Post-only order (for limit orders only)
+  kj::String client_order_id; ///< Client order ID (for unique identification)
+  bool reduce_only{false};    ///< Reduce-only order (for futures trading only)
+  bool post_only{false};      ///< Post-only order (for limit orders only)
 };
 
 /**
@@ -82,7 +83,7 @@ struct PlaceOrderRequest final {
  */
 struct CancelOrderRequest final {
   veloz::common::SymbolId symbol; ///< Trading symbol ID
-  std::string client_order_id;    ///< Client order ID
+  kj::String client_order_id;     ///< Client order ID
 };
 
 /**
@@ -109,8 +110,8 @@ enum class OrderStatus : std::uint8_t {
  */
 struct ExecutionReport final {
   veloz::common::SymbolId symbol;       ///< Trading symbol ID
-  std::string client_order_id;          ///< Client order ID
-  std::string venue_order_id;           ///< Venue order ID
+  kj::String client_order_id;           ///< Client order ID
+  kj::String venue_order_id;            ///< Venue order ID
   OrderStatus status{OrderStatus::New}; ///< Order status
 
   double last_fill_qty{0.0};   ///< Last fill quantity

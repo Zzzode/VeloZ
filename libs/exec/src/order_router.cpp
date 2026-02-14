@@ -1,116 +1,107 @@
 #include "veloz/exec/order_router.h"
 
-#include <stdexcept>
-
 namespace veloz::exec {
 
-void OrderRouter::register_adapter(veloz::common::Venue venue,
-                                   std::shared_ptr<ExchangeAdapter> adapter) {
-  if (!adapter) {
-    throw std::invalid_argument("Adapter cannot be null");
-  }
-  std::scoped_lock lock(mu_);
-  adapters_[venue] = adapter;
+void OrderRouter::register_adapter(veloz::common::Venue venue, kj::Own<ExchangeAdapter> adapter) {
+  // kj::Own<T> cannot be null by design - it's a non-null pointer wrapper
+  // If someone tries to pass a null-constructed Own, that's a usage error
+  auto lock = guarded_.lockExclusive();
+  lock->adapters[venue] = kj::mv(adapter);
 }
 
 void OrderRouter::unregister_adapter(veloz::common::Venue venue) {
-  std::scoped_lock lock(mu_);
-  adapters_.erase(venue);
+  auto lock = guarded_.lockExclusive();
+  lock->adapters.erase(venue);
 }
 
 void OrderRouter::set_default_venue(veloz::common::Venue venue) {
-  std::scoped_lock lock(mu_);
-  default_venue_ = venue;
+  auto lock = guarded_.lockExclusive();
+  lock->default_venue = venue;
 }
 
 bool OrderRouter::has_adapter(veloz::common::Venue venue) const {
-  std::scoped_lock lock(mu_);
-  return adapters_.contains(venue);
+  auto lock = guarded_.lockExclusive();
+  return lock->adapters.contains(venue);
 }
 
-std::optional<ExecutionReport> OrderRouter::place_order(veloz::common::Venue venue,
-                                                        const PlaceOrderRequest& req) {
-  std::scoped_lock lock(mu_);
+kj::Maybe<ExecutionReport> OrderRouter::place_order(veloz::common::Venue venue,
+                                                    const PlaceOrderRequest& req) {
+  auto lock = guarded_.lockExclusive();
 
-  auto adapter = get_adapter(venue);
-  if (!adapter) {
-    return std::nullopt;
+  auto* adapter_ptr = get_adapter(venue);
+  if (adapter_ptr == nullptr) {
+    return nullptr;
   }
 
-  auto report = adapter->place_order(req);
+  auto report = adapter_ptr->place_order(req);
 
   // If failover is enabled and primary venue fails, try other venues
-  if (!report && failover_enabled_ && adapters_.size() > 1) {
-    for (const auto& [other_venue, other_adapter] : adapters_) {
+  if (report == nullptr && lock->failover_enabled && lock->adapters.size() > 1) {
+    for (auto& [other_venue, other_adapter] : lock->adapters) {
       if (other_venue != venue) {
         report = other_adapter->place_order(req);
-        if (report) {
+        if (report != nullptr) {
           break;
         }
       }
     }
   }
-
   return report;
 }
 
-std::optional<ExecutionReport> OrderRouter::place_order(const PlaceOrderRequest& req) {
-  std::scoped_lock lock(mu_);
+kj::Maybe<ExecutionReport> OrderRouter::place_order(const PlaceOrderRequest& req) {
+  auto lock = guarded_.lockExclusive();
 
-  if (!default_venue_) {
-    return std::nullopt;
-  }
-
-  return place_order(*default_venue_, req);
+  // Use orDefault to get venue or throw exception if not set
+  return place_order(lock->default_venue.orDefault(veloz::common::Venue::Unknown), req);
 }
 
-std::optional<ExecutionReport> OrderRouter::cancel_order(veloz::common::Venue venue,
-                                                         const CancelOrderRequest& req) {
-  std::scoped_lock lock(mu_);
+kj::Maybe<ExecutionReport> OrderRouter::cancel_order(veloz::common::Venue venue,
+                                                     const CancelOrderRequest& req) {
+  auto lock = guarded_.lockExclusive();
 
-  auto adapter = get_adapter(venue);
-  if (!adapter) {
-    return std::nullopt;
-  }
-  return adapter->cancel_order(req);
-}
-
-std::shared_ptr<ExchangeAdapter> OrderRouter::get_adapter(veloz::common::Venue venue) const {
-  auto it = adapters_.find(venue);
-  if (it == adapters_.end()) {
+  auto* adapter_ptr = get_adapter(venue);
+  if (adapter_ptr == nullptr) {
     return nullptr;
   }
-  return it->second;
+
+  return adapter_ptr->cancel_order(req);
 }
 
-std::vector<veloz::common::Venue> OrderRouter::get_registered_venues() const {
-  std::scoped_lock lock(mu_);
-
-  std::vector<veloz::common::Venue> venues;
-  for (const auto& [venue, _] : adapters_) {
-    venues.push_back(venue);
+ExchangeAdapter* OrderRouter::get_adapter(veloz::common::Venue venue) const {
+  auto lock = guarded_.lockExclusive();
+  auto it = lock->adapters.find(venue);
+  if (it == lock->adapters.end()) {
+    return nullptr;
   }
-  return venues;
+  return it->second.get();
+}
+
+kj::Array<veloz::common::Venue> OrderRouter::get_registered_venues() const {
+  auto lock = guarded_.lockExclusive();
+  auto builder = kj::heapArrayBuilder<veloz::common::Venue>(lock->adapters.size());
+  for (const auto& [venue, _] : lock->adapters) {
+    builder.add(venue);
+  }
+  return builder.finish();
 }
 
 void OrderRouter::set_order_timeout(std::chrono::milliseconds timeout) {
-  std::scoped_lock lock(mu_);
-  order_timeout_ = timeout;
+  auto lock = guarded_.lockExclusive();
+  lock->order_timeout = timeout;
 }
 
 std::chrono::milliseconds OrderRouter::get_order_timeout() const {
-  std::scoped_lock lock(mu_);
-  return order_timeout_;
+  return guarded_.lockExclusive()->order_timeout;
 }
 
 void OrderRouter::set_failover_enabled(bool enabled) {
-  std::scoped_lock lock(mu_);
-  failover_enabled_ = enabled;
+  auto lock = guarded_.lockExclusive();
+  lock->failover_enabled = enabled;
 }
 
 bool OrderRouter::is_failover_enabled() const {
-  std::scoped_lock lock(mu_);
-  return failover_enabled_;
+  return guarded_.lockExclusive()->failover_enabled;
 }
 
 } // namespace veloz::exec

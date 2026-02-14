@@ -1,24 +1,24 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
-#include <tuple>
+#include <kj/common.h>
+#include <kj/string.h>
+#include <tuple> // std::tuple has no KJ equivalent
 
 namespace veloz::exec {
 
 class ClientOrderIdGenerator final {
 public:
-  explicit ClientOrderIdGenerator(const std::string& strategy_id);
+  explicit ClientOrderIdGenerator(kj::StringPtr strategy_id);
 
   // Generate unique client order ID
-  [[nodiscard]] std::string generate();
+  [[nodiscard]] kj::String generate();
 
   // Parse components: {strategy, timestamp, unique}
-  static std::tuple<std::string, std::int64_t, std::string>
-  parse(const std::string& client_order_id);
+  static std::tuple<kj::String, std::int64_t, kj::String> parse(kj::StringPtr client_order_id);
 
 private:
-  std::string strategy_id_;
+  kj::String strategy_id_;
   std::int64_t sequence_{0};
 };
 

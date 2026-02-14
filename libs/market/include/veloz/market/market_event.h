@@ -16,9 +16,10 @@
 #include "veloz/common/types.h"
 
 #include <cstdint>
-#include <string>
-#include <variant>
-#include <vector>
+#include <kj/common.h>
+#include <kj/string.h>
+#include <kj/vector.h>
+#include <variant> // std::variant has no KJ equivalent, required for type-safe union
 
 namespace veloz::market {
 
@@ -71,11 +72,26 @@ struct BookLevel {
  * Contains complete or incremental order book data, including bid and ask levels.
  */
 struct BookData {
-  std::vector<BookLevel> bids; ///< Bid levels list
-  std::vector<BookLevel> asks; ///< Ask levels list
-  std::int64_t sequence{0};    ///< Order book sequence number
+  kj::Vector<BookLevel> bids; ///< Bid levels list
+  kj::Vector<BookLevel> asks; ///< Ask levels list
+  std::int64_t sequence{0};   ///< Order book sequence number
 
-  auto operator<=>(const BookData&) const = default;
+  // Note: kj::Vector doesn't support operator<=> directly, manual comparison needed
+  bool operator==(const BookData& other) const {
+    if (sequence != other.sequence)
+      return false;
+    if (bids.size() != other.bids.size() || asks.size() != other.asks.size())
+      return false;
+    for (size_t i = 0; i < bids.size(); ++i) {
+      if (bids[i] != other.bids[i])
+        return false;
+    }
+    for (size_t i = 0; i < asks.size(); ++i) {
+      if (asks[i] != other.asks[i])
+        return false;
+    }
+    return true;
+  }
 };
 
 /**
@@ -116,7 +132,7 @@ struct MarketEvent final {
   std::variant<std::monostate, TradeData, BookData, KlineData> data; ///< Event data
 
   // Raw JSON payload for backward compatibility
-  std::string payload; ///< Raw JSON payload
+  kj::String payload; ///< Raw JSON payload
 
   // Helper: latency from exchange to publish
   /**

@@ -2,64 +2,155 @@
 
 #include "veloz/market/market_event.h"
 
-#include <map>
-#include <optional>
-#include <vector>
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/memory.h>
+#include <kj/mutex.h>
+#include <kj/vector.h>
+#include <map>   // std::map for ordered key lookup - KJ doesn't provide ordered map equivalent
+#include <queue> // std::priority_queue for buffered updates - KJ doesn't provide priority queue
 
 namespace veloz::market {
 
+// Liquidity point for liquidity profile analysis
+// Using dedicated struct instead of std::pair for clarity
+struct LiquidityPoint {
+  double price{0.0};
+  double cumulative_depth{0.0};
+
+  auto operator<=>(const LiquidityPoint&) const = default;
+};
+
+// Order book update result for tracking sequence state
+enum class UpdateResult {
+  Applied,        // Update was applied successfully
+  Duplicate,      // Update was a duplicate (same or older sequence)
+  GapDetected,    // Gap in sequence detected, snapshot needed
+  Buffered,       // Update was buffered for later application
+  BufferOverflow, // Buffer is full, updates dropped
+  InvalidState    // Order book is in invalid state
+};
+
+// Buffered delta update for out-of-order handling
+struct BufferedDelta {
+  BookLevel level;
+  bool is_bid;
+  int64_t sequence;
+
+  // For priority queue ordering (lower sequence = higher priority)
+  bool operator<(const BufferedDelta& other) const {
+    return sequence > other.sequence;
+  }
+};
+
+// Order book state for rebuild tracking
+enum class OrderBookState {
+  Empty,       // No data received yet
+  Syncing,     // Waiting for snapshot after gap
+  Synchronized // Fully synchronized with exchange
+};
+
 class OrderBook final {
 public:
+  // Callback type for requesting snapshot when gap detected
+  using SnapshotRequestCallback = kj::Function<void()>;
+
   OrderBook() = default;
 
   // Apply full snapshot (replaces existing book)
-  void apply_snapshot(const std::vector<BookLevel>& bids, const std::vector<BookLevel>& asks,
-                      std::int64_t sequence);
+  void apply_snapshot(const kj::Vector<BookLevel>& bids, const kj::Vector<BookLevel>& asks,
+                      int64_t sequence);
 
   // Apply incremental delta (update/delete a level)
-  void apply_delta(const BookLevel& level, bool is_bid, std::int64_t sequence);
+  // Returns result indicating what happened with the update
+  UpdateResult apply_delta(const BookLevel& level, bool is_bid, int64_t sequence);
+
+  // Apply batch of deltas (for efficiency)
+  UpdateResult apply_deltas(const kj::Vector<BookLevel>& bids, const kj::Vector<BookLevel>& asks,
+                            int64_t first_sequence, int64_t final_sequence);
 
   // Query methods
-  [[nodiscard]] const std::vector<BookLevel>& bids() const;
-  [[nodiscard]] const std::vector<BookLevel>& asks() const;
-  [[nodiscard]] std::optional<BookLevel> best_bid() const;
-  [[nodiscard]] std::optional<BookLevel> best_ask() const;
+  [[nodiscard]] const kj::Vector<BookLevel>& bids() const;
+  [[nodiscard]] const kj::Vector<BookLevel>& asks() const;
+  [[nodiscard]] kj::Maybe<BookLevel> best_bid() const;
+  [[nodiscard]] kj::Maybe<BookLevel> best_ask() const;
   [[nodiscard]] double spread() const;
   [[nodiscard]] double mid_price() const;
-  [[nodiscard]] std::int64_t sequence() const;
+  [[nodiscard]] int64_t sequence() const;
 
   // Get top N levels
-  [[nodiscard]] std::vector<BookLevel> top_bids(std::size_t n) const;
-  [[nodiscard]] std::vector<BookLevel> top_asks(std::size_t n) const;
+  [[nodiscard]] kj::Vector<BookLevel> top_bids(size_t n) const;
+  [[nodiscard]] kj::Vector<BookLevel> top_asks(size_t n) const;
 
   // Depth and liquidity calculations
   [[nodiscard]] double depth_at_price(double price, bool is_bid) const;
   [[nodiscard]] double total_depth(bool is_bid) const;
   [[nodiscard]] double cumulative_depth(double price, bool is_bid) const;
-  [[nodiscard]] std::vector<std::pair<double, double>>
-  liquidity_profile(bool is_bid, double price_range, double step) const;
+  [[nodiscard]] kj::Vector<LiquidityPoint> liquidity_profile(bool is_bid, double price_range,
+                                                             double step) const;
 
   // Market impact and order book statistics
   [[nodiscard]] double market_impact(double qty, bool is_bid) const;
   [[nodiscard]] double volume_weighted_average_price(bool is_bid, double depth) const;
-  [[nodiscard]] std::size_t level_count(bool is_bid) const;
+  [[nodiscard]] size_t level_count(bool is_bid) const;
   [[nodiscard]] double average_level_size(bool is_bid) const;
 
   // Clear order book
   void clear();
   [[nodiscard]] bool empty() const;
 
+  // Sequence and state management
+  [[nodiscard]] OrderBookState state() const;
+  [[nodiscard]] bool is_synchronized() const;
+  [[nodiscard]] int64_t expected_sequence() const;
+  [[nodiscard]] size_t buffered_update_count() const;
+  [[nodiscard]] int64_t gap_count() const;
+  [[nodiscard]] int64_t duplicate_count() const;
+
+  // Set callback for requesting snapshot when gap detected
+  void set_snapshot_request_callback(SnapshotRequestCallback callback);
+
+  // Configuration
+  void set_max_buffer_size(size_t size);
+  void set_max_sequence_gap(int64_t gap);
+
+  // Force rebuild request (e.g., on reconnection)
+  void request_rebuild();
+
 private:
   void rebuild_cache();
+  void apply_level(const BookLevel& level, bool is_bid);
+  void process_buffered_updates();
+  void trigger_snapshot_request();
 
-  std::map<double, double, std::greater<double>> bids_; // descending
-  std::map<double, double> asks_;                       // ascending
+  // Using std::map for ordered key lookup - KJ doesn't provide ordered map equivalent
+  // bids_ sorted descending (best bid first), asks_ sorted ascending (best ask first)
+  std::map<double, double, std::greater<double>> bids_;
+  std::map<double, double> asks_;
 
   // Cache for fast queries (bids[0] = best bid, asks[0] = best ask)
-  std::vector<BookLevel> bids_cache_;
-  std::vector<BookLevel> asks_cache_;
+  kj::Vector<BookLevel> bids_cache_;
+  kj::Vector<BookLevel> asks_cache_;
 
-  std::int64_t sequence_{0};
+  // Sequence tracking
+  int64_t sequence_{0};
+  int64_t expected_sequence_{0}; // Next expected sequence number
+
+  // State management
+  OrderBookState state_{OrderBookState::Empty};
+
+  // Buffer for out-of-order updates
+  // Using std::priority_queue - KJ doesn't provide priority queue equivalent
+  std::priority_queue<BufferedDelta> update_buffer_;
+  size_t max_buffer_size_{1000};
+  int64_t max_sequence_gap_{100}; // Max gap before requesting snapshot
+
+  // Statistics
+  int64_t gap_count_{0};
+  int64_t duplicate_count_{0};
+
+  // Callback for snapshot requests
+  kj::Maybe<SnapshotRequestCallback> snapshot_callback_;
 };
 
 } // namespace veloz::market

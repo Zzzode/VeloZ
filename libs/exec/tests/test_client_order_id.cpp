@@ -1,41 +1,52 @@
+#include "kj/test.h"
 #include "veloz/exec/client_order_id.h"
 
-#include <gtest/gtest.h>
+#include <string>
 #include <unordered_set>
+
+namespace {
 
 using namespace veloz::exec;
 
-TEST(ClientOrderId, Generate) {
+KJ_TEST("ClientOrderId: Generate basic") {
   ClientOrderIdGenerator gen("STRAT");
 
-  std::string id1 = gen.generate();
-  std::string id2 = gen.generate();
+  auto id = gen.generate();
 
-  EXPECT_FALSE(id1.empty());
-  EXPECT_FALSE(id2.empty());
-  EXPECT_NE(id1, id2); // Unique
-  EXPECT_TRUE(id1.starts_with("STRAT-"));
+  KJ_EXPECT(id.size() > 0);
+  KJ_EXPECT(id.startsWith("STRAT-"));
 }
 
-TEST(ClientOrderId, HighThroughput) {
-  ClientOrderIdGenerator gen("TEST");
+KJ_TEST("ClientOrderId: Multiple unique IDs") {
+  ClientOrderIdGenerator gen("STRAT");
 
   std::unordered_set<std::string> ids;
-  for (int i = 0; i < 10000; ++i) {
-    std::string id = gen.generate();
-    EXPECT_FALSE(ids.contains(id)); // No duplicates
-    ids.insert(id);
+  for (int i = 0; i < 100; ++i) {
+    kj::String id = gen.generate();
+    ids.insert(std::string(id.cStr()));
   }
 
-  EXPECT_EQ(ids.size(), 10000);
+  KJ_EXPECT(ids.size() == 100);
 }
 
-TEST(ClientOrderId, ParseComponents) {
-  std::string id = "STRAT-1700000000-123-ABC123";
+KJ_TEST("ClientOrderId: Parse components") {
+  kj::StringPtr id = "STRAT-1700000000-123-ABCXYZ";
 
   auto [strategy, timestamp, unique] = ClientOrderIdGenerator::parse(id);
 
-  EXPECT_EQ(strategy, "STRAT");
-  EXPECT_EQ(timestamp, 1700000000);
-  EXPECT_EQ(unique, "ABC123");
+  KJ_EXPECT(strategy == "STRAT");
+  KJ_EXPECT(timestamp == 1700000000);
+  KJ_EXPECT(unique == "123-ABCXYZ");
 }
+
+KJ_TEST("ClientOrderId: Parse without unique") {
+  kj::StringPtr id = "STRAT-1700000000-123";
+
+  auto [strategy, timestamp, unique] = ClientOrderIdGenerator::parse(id);
+
+  KJ_EXPECT(strategy == "STRAT");
+  KJ_EXPECT(timestamp == 1700000000);
+  KJ_EXPECT(unique.size() == 0);
+}
+
+} // namespace

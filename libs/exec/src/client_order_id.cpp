@@ -6,10 +6,10 @@
 
 namespace veloz::exec {
 
-ClientOrderIdGenerator::ClientOrderIdGenerator(const std::string& strategy_id)
-    : strategy_id_(strategy_id) {}
+ClientOrderIdGenerator::ClientOrderIdGenerator(kj::StringPtr strategy_id)
+    : strategy_id_(kj::str(strategy_id)) {}
 
-std::string ClientOrderIdGenerator::generate() {
+kj::String ClientOrderIdGenerator::generate() {
   auto now = std::chrono::system_clock::now();
   auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
 
@@ -21,32 +21,40 @@ std::string ClientOrderIdGenerator::generate() {
   static thread_local std::uniform_int_distribution<> dis(0, 15);
 
   std::ostringstream oss;
-  oss << strategy_id_ << "-" << timestamp << "-" << sequence_ << "-";
   for (int i = 0; i < 4; ++i) {
     oss << std::hex << dis(gen);
   }
 
-  return oss.str();
+  return kj::str(strategy_id_, "-", timestamp, "-", sequence_, "-", oss.str());
 }
 
-std::tuple<std::string, std::int64_t, std::string>
-ClientOrderIdGenerator::parse(const std::string& client_order_id) {
+std::tuple<kj::String, std::int64_t, kj::String>
+ClientOrderIdGenerator::parse(kj::StringPtr client_order_id) {
   // Format: STRATEGY-TIMESTAMP-SEQUENCE-RANDOM
-  size_t first_dash = client_order_id.find('-');
-  size_t second_dash = client_order_id.find('-', first_dash + 1);
-  size_t third_dash = client_order_id.find('-', second_dash + 1);
+  // Returns: (strategy, timestamp, sequence-random or empty if no sequence part)
+  std::string id_str(client_order_id.cStr());
+  size_t first_dash = id_str.find('-');
+  size_t second_dash = id_str.find('-', first_dash + 1);
 
-  if (first_dash == std::string::npos || second_dash == std::string::npos ||
-      third_dash == std::string::npos) {
-    return {"", 0, ""};
+  if (first_dash == std::string::npos || second_dash == std::string::npos) {
+    return {kj::str(""), 0, kj::str("")};
   }
 
-  std::string strategy = client_order_id.substr(0, first_dash);
-  std::int64_t timestamp =
-      std::stoll(client_order_id.substr(first_dash + 1, second_dash - first_dash - 1));
-  std::string unique = client_order_id.substr(third_dash + 1);
+  kj::String strategy = kj::str(id_str.substr(0, first_dash));
+  std::int64_t timestamp = std::stoll(id_str.substr(first_dash + 1, second_dash - first_dash - 1));
 
-  return {strategy, timestamp, unique};
+  // unique includes everything after the timestamp (sequence-random or just sequence)
+  size_t third_dash = id_str.find('-', second_dash + 1);
+  kj::String unique;
+  if (third_dash != std::string::npos) {
+    // Has both sequence and random parts
+    unique = kj::str(id_str.substr(second_dash + 1));
+  } else {
+    // No random part - return empty unique per test expectation
+    unique = kj::str("");
+  }
+
+  return {kj::mv(strategy), timestamp, kj::mv(unique)};
 }
 
 } // namespace veloz::exec

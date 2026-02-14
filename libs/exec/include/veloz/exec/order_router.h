@@ -5,10 +5,12 @@
 #include "veloz/exec/order_api.h"
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
-#include <memory>
-#include <mutex>
-#include <optional>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/mutex.h>
+#include <kj/string.h>
 #include <unordered_map>
 #include <vector>
 
@@ -19,7 +21,7 @@ public:
   OrderRouter() = default;
 
   // Register an adapter for a venue
-  void register_adapter(veloz::common::Venue venue, std::shared_ptr<ExchangeAdapter> adapter);
+  void register_adapter(veloz::common::Venue venue, kj::Own<ExchangeAdapter> adapter);
 
   // Unregister an adapter
   void unregister_adapter(veloz::common::Venue venue);
@@ -31,20 +33,18 @@ public:
   [[nodiscard]] bool has_adapter(veloz::common::Venue venue) const;
 
   // Route order to specific venue or default
-  std::optional<ExecutionReport> place_order(veloz::common::Venue venue,
-                                             const PlaceOrderRequest& req);
-
-  std::optional<ExecutionReport> place_order(const PlaceOrderRequest& req);
+  kj::Maybe<ExecutionReport> place_order(veloz::common::Venue venue, const PlaceOrderRequest& req);
+  kj::Maybe<ExecutionReport> place_order(const PlaceOrderRequest& req);
 
   // Route cancel to specific venue
-  std::optional<ExecutionReport> cancel_order(veloz::common::Venue venue,
-                                              const CancelOrderRequest& req);
+  kj::Maybe<ExecutionReport> cancel_order(veloz::common::Venue venue,
+                                          const CancelOrderRequest& req);
 
-  // Get adapter for venue
-  [[nodiscard]] std::shared_ptr<ExchangeAdapter> get_adapter(veloz::common::Venue venue) const;
+  // Get adapter for venue (returns non-owning pointer, valid only while map exists)
+  [[nodiscard]] ExchangeAdapter* get_adapter(veloz::common::Venue venue) const;
 
   // Get all registered venues
-  [[nodiscard]] std::vector<veloz::common::Venue> get_registered_venues() const;
+  [[nodiscard]] kj::Array<veloz::common::Venue> get_registered_venues() const;
 
   // Set order timeout
   void set_order_timeout(std::chrono::milliseconds timeout);
@@ -59,11 +59,15 @@ public:
   [[nodiscard]] bool is_failover_enabled() const;
 
 private:
-  std::unordered_map<veloz::common::Venue, std::shared_ptr<ExchangeAdapter>> adapters_;
-  std::optional<veloz::common::Venue> default_venue_;
-  std::chrono::milliseconds order_timeout_{std::chrono::seconds(30)};
-  bool failover_enabled_{true};
-  mutable std::mutex mu_;
+  // Internal state structure
+  struct RouterState {
+    std::unordered_map<veloz::common::Venue, kj::Own<ExchangeAdapter>> adapters;
+    kj::Maybe<veloz::common::Venue> default_venue = nullptr;
+    std::chrono::milliseconds order_timeout{std::chrono::seconds(30)};
+    bool failover_enabled{true};
+  };
+
+  kj::MutexGuarded<RouterState> guarded_;
 };
 
 } // namespace veloz::exec

@@ -2,20 +2,20 @@
 
 #include "veloz/exec/order_api.h"
 
-#include <optional>
-#include <string>
+#include <kj/common.h>
+#include <kj/memory.h>
 
 namespace veloz::exec {
 
 class ExchangeAdapter {
 public:
-  virtual ~ExchangeAdapter() = default;
+  virtual ~ExchangeAdapter() noexcept = default;
 
   // Place an order, returns execution report
-  virtual std::optional<ExecutionReport> place_order(const PlaceOrderRequest& req) = 0;
+  virtual kj::Maybe<ExecutionReport> place_order(const PlaceOrderRequest& req) = 0;
 
   // Cancel an order, returns execution report
-  virtual std::optional<ExecutionReport> cancel_order(const CancelOrderRequest& req) = 0;
+  virtual kj::Maybe<ExecutionReport> cancel_order(const CancelOrderRequest& req) = 0;
 
   // Connection management
   virtual bool is_connected() const = 0;
