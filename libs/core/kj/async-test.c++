@@ -21,11 +21,15 @@
 
 #include "async.h"
 #include "debug.h"
-#include <kj/compat/gtest.h>
+#include "kj/array.h"
+#include "kj/test.h"
 #include "mutex.h"
 #include "thread.h"
+#include <kj/compat/gtest.h>
 
-#if !KJ_USE_FIBERS && !_WIN32
+#if !_WIN32
+#include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #endif
 
@@ -130,10 +134,7 @@ TEST(Async, Exception) {
 
   Promise<int> promise = evalLater(
       [&]() -> int { KJ_FAIL_ASSERT("foo") { return 123; } });
-  EXPECT_TRUE(kj::runCatchingExceptions([&]() {
-    // wait() only returns when compiling with -fno-exceptions.
-    EXPECT_EQ(123, promise.wait(waitScope));
-  }) != nullptr);
+  KJ_EXPECT_THROW_MESSAGE("foo", promise.wait(waitScope));
 }
 
 TEST(Async, HandleException) {
@@ -413,7 +414,6 @@ TEST(Async, SeparateFulfillerDiscarded) {
       pair.promise.wait(waitScope));
 }
 
-#if !KJ_NO_EXCEPTIONS
 TEST(Async, SeparateFulfillerDiscardedDuringUnwind) {
   EventLoop loop;
   WaitScope waitScope(loop);
@@ -427,7 +427,6 @@ TEST(Async, SeparateFulfillerDiscardedDuringUnwind) {
   KJ_EXPECT_THROW_RECOVERABLE_MESSAGE(
       "test exception", pair.promise.wait(waitScope));
 }
-#endif
 
 TEST(Async, SeparateFulfillerMemoryLeak) {
   auto paf = kj::newPromiseAndFulfiller<void>();
@@ -608,6 +607,21 @@ TEST(Async, ForkMaybeRef) {
   EXPECT_EQ(789, branch2.wait(waitScope));
 }
 
+KJ_TEST("addBranchForCoAwait") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+
+  Promise<int> promise = evalLater([&]() { return 123; });
+
+  auto coro = [&]() -> kj::Promise<int> {
+    auto fork = promise.fork();
+    // do something with the branch
+    co_await fork.addBranch();
+    co_return co_await fork;
+  };
+
+  KJ_EXPECT(coro().wait(waitScope) == 123);
+}
 
 TEST(Async, Split) {
   EventLoop loop;
@@ -706,6 +720,107 @@ TEST(Async, ArrayJoinVoid) {
     Promise<void> promise = specificJoinPromisesOverload(builder.finish());
 
     promise.wait(waitScope);
+  }
+}
+
+TEST(Async, RaceSuccessful) {
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([&]() { return 123; });
+    auto right = newPromiseAndFulfiller<int>(); // never fulfilled
+
+    EXPECT_EQ(123, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right.promise)))
+                       .wait(waitScope));
+  }
+
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = newPromiseAndFulfiller<int>(); // never fulfilled
+    auto right = evalLater([&]() { return 123; });
+
+    EXPECT_EQ(123, raceSuccessful(kj::arr(kj::mv(left.promise), kj::mv(right))).wait(waitScope));
+  }
+
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([&]() { return 123; });
+    auto right = evalLater([&]() { return 456; });
+
+    EXPECT_EQ(123, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right))).wait(waitScope));
+  }
+
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([&]() { return 123; });
+    auto right = evalLater([&]() { return 456; }).eagerlyEvaluate(nullptr);
+
+    EXPECT_EQ(456, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right))).wait(waitScope));
+  }
+
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([&]() { return 123; });
+    auto right = evalLater([&]() -> Promise<int>{
+      kj::throwFatalException(KJ_EXCEPTION(FAILED, "evaluation failed"));
+    });
+
+    EXPECT_EQ(123, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right))).wait(waitScope));
+  }
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([&]() -> Promise<int>{
+      kj::throwFatalException(KJ_EXCEPTION(FAILED, "evaluation failed"));
+    });
+    auto right = evalLater([&]() { return 123; });
+
+    EXPECT_EQ(123, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right))).wait(waitScope));
+  }
+
+  {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([&]() -> Promise<int>{
+      kj::throwFatalException(KJ_EXCEPTION(FAILED, "evaluation failed"));
+    });
+    auto right = evalLater([&]() -> Promise<int>{
+      kj::throwFatalException(KJ_EXCEPTION(FAILED, "evaluation failed"));
+    });
+
+    KJ_EXPECT_THROW(FAILED, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right))).wait(waitScope));
+  }
+
+  {
+    struct NoCopy {
+      int i;
+
+      NoCopy(int i) : i(i) {}
+      NoCopy(const NoCopy&) = delete;
+
+      NoCopy(NoCopy&&) = default;
+      NoCopy& operator=(NoCopy&&) = default;
+    };
+
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    auto left = evalLater([]() -> kj::Promise<NoCopy> { return NoCopy(123); });
+    kj::PromiseFulfillerPair<NoCopy> right = newPromiseAndFulfiller<NoCopy>(); // never fulfilled
+
+    EXPECT_EQ(123, raceSuccessful(kj::arr(kj::mv(left), kj::mv(right.promise)))
+                       .wait(waitScope).i);
   }
 }
 
@@ -871,48 +986,140 @@ TEST(Async, TaskSet) {
 }
 
 #if KJ_USE_FIBERS || !_WIN32
-// This test requires either fibers or pthreads in order to limit the stack size. Currently we
-// don't have a version that works on Windows without fibers, so skip the test there.
+// These tests require either fibers or pthreads in order to limit the stack size. Currently we
+// don't have a version that works on Windows without fibers, so skip the tests there.
+
+inline size_t getSmallStackSize() {
+#if !_WIN32
+  // pthread_attr_setstacksize() requires a stack size of at least PTHREAD_STACK_MIN, which can
+  // vary by platform.  We'll clamp that to a reasonable range for stack overflow tests, and skip
+  // the pthread-based tests if we can't get it.
+  return kj::max(16 * 1024, kj::min(256 * 1024, PTHREAD_STACK_MIN));
+#else
+  return 16 * 1024;
+#endif
+}
+
+// Runs the given function in a context with a limited stack size.
+template<typename Func>
+void runWithStackLimit(size_t stackSize, Func&& func) {
+  // We have a couple possible ways to test limited stacks.  We exercise all available methods, to
+  // reduce the likelihood of breakage in less frequently tested configurations.
+  //
+  // Prefer testing stack limits with fibers first, because it manifests stack overflow failures
+  // with a segmentation fault and stack, while pthreads just aborts without output.
+
+#if KJ_USE_FIBERS
+  if (!isLibcContextHandlingKnownBroken()) {
+    EventLoop loop;
+    WaitScope waitScope(loop);
+
+    startFiber(stackSize,
+        [&](WaitScope&) mutable {
+      func();
+    }).wait(waitScope);
+  }
+#endif
+
+#if !_WIN32
+  pthread_attr_t attr;
+  KJ_REQUIRE(0 == pthread_attr_init(&attr));
+  KJ_DEFER(KJ_REQUIRE(0 == pthread_attr_destroy(&attr)));
+
+  auto setStackSizeRetval = pthread_attr_setstacksize(&attr, stackSize);
+  if (setStackSizeRetval == EINVAL) {
+    KJ_LOG(WARNING,
+        "This platform's pthread implementation does not support setting a small stack size. "
+        "Skipping pthread-based stack overflow test.", stackSize, PTHREAD_STACK_MIN, setStackSizeRetval);
+  } else {
+    KJ_REQUIRE(0 == setStackSizeRetval);
+    pthread_t thread;
+    auto start = [](void* startArg) -> void* {
+      EventLoop loop;
+      WaitScope waitScope(loop);
+      auto startFunc = reinterpret_cast<decltype(&func)>(startArg);
+      (*startFunc)();
+      return nullptr;
+    };
+    KJ_REQUIRE(0 == pthread_create(&thread, &attr, start, reinterpret_cast<void*>(&func)));
+    KJ_REQUIRE(0 == pthread_join(thread, nullptr));
+  }
+#endif
+}
 
 TEST(Async, LargeTaskSetDestruction) {
-  static constexpr size_t stackSize = 200 * 1024;
+  size_t stackSize = getSmallStackSize();
 
-  static auto testBody = [] {
-
+  runWithStackLimit(stackSize, [stackSize]() {
     ErrorHandlerImpl errorHandler;
     TaskSet tasks(errorHandler);
 
     for (int i = 0; i < stackSize / sizeof(void*); i++) {
       tasks.add(kj::NEVER_DONE);
     }
-  };
+  });
+}
 
-#if KJ_USE_FIBERS
-  if (isLibcContextHandlingKnownBroken()) return;
+TEST(Async, LargeTaskSetDestructionExceptions) {
+  size_t stackSize = getSmallStackSize();
 
-  EventLoop loop;
-  WaitScope waitScope(loop);
+  runWithStackLimit(stackSize, [stackSize]() {
+    class ThrowingDestructor: public UnwindDetector {
+    public:
+      ~ThrowingDestructor() noexcept(false) {
+        catchExceptionsIfUnwinding([]() {
+          KJ_FAIL_ASSERT("ThrowingDestructor_exception");
+        });
+      }
+    };
+    ErrorHandlerImpl errorHandler;
+    Maybe<TaskSet> tasks;
+    TaskSet& tasksRef = tasks.emplace(errorHandler);
 
-  startFiber(stackSize,
-      [](WaitScope&) mutable {
-    testBody();
-  }).wait(waitScope);
+    for (int i = 0; i < stackSize / sizeof(void*); i++) {
+      tasksRef.add(kj::Promise<void>(kj::NEVER_DONE).attach(kj::heap<ThrowingDestructor>()));
+    }
 
-#else
-  pthread_attr_t attr;
-  KJ_REQUIRE(0 == pthread_attr_init(&attr));
-  KJ_DEFER(KJ_REQUIRE(0 == pthread_attr_destroy(&attr)));
+    KJ_EXPECT_THROW_MESSAGE("ThrowingDestructor_exception", { tasks = kj::none; });
+  });
+}
 
-  KJ_REQUIRE(0 == pthread_attr_setstacksize(&attr, stackSize));
-  pthread_t thread;
-  KJ_REQUIRE(0 == pthread_create(&thread, &attr, [](void*) -> void* {
-    EventLoop loop;
-    WaitScope waitScope(loop);
-    testBody();
-    return nullptr;
-  }, nullptr));
-  KJ_REQUIRE(0 == pthread_join(thread, nullptr));
-#endif
+TEST(Async, LargeTaskSetClear) {
+  size_t stackSize = getSmallStackSize();
+
+  runWithStackLimit(stackSize, [stackSize]() {
+    ErrorHandlerImpl errorHandler;
+    TaskSet tasks(errorHandler);
+
+    for (int i = 0; i < stackSize / sizeof(void*); i++) {
+      tasks.add(kj::NEVER_DONE);
+    }
+
+    tasks.clear();
+  });
+}
+
+TEST(Async, LargeTaskSetClearException) {
+  size_t stackSize = getSmallStackSize();
+
+  runWithStackLimit(stackSize, [stackSize]() {
+    class ThrowingDestructor: public UnwindDetector {
+    public:
+      ~ThrowingDestructor() noexcept(false) {
+        catchExceptionsIfUnwinding([]() {
+          KJ_FAIL_ASSERT("ThrowingDestructor_exception");
+        });
+      }
+    };
+    ErrorHandlerImpl errorHandler;
+    TaskSet tasks(errorHandler);
+
+    for (int i = 0; i < stackSize / sizeof(void*); i++) {
+      tasks.add(kj::Promise<void>(kj::NEVER_DONE).attach(kj::heap<ThrowingDestructor>()));
+    }
+
+    KJ_EXPECT_THROW_MESSAGE("ThrowingDestructor_exception", { tasks.clear(); });
+  });
 }
 
 #endif  // KJ_USE_FIBERS || !_WIN32
@@ -957,7 +1164,7 @@ TEST(Async, TaskSetOnEmpty) {
 
   auto paf = newPromiseAndFulfiller<void>();
   tasks.add(kj::mv(paf.promise));
-  tasks.add(evalLater([]() {}));
+  tasks.add(yield());
 
   KJ_EXPECT(!tasks.isEmpty());
 
@@ -1017,6 +1224,43 @@ KJ_TEST("TaskSet::clear()") {
   });
 }
 
+KJ_TEST("TaskSet::trace() on forked promise") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  ErrorHandlerImpl errorHandler;
+  TaskSet tasks(errorHandler);
+
+  int counter = 0;
+
+  auto forked = evalLater([&]() {
+    EXPECT_EQ(0, counter++);
+  }).fork();
+
+  auto branch1 = forked.addBranch().then([&](){
+    EXPECT_EQ(1, counter++);
+  });
+  auto branch2 = forked.addBranch().then([](){
+    KJ_FAIL_ASSERT("this branch shouldn't run");
+  });
+
+  tasks.add(kj::mv(branch1));
+  tasks.add(kj::mv(branch2));
+
+  // Ensure only 1 branch has run
+  loop.run(2);
+
+  EXPECT_EQ(counter, 2);
+
+  // trace() shouldn't throw
+  auto trace = tasks.trace();
+  uint lines = 0;
+  for (char c: trace) {
+    lines += c == '\n';
+  }
+
+  EXPECT_LT(lines, 10);
+}
+
 class DestructorDetector {
 public:
   DestructorDetector(bool& setTrue): setTrue(setTrue) {}
@@ -1056,13 +1300,13 @@ TEST(Async, EagerlyEvaluate) {
   Promise<void> promise = Promise<void>(READY_NOW).then([&]() {
     called = true;
   });
-  evalLater([]() {}).wait(waitScope);
+  yield().wait(waitScope);
 
   EXPECT_FALSE(called);
 
   promise = promise.eagerlyEvaluate(nullptr);
 
-  evalLater([]() {}).wait(waitScope);
+  yield().wait(waitScope);
 
   EXPECT_TRUE(called);
 }
@@ -1086,7 +1330,7 @@ TEST(Async, Detach) {
   EXPECT_FALSE(ran2);
   EXPECT_FALSE(ran3);
 
-  evalLater([]() {}).wait(waitScope);
+  yield().wait(waitScope);
 
   EXPECT_FALSE(ran1);
   EXPECT_TRUE(ran2);
@@ -1115,7 +1359,7 @@ TEST(Async, SetRunnable) {
   EXPECT_EQ(0, port.callCount);
 
   {
-    auto promise = evalLater([]() {}).eagerlyEvaluate(nullptr);
+    auto promise = yield().eagerlyEvaluate(nullptr);
 
     EXPECT_TRUE(port.runnable);
     loop.run(1);
@@ -1132,7 +1376,7 @@ TEST(Async, SetRunnable) {
     auto promise = paf.promise.then([]() {}).eagerlyEvaluate(nullptr);
     EXPECT_FALSE(port.runnable);
 
-    auto promise2 = evalLater([]() {}).eagerlyEvaluate(nullptr);
+    auto promise2 = yield().eagerlyEvaluate(nullptr);
     paf.fulfiller->fulfill();
 
     EXPECT_TRUE(port.runnable);
@@ -1519,6 +1763,18 @@ KJ_TEST("fiber pool limit") {
   // likelihood that the new stack would be allocated in the same location.
 }
 
+struct DebugObserver: public kj::EventLoopObserver {
+  void onWaitStart() override {
+    events.add(kj::str("waitStart"));
+  }
+
+  void onWaitEnd() override {
+    events.add(kj::str("waitEnd"));
+  }
+
+  Vector<String> events;
+};
+
 #if __GNUC__ >= 12 && !__clang__
 // The test below intentionally takes a pointer to a stack variable and stores it past the end
 // of the function. This seems to trigger a warning in newer GCCs.
@@ -1535,18 +1791,18 @@ KJ_TEST("run event loop on freelisted stacks") {
     bool wait() override {
       char c;
       waitStack = &c;
-      KJ_IF_MAYBE(f, fulfiller) {
-        f->get()->fulfill();
-        fulfiller = nullptr;
+      KJ_IF_SOME(f, fulfiller) {
+        f->fulfill();
+        fulfiller = kj::none;
       }
       return false;
     }
     bool poll() override {
       char c;
       pollStack = &c;
-      KJ_IF_MAYBE(f, fulfiller) {
-        f->get()->fulfill();
-        fulfiller = nullptr;
+      KJ_IF_SOME(f, fulfiller) {
+        f->fulfill();
+        fulfiller = kj::none;
       }
       return false;
     }
@@ -1558,7 +1814,8 @@ KJ_TEST("run event loop on freelisted stacks") {
   };
 
   MockEventPort port;
-  EventLoop loop(port);
+  DebugObserver observer;
+  EventLoop loop(port, observer);
   WaitScope waitScope(loop);
   waitScope.runEventCallbacksOnStackPool(pool);
 
@@ -1595,6 +1852,11 @@ KJ_TEST("run event loop on freelisted stacks") {
       KJ_EXPECT(notOnOurStack(port.waitStack));
     });
   }
+
+  KJ_EXPECT(2 == observer.events.size());
+  KJ_EXPECT("waitStart"_kj == observer.events[0]);
+  KJ_EXPECT("waitEnd"_kj == observer.events[1]);
+  observer.events.clear();
 
   port.waitStack = nullptr;
   port.pollStack = nullptr;
@@ -1634,8 +1896,10 @@ KJ_TEST("run event loop on freelisted stacks") {
       KJ_EXPECT(onOurStack(port.pollStack));
     });
   }
+
+  KJ_EXPECT(0 == observer.events.size());
 }
-#endif
+#endif // KJ_USE_FIBERS
 
 KJ_TEST("retryOnDisconnect") {
   EventLoop loop;
@@ -1741,6 +2005,726 @@ KJ_TEST("constPromise") {
   Promise<int> p = constPromise<int, 123>();
   int i = p.wait(waitScope);
   KJ_EXPECT(i == 123);
+}
+
+KJ_TEST("EventLoopLocal") {
+  static const EventLoopLocal<int> evLocalInt;
+  static const EventLoopLocal<Own<Refcounted>> evLocalOwn;
+
+  auto rc1 = kj::refcounted<Refcounted>();
+  auto rc2 = kj::refcounted<Refcounted>();;
+
+  {
+    EventLoop loop1, loop2;
+
+    {
+      WaitScope waitScope(loop1);
+      *evLocalInt = 123;
+      *evLocalOwn = kj::addRef(*rc1);
+    }
+
+    {
+      WaitScope waitScope(loop2);
+      *evLocalInt = 456;
+      *evLocalOwn = kj::addRef(*rc2);
+    }
+
+    {
+      WaitScope waitScope(loop1);
+      KJ_EXPECT(*evLocalInt == 123);
+      KJ_EXPECT(evLocalOwn->get() == rc1.get());
+    }
+
+    {
+      WaitScope waitScope(loop2);
+      KJ_EXPECT(*evLocalInt == 456);
+      KJ_EXPECT(evLocalOwn->get() == rc2.get());
+    }
+
+    KJ_EXPECT(rc1->isShared());
+    KJ_EXPECT(rc2->isShared());
+  }
+
+  // Destroying the event loop destoys all locals, so these are no longer shared.
+  KJ_EXPECT(!rc1->isShared());
+  KJ_EXPECT(!rc2->isShared());
+}
+
+KJ_TEST("EventLoopObserver") {
+  DebugObserver observer;
+  EventLoop loop(observer);
+  WaitScope waitScope(loop);
+
+  auto paf = newPromiseAndFulfiller<void>();
+  KJ_ASSERT(!paf.promise.poll(waitScope));
+  paf.fulfiller->fulfill();
+  KJ_ASSERT(paf.promise.poll(waitScope));
+  paf.promise.wait(waitScope);
+
+  // no actual call to wait() will happen
+  KJ_EXPECT(0 == observer.events.size());
+}
+
+class RecordingEvent: public _::Event {
+  // Record event name in shared log on fire()
+
+public:
+  RecordingEvent(Vector<StringPtr>& log, StringPtr name)
+      : Event({}), log(log), name(name) {}
+
+protected:
+  Maybe<Own<Event>> fire() override {
+    log.add(name);
+    return kj::none;
+  }
+
+  void traceEvent(_::TraceBuilder& builder) override {}
+
+private:
+  Vector<StringPtr>& log;
+  StringPtr name;
+};
+
+KJ_TEST("Event arm methods - single event each type") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  {
+    RecordingEvent e(log, "depth");
+    e.armDepthFirst();
+    waitScope.poll();
+    KJ_EXPECT(log.size() == 1);
+    KJ_EXPECT(log[0] == "depth");
+  }
+
+  log.clear();
+  {
+    RecordingEvent e(log, "breadth");
+    e.armBreadthFirst();
+    waitScope.poll();
+    KJ_EXPECT(log.size() == 1);
+    KJ_EXPECT(log[0] == "breadth");
+  }
+
+  log.clear();
+  {
+    RecordingEvent e(log, "last");
+    e.armLast();
+    waitScope.poll();
+    KJ_EXPECT(log.size() == 1);
+    KJ_EXPECT(log[0] == "last");
+  }
+}
+
+KJ_TEST("Event arm methods - depth-first ordering") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  c.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
+}
+
+KJ_TEST("Event arm methods - breadth-first ordering") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armBreadthFirst();
+  b.armBreadthFirst();
+  c.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
+}
+
+KJ_TEST("Event arm methods - armLast ordering") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armLast();
+  b.armLast();
+  c.armLast();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "C");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "A");
+}
+
+KJ_TEST("Event arm methods - depth before breadth") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A-breadth");
+  RecordingEvent b(log, "B-depth");
+  RecordingEvent c(log, "C-breadth");
+  RecordingEvent d(log, "D-depth");
+
+  a.armBreadthFirst();
+  b.armDepthFirst();
+  c.armBreadthFirst();
+  d.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[0] == "B-depth");
+  KJ_EXPECT(log[1] == "D-depth");
+  KJ_EXPECT(log[2] == "A-breadth");
+  KJ_EXPECT(log[3] == "C-breadth");
+}
+
+KJ_TEST("Event arm methods - armLast goes after breadth") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A-breadth");
+  RecordingEvent b(log, "B-last");
+  RecordingEvent c(log, "C-breadth");
+
+  a.armBreadthFirst();
+  b.armLast();
+  c.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A-breadth");
+  KJ_EXPECT(log[1] == "C-breadth");
+  KJ_EXPECT(log[2] == "B-last");
+}
+
+KJ_TEST("Event arm methods - multiple armLast preserve order relative to each other") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A-breadth");
+  RecordingEvent b(log, "B-last");
+  RecordingEvent c(log, "C-last");
+  RecordingEvent d(log, "D-breadth");
+
+  a.armBreadthFirst();
+  b.armLast();
+  c.armLast();
+  d.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[0] == "A-breadth");
+  KJ_EXPECT(log[1] == "D-breadth");
+  KJ_EXPECT(log[2] == "C-last");
+  KJ_EXPECT(log[3] == "B-last");
+}
+
+KJ_TEST("Event arm methods - depth, breadth, and last mixed") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A-breadth");
+  RecordingEvent b(log, "B-depth");
+  RecordingEvent c(log, "C-last");
+  RecordingEvent d(log, "D-depth");
+  RecordingEvent e(log, "E-breadth");
+  RecordingEvent f(log, "F-last");
+
+  a.armBreadthFirst();
+  b.armDepthFirst();
+  c.armLast();
+  d.armDepthFirst();
+  e.armBreadthFirst();
+  f.armLast();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 6);
+  KJ_EXPECT(log[0] == "B-depth");
+  KJ_EXPECT(log[1] == "D-depth");
+  KJ_EXPECT(log[2] == "A-breadth");
+  KJ_EXPECT(log[3] == "E-breadth");
+  KJ_EXPECT(log[4] == "F-last");
+  KJ_EXPECT(log[5] == "C-last");
+}
+
+class ChainEvent: public _::Event {
+public:
+  enum class ArmMethod { DEPTH, BREADTH, LAST };
+
+  ChainEvent(Vector<StringPtr>& log, StringPtr name,
+             std::initializer_list<ChainEvent*> toArm = {},
+             ArmMethod armMethod = ArmMethod::DEPTH)
+      : Event({}), log(log), name(name),
+        toArm(kj::heapArray<ChainEvent*>(toArm.begin(), toArm.size())),
+        armMethod(armMethod) {}
+
+protected:
+  Maybe<Own<Event>> fire() override {
+    log.add(name);
+    for (auto* e : toArm) {
+      switch (armMethod) {
+        case ArmMethod::DEPTH: e->armDepthFirst(); break;
+        case ArmMethod::BREADTH: e->armBreadthFirst(); break;
+        case ArmMethod::LAST: e->armLast(); break;
+      }
+    }
+    return kj::none;
+  }
+
+  void traceEvent(_::TraceBuilder& builder) override {}
+
+private:
+  Vector<StringPtr>& log;
+  StringPtr name;
+  kj::Array<ChainEvent*> toArm;
+  ArmMethod armMethod;
+};
+
+KJ_TEST("Event arm methods - depth-first chaining arms at front") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent c(log, "C");
+  ChainEvent a(log, "A", {&c}, ChainEvent::ArmMethod::DEPTH);
+  ChainEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "C");
+  KJ_EXPECT(log[2] == "B");
+}
+
+KJ_TEST("Event arm methods - breadth-first chaining arms at back") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent c(log, "C");
+  ChainEvent a(log, "A", {&c}, ChainEvent::ArmMethod::BREADTH);
+  ChainEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
+}
+
+KJ_TEST("Event arm methods - depthFirstInsertPoint resets after turn") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent d(log, "D");
+  ChainEvent c(log, "C", {&d}, ChainEvent::ArmMethod::DEPTH);
+  ChainEvent b(log, "B", {&c}, ChainEvent::ArmMethod::DEPTH);
+  ChainEvent a(log, "A", {&b}, ChainEvent::ArmMethod::DEPTH);
+
+  a.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
+  KJ_EXPECT(log[3] == "D");
+}
+
+KJ_TEST("Event arm methods - chaining multiple events depth-first") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent c(log, "C");
+  ChainEvent d(log, "D");
+  ChainEvent a(log, "A", {&c, &d}, ChainEvent::ArmMethod::DEPTH);
+  ChainEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "C");
+  KJ_EXPECT(log[2] == "D");
+  KJ_EXPECT(log[3] == "B");
+}
+
+KJ_TEST("Event arm methods - chaining multiple events breadth-first") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent c(log, "C");
+  ChainEvent d(log, "D");
+  ChainEvent a(log, "A", {&c, &d}, ChainEvent::ArmMethod::BREADTH);
+  ChainEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
+  KJ_EXPECT(log[3] == "D");
+}
+
+KJ_TEST("Event arm methods - armLast chaining preserves last position") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent c(log, "C");
+  ChainEvent a(log, "A", {&c}, ChainEvent::ArmMethod::LAST);
+  ChainEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
+}
+
+KJ_TEST("Event arm methods - disarm removes event from queue") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  c.armDepthFirst();
+
+  b.disarm();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 2);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "C");
+}
+
+KJ_TEST("Event arm methods - disarm first event") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  c.armDepthFirst();
+
+  a.disarm();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 2);
+  KJ_EXPECT(log[0] == "B");
+  KJ_EXPECT(log[1] == "C");
+}
+
+KJ_TEST("Event arm methods - disarm last event") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  c.armDepthFirst();
+
+  c.disarm();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 2);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+}
+
+KJ_TEST("Event arm methods - disarm and rearm") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+
+  a.disarm();
+  a.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 2);
+  KJ_EXPECT(log[0] == "B");
+  KJ_EXPECT(log[1] == "A");
+}
+
+KJ_TEST("Event arm methods - arming already armed event is no-op") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  a.armBreadthFirst();
+  a.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 2);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "B");
+}
+
+KJ_TEST("Event arm methods - complex interleaving") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+  RecordingEvent d(log, "D");
+  RecordingEvent e(log, "E");
+  RecordingEvent f(log, "F");
+
+  a.armBreadthFirst();
+  b.armDepthFirst();
+  c.armLast();
+  d.armBreadthFirst();
+  e.armDepthFirst();
+  f.armLast();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 6);
+  KJ_EXPECT(log[0] == "B");
+  KJ_EXPECT(log[1] == "E");
+  KJ_EXPECT(log[2] == "A");
+  KJ_EXPECT(log[3] == "D");
+  KJ_EXPECT(log[4] == "F");
+  KJ_EXPECT(log[5] == "C");
+}
+
+KJ_TEST("Event arm methods - nested depth-first from breadth-first") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  ChainEvent c(log, "C");
+  ChainEvent a(log, "A", {&c}, ChainEvent::ArmMethod::DEPTH);
+  ChainEvent b(log, "B");
+  ChainEvent d(log, "D");
+
+  a.armBreadthFirst();
+  b.armBreadthFirst();
+  d.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "C");
+  KJ_EXPECT(log[2] == "B");
+  KJ_EXPECT(log[3] == "D");
+}
+
+KJ_TEST("Event arm methods - insertion point updates with disarm at depthFirstInsertPoint") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  c.armBreadthFirst();
+
+  b.disarm();
+
+  RecordingEvent d(log, "D");
+  d.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "D");
+  KJ_EXPECT(log[2] == "C");
+}
+
+KJ_TEST("Event arm methods - insertion point updates with disarm at breadthFirstInsertPoint") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armBreadthFirst();
+  b.armBreadthFirst();
+  c.armLast();
+
+  b.disarm();
+
+  RecordingEvent d(log, "D");
+  d.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "D");
+  KJ_EXPECT(log[2] == "C");
+}
+
+KJ_TEST("Event arm methods - insertion point updates with disarm at tail") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+
+  a.armBreadthFirst();
+  b.armBreadthFirst();
+
+  b.disarm();
+
+  RecordingEvent c(log, "C");
+  c.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 2);
+  KJ_EXPECT(log[0] == "A");
+  KJ_EXPECT(log[1] == "C");
+}
+
+KJ_TEST("Event arm methods - turn resets depthFirstInsertPoint") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+  RecordingEvent c(log, "C");
+
+  a.armDepthFirst();
+  b.armDepthFirst();
+  c.armBreadthFirst();
+
+  waitScope.poll(1);
+
+  KJ_ASSERT(log.size() == 1);
+  KJ_EXPECT(log[0] == "A");
+
+  RecordingEvent d(log, "D");
+  d.armDepthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 4);
+  KJ_EXPECT(log[1] == "D");
+  KJ_EXPECT(log[2] == "B");
+  KJ_EXPECT(log[3] == "C");
+}
+
+KJ_TEST("Event arm methods - breadthFirstInsertPoint tracks correctly when head removed") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+  Vector<StringPtr> log;
+
+  RecordingEvent a(log, "A");
+  RecordingEvent b(log, "B");
+
+  a.armBreadthFirst();
+  b.armBreadthFirst();
+
+  waitScope.poll(1);
+
+  KJ_ASSERT(log.size() == 1);
+  KJ_EXPECT(log[0] == "A");
+
+  RecordingEvent c(log, "C");
+  c.armBreadthFirst();
+
+  waitScope.poll();
+
+  KJ_ASSERT(log.size() == 3);
+  KJ_EXPECT(log[1] == "B");
+  KJ_EXPECT(log[2] == "C");
 }
 
 }  // namespace

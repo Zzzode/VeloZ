@@ -29,15 +29,11 @@
 KJ_BEGIN_HEADER
 
 #ifndef KJ_USE_FIBERS
-#if __BIONIC__ || __FreeBSD__ || __OpenBSD__ || KJ_NO_EXCEPTIONS
+#if __BIONIC__ || __FreeBSD__ || __OpenBSD__
 // These platforms don't support fibers.
 #define KJ_USE_FIBERS 0
 #else
 #define KJ_USE_FIBERS 1
-#endif
-#else
-#if KJ_NO_EXCEPTIONS && KJ_USE_FIBERS
-#error "Fibers cannot be enabled when exceptions are disabled."
 #endif
 #endif
 
@@ -52,6 +48,8 @@ template <typename T> class PromiseFulfiller;
 template <typename T> struct PromiseFulfillerPair;
 
 template <typename Func> class FunctionParam;
+
+template <typename T> class EventLoopLocal;
 
 template <typename Func, typename T>
 using PromiseForResult = _::ReducePromises<_::ReturnType<Func, T>>;
@@ -113,7 +111,7 @@ private:
 // =======================================================================================
 // Promises
 
-template <typename T> class Promise : protected _::PromiseBase {
+template <typename T> class [[nodiscard]] Promise : protected _::PromiseBase {
   // The basic primitive of asynchronous computation in KJ.  Similar to "futures", but designed
   // specifically for event loop concurrency.  Similar to E promises and JavaScript Promises/A.
   //
@@ -124,7 +122,7 @@ template <typename T> class Promise : protected _::PromiseBase {
   // `kj::READY_NOW` to an already-fulfilled Promise<void>.  You may also implicitly convert a
   // `kj::Exception` to an already-broken promise of any type.
   //
-  // Promises are linear types -- they are moveable but not copyable.  If a Promise is destroyed
+  // Promises are linear types -- they are movable but not copyable.  If a Promise is destroyed
   // or goes out of scope (without being moved elsewhere), any ongoing asynchronous operations
   // meant to fulfill the promise will be canceled if possible.  All methods of `Promise` (unless
   // otherwise noted) actually consume the promise in the sense of move semantics.  (Arguably they
@@ -195,8 +193,10 @@ public:
 
   inline Promise(decltype(nullptr)) {}
 
-  template <typename Func, typename ErrorFunc = _::PropagateException>
-  PromiseForResult<Func, T> then(Func&& func, ErrorFunc&& errorHandler = _::PropagateException(),
+  template <typename Func> PromiseForResult<Func, T> then(Func&& func) KJ_WARN_UNUSED_RESULT;
+
+  template <typename Func, typename ErrorFunc>
+  PromiseForResult<Func, T> then(Func&& func, ErrorFunc&& errorHandler,
                                  SourceLocation location = {}) KJ_WARN_UNUSED_RESULT;
   // Register a continuation function to be executed when the promise completes.  The continuation
   // (`func`) takes the promised value (an rvalue of type `T`) as its parameter.  The continuation
@@ -218,9 +218,7 @@ public:
   // exception to the returned promise.
   //
   // Either `func` or `errorHandler` may, of course, throw an exception, in which case the promise
-  // is broken.  When compiled with -fno-exceptions, the framework will still detect when a
-  // recoverable exception was thrown inside of a continuation and will consider the promise
-  // broken even though a (presumably garbage) result was returned.
+  // is broken.
   //
   // If the returned promise is destroyed before the callback runs, the callback will be canceled
   // (it will never run).
@@ -274,10 +272,7 @@ public:
   // server-side code generally cannot use wait(), because it has to be able to accept multiple
   // requests at once.
   //
-  // If the promise is rejected, `wait()` throws an exception.  If the program was compiled without
-  // exceptions (-fno-exceptions), this will usually abort.  In this case you really should first
-  // use `then()` to set an appropriate handler for the exception case, so that the promise you
-  // actually wait on never throws.
+  // If the promise is rejected, `wait()` throws an exception.
   //
   // `waitScope` is an object proving that the caller is in a scope where wait() is allowed.  By
   // convention, any function which might call wait(), or which might call another function which
@@ -385,6 +380,7 @@ private:
 template <typename T> class ForkedPromise {
   // The result of `Promise::fork()` and `EventLoop::fork()`.  Allows branches to be created.
   // Like `Promise<T>`, this is a pass-by-move type.
+  // Rather than adding branches ForkedPromise can be co_await'ed directly to save on allocations.
 
 public:
   inline ForkedPromise(decltype(nullptr)) {}
@@ -402,6 +398,7 @@ private:
 
   friend class Promise<T>;
   friend class EventLoop;
+  template <typename, bool> friend class _::ForkBranch;
 };
 
 constexpr _::ReadyNow READY_NOW = _::ReadyNow();
@@ -457,6 +454,20 @@ template <typename Func> PromiseForResult<Func, void> evalLast(Func&& func) KJ_W
 // callback enqueues new events, then latter callbacks will not execute until those events are
 // drained.
 
+Promise<void> yield();
+// Like `evalLater()`, but without a function to be evaluated. Useful for yielding control
+// temporarily to serialize actions or schedule other actions for a later time using promise
+// continuations.
+
+Promise<void> yieldUntilQueueEmpty();
+// Like `evalLast()`, but without a function to be evaluated. Useful for yielding control until the
+// event queue is otherwise completely empty and the thread is about to check for new I/O events
+// from the OS.
+
+Promise<void> yieldUntilWouldSleep();
+// Like `yieldUntilQueueEmpty()`, but also waits until the I/O event queue from the OS is also
+// empty, such that the event loop has nothing left to do except to go to sleep.
+
 ArrayPtr<void* const> getAsyncTrace(ArrayPtr<void*> space);
 kj::String getAsyncTrace();
 // If the event loop is currently running in this thread, get a trace back through the promise
@@ -474,7 +485,7 @@ PromiseForResult<Func, void> retryOnDisconnect(Func&& func) KJ_WARN_UNUSED_RESUL
 template <typename Func>
 PromiseForResult<Func, WaitScope&> startFiber(size_t stackSize, Func&& func,
                                               SourceLocation location = {}) KJ_WARN_UNUSED_RESULT;
-// Executes `func()` in a fiber, returning a promise for the eventual reseult. `func()` will be
+// Executes `func()` in a fiber, returning a promise for the eventual result. `func()` will be
 // passed a `WaitScope&` as its parameter, allowing it to call `.wait()` on promises. Thus, `func()`
 // can be written in a synchronous, blocking style, instead of using `.then()`. This is often much
 // easier to write and read, and may even be significantly faster if it allows the use of stack
@@ -560,52 +571,18 @@ Promise<Array<T>> joinPromisesFailFast(Array<Promise<T>>&& promises, SourceLocat
 // evaluated eagerly. If any promise results in an exception, the exception is immediately
 // propagated to the returned join promise.
 
-// =======================================================================================
-// Hack for creating a lambda that holds an owned pointer.
-
-template <typename Func, typename MovedParam> class CaptureByMove {
-public:
-  inline CaptureByMove(Func&& func, MovedParam&& param)
-      : func(kj::mv(func)), param(kj::mv(param)) {}
-
-  template <typename... Params>
-  inline auto operator()(Params&&... params)
-      -> decltype(kj::instance<Func>()(kj::instance<MovedParam&&>(), kj::fwd<Params>(params)...)) {
-    return func(kj::mv(param), kj::fwd<Params>(params)...);
-  }
-
-private:
-  Func func;
-  MovedParam param;
-};
-
-template <typename Func, typename MovedParam>
-inline CaptureByMove<Func, Decay<MovedParam>> mvCapture(MovedParam&& param, Func&& func)
-    KJ_DEPRECATED("Use C++14 generalized captures instead.");
-
-template <typename Func, typename MovedParam>
-inline CaptureByMove<Func, Decay<MovedParam>> mvCapture(MovedParam&& param, Func&& func) {
-  // Hack to create a "lambda" which captures a variable by moving it rather than copying or
-  // referencing.  C++14 generalized captures should make this obsolete, but for now in C++11 this
-  // is commonly needed for Promise continuations that own their state.  Example usage:
-  //
-  //    Own<Foo> ptr = makeFoo();
-  //    Promise<int> promise = callRpc();
-  //    promise.then(mvCapture(ptr, [](Own<Foo>&& ptr, int result) {
-  //      return ptr->finish(result);
-  //    }));
-
-  return CaptureByMove<Func, Decay<MovedParam>>(kj::fwd<Func>(func), kj::mv(param));
-}
+template <typename T>
+Promise<T> raceSuccessful(Array<Promise<T>>&& promises, SourceLocation location = {});
+// Races multiple promises to completion.
+// Returns the first successful promise result (and cancels the rest).
+// In case of every promise failing the result fails with the last error.
 
 // =======================================================================================
 // Hack for safely using a lambda as a coroutine.
 
-#if KJ_HAS_COROUTINE
-
 namespace _ {
 
-void throwMultipleCoCaptureInvocations();
+KJ_NORETURN(void throwMultipleCoCaptureInvocations());
 
 template <typename Functor> struct CaptureForCoroutine {
   kj::Maybe<Functor> maybeFunctor;
@@ -624,11 +601,11 @@ template <typename Functor> struct CaptureForCoroutine {
   }
 
   template <typename... Args> auto operator()(Args&&... args) {
-    if (maybeFunctor == nullptr) {
+    if (maybeFunctor == kj::none) {
       throwMultipleCoCaptureInvocations();
     }
     auto localFunctor = kj::mv(*kj::_::readMaybe(maybeFunctor));
-    maybeFunctor = nullptr;
+    maybeFunctor = kj::none;
     return coInvoke(kj::mv(localFunctor), kj::fwd<Args>(args)...);
   }
 };
@@ -704,8 +681,6 @@ template <typename Functor> auto coCapture(Functor&& f) {
   return _::CaptureForCoroutine(kj::mv(f));
 }
 
-#endif // KJ_HAS_COROUTINE
-
 // =======================================================================================
 // Advanced promise construction
 
@@ -725,10 +700,10 @@ public:
   virtual void fulfill(T&& value) = 0;
   // Fulfill the promise with the given value.
 
-  virtual void reject(Exception&& exception) = 0;
+  virtual void reject(Exception&& exception) override = 0;
   // Reject the promise with an error.
 
-  virtual bool isWaiting() = 0;
+  virtual bool isWaiting() override = 0;
   // Returns true if the promise is still unfulfilled and someone is potentially waiting for it.
   // Returns false if fulfill()/reject() has already been called *or* if the promise to be
   // fulfilled has been discarded and therefore the result will never be used anyway.
@@ -747,8 +722,8 @@ public:
   // Call with zero parameters.  The parameter is a dummy that only exists so that subclasses don't
   // have to specialize for <void>.
 
-  virtual void reject(Exception&& exception) = 0;
-  virtual bool isWaiting() = 0;
+  void reject(Exception&& exception) override = 0;
+  bool isWaiting() override = 0;
 
   template <typename Func> bool rejectIfThrows(Func&& func);
 };
@@ -852,6 +827,9 @@ template <typename T> PromiseCrossThreadFulfillerPair<T> newPromiseAndCrossThrea
 // not just the one that called this method. Note that the Promise is still tied to the calling
 // thread's event loop and *cannot* be used from another thread -- only the PromiseFulfiller is
 // cross-thread.
+//
+// There is also a member function of the same name on the Executor class. This function here is
+// equivalent to writing: `getCurrentThreadExecutor().newPromiseAndCrossThreadfulfiller()`.
 
 // =======================================================================================
 // Canceler
@@ -899,7 +877,7 @@ public:
   // happens to this Canceler.
 
   bool isEmpty() const {
-    return list == nullptr;
+    return list == kj::none;
   }
   // Indicates if any previously-wrapped promises are still executing. (If this returns true, then
   // cancel() would be a no-op.)
@@ -986,7 +964,7 @@ public:
   // Return debug info about all promises currently in the TaskSet.
 
   bool isEmpty() {
-    return tasks == nullptr;
+    return tasks == kj::none;
   }
   // Check if any tasks are running.
 
@@ -1011,6 +989,8 @@ private:
   Maybe<OwnTask> tasks;
   Maybe<Own<PromiseFulfiller<void>>> emptyFulfiller;
   SourceLocation location;
+
+  void destroyTasks();
 };
 
 // =======================================================================================
@@ -1107,6 +1087,17 @@ public:
   // As with `executeAsync()`, `func` is always destroyed on the requesting thread, after the
   // executor thread has signaled completion. The return value is transferred between threads.
 
+  template <typename T>
+  PromiseCrossThreadFulfillerPair<T> newPromiseAndCrossThreadFulfiller() const;
+  // Like `newPromiseAndCrossThreadFulfiller()`, but the Promise is tied to the event loop
+  // associated with this Executor. This allows the caller to construct Promises associated with
+  // other threads. The caller will have to arrange to move the constructed Promise to its home
+  // thread somehow in order to await or cancel (destroy) it.
+  //
+  // It is not an error to create a promise and cross-thread-fulfiller pair on an Executor whose
+  // event loop has already exited. However, the only thing you can do with the promise is destroy
+  // it. Fulfilling or rejecting it via the fulfiller is a no-op.
+
 private:
   struct Impl;
   Own<Impl> impl;
@@ -1182,6 +1173,20 @@ public:
   // The default implementation throws an UNIMPLEMENTED exception.
 };
 
+class EventLoopObserver {
+public:
+  // Observer interface to receive callbacks on EventLoop operations.
+  EventLoopObserver() = default;
+
+  virtual void onWaitStart() {}
+  // EventPort's `wait()` method was called.
+
+  virtual void onWaitEnd() {}
+  // EventPort's `wait()` method has finished.
+
+  KJ_DISALLOW_COPY(EventLoopObserver);
+};
+
 class EventLoop {
   // Represents a queue of events being executed in a loop.  Most code won't interact with
   // EventLoop directly, but instead use `Promise`s to interact with it indirectly.  See the
@@ -1215,10 +1220,10 @@ class EventLoop {
   // than allocate an `EventLoop` directly.
 
 public:
-  EventLoop();
+  EventLoop(kj::Maybe<EventLoopObserver&> observer = kj::none);
   // Construct an `EventLoop` which does not receive external events at all.
 
-  explicit EventLoop(EventPort& port);
+  explicit EventLoop(EventPort& port, kj::Maybe<EventLoopObserver&> observer = kj::none);
   // Construct an `EventLoop` which receives external events through the given `EventPort`.
 
   ~EventLoop() noexcept(false);
@@ -1240,10 +1245,16 @@ public:
   // Note that this is only needed for cross-thread scheduling. To schedule code to run later in
   // the current thread, use `kj::evalLater()`, which will be more efficient.
 
+  void cancelAllDetached();
+  // Same as WaitScope::cancelAllDetached(). Sometimes it's easier to call on the EventLoop. (A
+  // WaitScope still must exist, i.e., this EventLoop must be current.)
+
 private:
   kj::Maybe<EventPort&> port;
   // If null, this thread doesn't receive I/O events from the OS. It can potentially receive
   // events from other threads via the Executor.
+
+  kj::Maybe<EventLoopObserver&> observer;
 
   bool running = false;
   // True while looping -- wait() is then not allowed.
@@ -1255,9 +1266,19 @@ private:
   _::Event** tail = &head;
   _::Event** depthFirstInsertPoint = &head;
   _::Event** breadthFirstInsertPoint = &head;
+  // Main event queue.
+
+  _::Event* wouldSleepHead = nullptr;
+  _::Event** wouldSleepTail = &wouldSleepHead;
+  // A totally separate list of events to run if we get to the point where we otherwise would
+  // sleep. (See yieldUntilWouldSleep().)
 
   kj::Maybe<Own<Executor>> executor;
   // Allocated the first time getExecutor() is requested, making cross-thread request possible.
+
+  struct LocalMap;
+  kj::Maybe<Own<LocalMap>> localMap;
+  // For EventLoopLocal. Allocated separately to avoid including HashMap here.
 
   Own<TaskSet> daemons;
 
@@ -1270,6 +1291,9 @@ private:
 
   void wait();
   void poll();
+  void wake() const;
+
+  static void* getLocal(const void* key, kj::Own<void> (*allocate)());
 
   friend void _::detach(kj::Promise<void>&& promise);
   friend void _::waitImpl(_::OwnPromiseNode&& node, _::ExceptionOrValue& result,
@@ -1283,6 +1307,7 @@ private:
   friend class _::FiberBase;
   friend class _::FiberStack;
   friend ArrayPtr<void* const> getAsyncTrace(ArrayPtr<void*> space);
+  template <typename T> friend class EventLoopLocal;
 };
 
 class WaitScope {
@@ -1299,7 +1324,7 @@ public:
     loop.enterScope();
   }
   inline ~WaitScope() {
-    if (fiber == nullptr)
+    if (fiber == kj::none)
       loop.leaveScope();
   }
   KJ_DISALLOW_COPY_AND_MOVE(WaitScope);
@@ -1338,7 +1363,7 @@ public:
   //
   // This has no effect if this WaitScope itself is for a fiber.
   //
-  // Pass `nullptr` as the parameter to go back to running events on the main stack.
+  // Pass `kj::none` as the parameter to go back to running events on the main stack.
 
   void cancelAllDetached();
   // HACK: Immediately cancel all detached promises.
@@ -1360,9 +1385,10 @@ private:
   explicit WaitScope(EventLoop& loop, _::FiberBase& fiber) : loop(loop), fiber(fiber) {}
 
   template <typename Func> inline void runOnStackPool(Func&& func) {
-    KJ_IF_MAYBE (pool, runningStacksPool) {
-      pool->runSynchronously(kj::fwd<Func>(func));
-    } else {
+    KJ_IF_SOME(pool, runningStacksPool) {
+      pool.runSynchronously(kj::fwd<Func>(func));
+    }
+    else {
       func();
     }
   }
@@ -1372,6 +1398,26 @@ private:
   friend void _::waitImpl(_::OwnPromiseNode&& node, _::ExceptionOrValue& result,
                           WaitScope& waitScope, SourceLocation location);
   friend bool _::pollImpl(_::PromiseNode& node, WaitScope& waitScope, SourceLocation location);
+};
+
+template <typename T> class EventLoopLocal {
+  // Like thread-local storage, but attached to the current EventLoop instead. Value is
+  // default-initialized on first access and then destroyed when the EventLoop is destroyed.
+  //
+  // EventLoopLocal MUST be declared as a global or static variable. It cannot be allocated
+  // dynamically at runtime.
+public:
+  T* get() const {
+    return static_cast<T*>(
+        EventLoop::getLocal(this, []() -> kj::Own<void> { return kj::heap<T>(); }));
+  }
+
+  T& operator*() const {
+    return *get();
+  }
+  T* operator->() const {
+    return get();
+  }
 };
 
 } // namespace kj

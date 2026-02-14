@@ -260,8 +260,8 @@ template <typename To, typename From>
 Array<To> coerceTo(Array<From>&& array) {
   static_assert(sizeof(To) == sizeof(From), "incompatible coercion");
   Array<wchar_t> result;
-  memcpy(&result, &array, sizeof(array));
-  memset(&array, 0, sizeof(array));
+  memcpy((void*)&result, &array, sizeof(array));
+  memset((void*)&array, 0, sizeof(array));
   return result;
 }
 
@@ -356,7 +356,7 @@ static Maybe<uint> tryFromHexDigit(char c) {
   } else if ('A' <= c && c <= 'F') {
     return c - ('A' - 10);
   } else {
-    return nullptr;
+    return kj::none;
   }
 }
 
@@ -364,16 +364,19 @@ static Maybe<uint> tryFromOctDigit(char c) {
   if ('0' <= c && c <= '7') {
     return c - '0';
   } else {
-    return nullptr;
+    return kj::none;
   }
 }
 
 }  // namespace
 
 String encodeHex(ArrayPtr<const byte> input) {
-  return strArray(KJ_MAP(b, input) {
-    return heapArray<char>({HEX_DIGITS[b/16], HEX_DIGITS[b%16]});
-  }, "");
+  auto result = heapString(input.size() * 2);
+  for (auto i: kj::indices(input)) {
+    result[i*2] = HEX_DIGITS[input[i] / 16];
+    result[i*2+1] = HEX_DIGITS[input[i] % 16];
+  }
+  return result;
 }
 
 EncodingResult<Array<byte>> decodeHex(ArrayPtr<const char> text) {
@@ -382,13 +385,13 @@ EncodingResult<Array<byte>> decodeHex(ArrayPtr<const char> text) {
 
   for (auto i: kj::indices(result)) {
     byte b = 0;
-    KJ_IF_MAYBE(d1, tryFromHexDigit(text[i*2])) {
-      b = *d1 << 4;
+    KJ_IF_SOME(d1, tryFromHexDigit(text[i*2])) {
+      b = d1 << 4;
     } else {
       hadErrors = true;
     }
-    KJ_IF_MAYBE(d2, tryFromHexDigit(text[i*2+1])) {
-      b |= *d2;
+    KJ_IF_SOME(d2, tryFromHexDigit(text[i*2+1])) {
+      b |= d2;
     } else {
       hadErrors = true;
     }
@@ -507,13 +510,13 @@ EncodingResult<Array<byte>> decodeBinaryUriComponent(
 
       if (ptr == end) {
         hadErrors = true;
-      } else KJ_IF_MAYBE(d1, tryFromHexDigit(*ptr)) {
-        byte b = *d1;
+      } else KJ_IF_SOME(d1, tryFromHexDigit(*ptr)) {
+        byte b = d1;
         ++ptr;
         if (ptr == end) {
           hadErrors = true;
-        } else KJ_IF_MAYBE(d2, tryFromHexDigit(*ptr)) {
-          b = (b << 4) | *d2;
+        } else KJ_IF_SOME(d2, tryFromHexDigit(*ptr)) {
+          b = (b << 4) | d2;
           ++ptr;
         } else {
           hadErrors = true;
@@ -543,16 +546,16 @@ String encodeCEscapeImpl(ArrayPtr<const byte> bytes, bool isBinary) {
 
   for (byte b: bytes) {
     switch (b) {
-      case '\a': escaped.addAll(StringPtr("\\a")); break;
-      case '\b': escaped.addAll(StringPtr("\\b")); break;
-      case '\f': escaped.addAll(StringPtr("\\f")); break;
-      case '\n': escaped.addAll(StringPtr("\\n")); break;
-      case '\r': escaped.addAll(StringPtr("\\r")); break;
-      case '\t': escaped.addAll(StringPtr("\\t")); break;
-      case '\v': escaped.addAll(StringPtr("\\v")); break;
-      case '\'': escaped.addAll(StringPtr("\\\'")); break;
-      case '\"': escaped.addAll(StringPtr("\\\"")); break;
-      case '\\': escaped.addAll(StringPtr("\\\\")); break;
+      case '\a': escaped.addAll("\\a"_kj); break;
+      case '\b': escaped.addAll("\\b"_kj); break;
+      case '\f': escaped.addAll("\\f"_kj); break;
+      case '\n': escaped.addAll("\\n"_kj); break;
+      case '\r': escaped.addAll("\\r"_kj); break;
+      case '\t': escaped.addAll("\\t"_kj); break;
+      case '\v': escaped.addAll("\\v"_kj); break;
+      case '\'': escaped.addAll("\\\'"_kj); break;
+      case '\"': escaped.addAll("\\\""_kj); break;
+      case '\\': escaped.addAll("\\\\"_kj); break;
       default:
         if (b < 0x20 || b == 0x7f || (isBinary && b > 0x7f)) {
           // Use octal escape, not hex, because hex escapes technically have no length limit and
@@ -609,9 +612,9 @@ EncodingResult<Array<byte>> decodeBinaryCEscape(ArrayPtr<const char> text, bool 
         case '7': {
           uint value = c2 - '0';
           for (uint j = 0; j < 2 && i < text.size(); j++) {
-            KJ_IF_MAYBE(d, tryFromOctDigit(text[i])) {
+            KJ_IF_SOME(d, tryFromOctDigit(text[i])) {
               ++i;
-              value = (value << 3) | *d;
+              value = (value << 3) | d;
             } else {
               break;
             }
@@ -624,9 +627,9 @@ EncodingResult<Array<byte>> decodeBinaryCEscape(ArrayPtr<const char> text, bool 
         case 'x': {
           uint value = 0;
           while (i < text.size()) {
-            KJ_IF_MAYBE(d, tryFromHexDigit(text[i])) {
+            KJ_IF_SOME(d, tryFromHexDigit(text[i])) {
               ++i;
-              value = (value << 4) | *d;
+              value = (value << 4) | d;
             } else {
               break;
             }
@@ -642,15 +645,15 @@ EncodingResult<Array<byte>> decodeBinaryCEscape(ArrayPtr<const char> text, bool 
             if (i == text.size()) {
               hadErrors = true;
               break;
-            } else KJ_IF_MAYBE(d, tryFromHexDigit(text[i])) {
+            } else KJ_IF_SOME(d, tryFromHexDigit(text[i])) {
               ++i;
-              value = (value << 4) | *d;
+              value = (value << 4) | d;
             } else {
               hadErrors = true;
               break;
             }
           }
-          auto utf = decodeUtf16(arrayPtr(&value, 1));
+          auto utf = decodeUtf16(arrayPtr(value));
           if (utf.hadErrors) hadErrors = true;
           result.addAll(utf.asBytes());
           break;
@@ -662,15 +665,15 @@ EncodingResult<Array<byte>> decodeBinaryCEscape(ArrayPtr<const char> text, bool 
             if (i == text.size()) {
               hadErrors = true;
               break;
-            } else KJ_IF_MAYBE(d, tryFromHexDigit(text[i])) {
+            } else KJ_IF_SOME(d, tryFromHexDigit(text[i])) {
               ++i;
-              value = (value << 4) | *d;
+              value = (value << 4) | d;
             } else {
               hadErrors = true;
               break;
             }
           }
-          auto utf = decodeUtf32(arrayPtr(&value, 1));
+          auto utf = decodeUtf32(arrayPtr(value));
           if (utf.hadErrors) hadErrors = true;
           result.addAll(utf.asBytes());
           break;
@@ -1021,7 +1024,7 @@ String encodeBase64Url(ArrayPtr<const byte> bytes) {
   // Remove trailing '='s.
   kj::ArrayPtr<const char> slice = base64;
   while (slice.size() > 0 && slice.back() == '=') {
-    slice = slice.slice(0, slice.size() - 1);
+    slice = slice.first(slice.size() - 1);
   }
 
   return kj::str(slice);

@@ -96,6 +96,11 @@ public:
     //   algorithms.
     // - You need quickly to disable an algorithm recently discovered to be broken.
 
+    kj::Maybe<kj::StringPtr> curveList;
+    // Sets the preferred curves (Groups in TLS 1.3), by default this is not set. Similar to the
+    // cipher list, this is a colon separated list of human readable names or NIDs.
+    // https://boringssl.googlesource.com/boringssl/+/refs/heads/master/include/openssl/nid.h
+
     kj::Maybe<const TlsKeypair&> defaultKeypair;
     // Default keypair to use for all connections. Required for servers; optional for clients.
 
@@ -117,12 +122,12 @@ public:
   ~TlsContext() noexcept(false);
   KJ_DISALLOW_COPY_AND_MOVE(TlsContext);
 
-  kj::Promise<kj::Own<kj::AsyncIoStream>> wrapServer(kj::Own<kj::AsyncIoStream> stream);
+  kj::Promise<kj::Own<kj::AsyncIoStream>> wrapServer(kj::Own<kj::AsyncIoStream> stream) override;
   // Upgrade a regular network stream to TLS and begin the initial handshake as the server. The
   // returned promise resolves when the handshake has completed successfully.
 
   kj::Promise<kj::Own<kj::AsyncIoStream>> wrapClient(kj::Own<kj::AsyncIoStream> stream,
-                                                     kj::StringPtr expectedServerHostname);
+                                                     kj::StringPtr expectedServerHostname) override;
   // Upgrade a regular network stream to TLS and begin the initial handshake as a client. The
   // returned promise resolves when the handshake has completed successfully, including validating
   // the server's certificate.
@@ -133,23 +138,23 @@ public:
   // 2. The server's certificate is validated against this hostname. If validation fails, the
   //    promise returned by wrapClient() will be broken; you'll never get a stream.
 
-  kj::Promise<kj::AuthenticatedStream> wrapServer(kj::AuthenticatedStream stream);
+  kj::Promise<kj::AuthenticatedStream> wrapServer(kj::AuthenticatedStream stream) override;
   kj::Promise<kj::AuthenticatedStream> wrapClient(kj::AuthenticatedStream stream,
-                                                  kj::StringPtr expectedServerHostname);
+                                                  kj::StringPtr expectedServerHostname) override;
   // Like wrapServer() and wrapClient(), but also produces information about the peer's
   // certificate (if any). The returned `peerIdentity` will be a `TlsPeerIdentity`.
 
-  kj::Own<kj::ConnectionReceiver> wrapPort(kj::Own<kj::ConnectionReceiver> port);
+  kj::Own<kj::ConnectionReceiver> wrapPort(kj::Own<kj::ConnectionReceiver> port) override;
   // Upgrade a ConnectionReceiver to one that automatically upgrades all accepted connections to
   // TLS (acting as the server).
 
   kj::Own<kj::NetworkAddress> wrapAddress(kj::Own<kj::NetworkAddress> address,
-                                          kj::StringPtr expectedServerHostname);
+                                          kj::StringPtr expectedServerHostname) override;
   // Upgrade a NetworkAddress to one that automatically upgrades all connections to TLS, acting
   // as the client when `connect()` is called or the server if `listen()` is called.
   // `connect()` will athenticate the server as `expectedServerHostname`.
 
-  kj::Own<kj::Network> wrapNetwork(kj::Network& network);
+  kj::Own<kj::Network> wrapNetwork(kj::Network& network) override;
   // Upgrade a Network to one that automatically upgrades all connections to TLS. The network will
   // only accept addresses of the form "hostname" and "hostname:port" (it does not accept raw IP
   // addresses). It will automatically use SNI and verify certificates based on these hostnames.
@@ -172,7 +177,7 @@ public:
   // RSA and DSA keys. Does not accept encrypted keys; it is the caller's responsibility to
   // decrypt.
 
-  TlsPrivateKey(kj::StringPtr pem, kj::Maybe<kj::StringPtr> password = nullptr);
+  TlsPrivateKey(kj::StringPtr pem, kj::Maybe<kj::StringPtr> password = kj::none);
   // Parse a single PEM-encoded private key. Supports PKCS8 keys as well as "traditional format"
   // RSA and DSA keys. A password may optionally be provided and will be used if the key is
   // encrypted.

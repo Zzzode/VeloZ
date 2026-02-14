@@ -23,6 +23,10 @@
 #include "test.h"
 #include <wchar.h>
 
+#if __linux__
+#include <unistd.h>
+#endif  // __linux__
+
 namespace kj {
 namespace {
 
@@ -155,7 +159,7 @@ KJ_TEST("Path exceptions") {
   KJ_EXPECT_THROW_MESSAGE("root path has no parent", Path(nullptr).parent());
 }
 
-constexpr kj::ArrayPtr<const wchar_t> operator "" _a(const wchar_t* str, size_t n) {
+constexpr kj::ArrayPtr<const wchar_t> operator ""_a(const wchar_t* str, size_t n) {
   return { str, n };
 }
 
@@ -299,15 +303,15 @@ KJ_TEST("InMemoryFile") {
   clock.expectChanged(*file);
   KJ_EXPECT(file->readAllText() == "foo");
 
-  file->write(3, StringPtr("bar").asBytes());
+  file->write(3, "bar"_kjb);
   clock.expectChanged(*file);
   KJ_EXPECT(file->readAllText() == "foobar");
 
-  file->write(3, StringPtr("baz").asBytes());
+  file->write(3, "baz"_kjb);
   clock.expectChanged(*file);
   KJ_EXPECT(file->readAllText() == "foobaz");
 
-  file->write(9, StringPtr("qux").asBytes());
+  file->write(9, "qux"_kjb);
   clock.expectChanged(*file);
   KJ_EXPECT(file->readAllText() == kj::StringPtr("foobaz\0\0\0qux", 12));
 
@@ -333,16 +337,16 @@ KJ_TEST("InMemoryFile") {
     KJ_EXPECT(writableMapping->get().begin() == mapping.begin());
     KJ_EXPECT(privateMapping.begin() != mapping.begin());
 
-    KJ_EXPECT(kj::str(mapping.slice(0, 6).asChars()) == "foobaz");
-    KJ_EXPECT(kj::str(privateMapping.slice(0, 6).asChars()) == "foobaz");
+    KJ_EXPECT(kj::str(mapping.first(6).asChars()) == "foobaz");
+    KJ_EXPECT(kj::str(privateMapping.first(6).asChars()) == "foobaz");
     clock.expectUnchanged(*file);
 
-    file->write(0, StringPtr("qux").asBytes());
+    file->write(0, "qux"_kjb);
     clock.expectChanged(*file);
-    KJ_EXPECT(kj::str(mapping.slice(0, 6).asChars()) == "quxbaz");
-    KJ_EXPECT(kj::str(privateMapping.slice(0, 6).asChars()) == "foobaz");
+    KJ_EXPECT(kj::str(mapping.first(6).asChars()) == "quxbaz");
+    KJ_EXPECT(kj::str(privateMapping.first(6).asChars()) == "foobaz");
 
-    file->write(12, StringPtr("corge").asBytes());
+    file->write(12, "corge"_kjb);
     KJ_EXPECT(kj::str(mapping.slice(12, 17).asChars()) == "corge");
 
     // Can shrink.
@@ -353,13 +357,13 @@ KJ_TEST("InMemoryFile") {
     file->truncate(18);
     KJ_EXPECT(kj::str(mapping.slice(12, 17).asChars()) == kj::StringPtr("\0\0\0\0\0", 5));
 
-    // Can't grow past previoous capacity.
+    // Can't grow past previous capacity.
     KJ_EXPECT_THROW_MESSAGE("cannot resize the file backing store", file->truncate(100));
 
     clock.expectChanged(*file);
-    writableMapping->changed(writableMapping->get().slice(0, 3));
+    writableMapping->changed(writableMapping->get().first(3));
     clock.expectChanged(*file);
-    writableMapping->sync(writableMapping->get().slice(0, 3));
+    writableMapping->sync(writableMapping->get().first(3));
     clock.expectChanged(*file);
   }
 
@@ -448,12 +452,13 @@ KJ_TEST("InMemoryDirectory") {
   KJ_EXPECT(dir->listNames() == nullptr);
   KJ_EXPECT(dir->listEntries() == nullptr);
   KJ_EXPECT(!dir->exists(Path("foo")));
-  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == nullptr);
-  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::MODIFY) == nullptr);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == kj::none);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::MODIFY) == kj::none);
   clock.expectUnchanged(*dir);
 
   {
     auto file = dir->openFile(Path("foo"), WriteMode::CREATE);
+    KJ_EXPECT(file->getFd() == kj::none);
     clock.expectChanged(*dir);
     file->writeAll("foobar");
     clock.expectUnchanged(*dir);
@@ -488,8 +493,8 @@ KJ_TEST("InMemoryDirectory") {
   KJ_EXPECT(dir->openFile(Path("foo"))->readAllText() == "foobar");
   clock.expectUnchanged(*dir);
 
-  KJ_EXPECT(dir->tryOpenFile(Path({"foo", "bar"}), WriteMode::MODIFY) == nullptr);
-  KJ_EXPECT(dir->tryOpenFile(Path({"bar", "baz"}), WriteMode::MODIFY) == nullptr);
+  KJ_EXPECT(dir->tryOpenFile(Path({"foo", "bar"}), WriteMode::MODIFY) == kj::none);
+  KJ_EXPECT(dir->tryOpenFile(Path({"bar", "baz"}), WriteMode::MODIFY) == kj::none);
   KJ_EXPECT_THROW_RECOVERABLE_MESSAGE("parent is not a directory",
       dir->tryOpenFile(Path({"bar", "baz"}), WriteMode::CREATE));
   clock.expectUnchanged(*dir);
@@ -548,7 +553,7 @@ KJ_TEST("InMemoryDirectory") {
   KJ_EXPECT(dir->openFile(Path({"corge", "grault"}))->readAllText() == "garply");
 
   dir->openFile(Path({"corge", "grault"}), WriteMode::CREATE | WriteMode::MODIFY)
-     ->write(0, StringPtr("rag").asBytes());
+     ->write(0, "rag"_kjb);
   KJ_EXPECT(dir->openFile(Path({"corge", "grault"}))->readAllText() == "ragply");
   clock.expectUnchanged(*dir);
 
@@ -578,8 +583,8 @@ KJ_TEST("InMemoryDirectory") {
 
   {
     auto appender = dir->appendFile(Path({"corge", "grault"}), WriteMode::MODIFY);
-    appender->write("waldo", 5);
-    appender->write("fred", 4);
+    appender->write("waldo"_kjb);
+    appender->write("fred"_kjb);
   }
 
   KJ_EXPECT(dir->openFile(Path({"corge", "grault"}))->readAllText() == "ragwaldofred");
@@ -633,9 +638,9 @@ KJ_TEST("InMemoryDirectory symlinks") {
   KJ_EXPECT(dir->readlink(Path("foo")) == "bar/qux/../baz");
 
   // Broken link into non-existing directory cannot be opened in any mode.
-  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == nullptr);
-  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::CREATE) == nullptr);
-  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::MODIFY) == nullptr);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == kj::none);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::CREATE) == kj::none);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::MODIFY) == kj::none);
   KJ_EXPECT_THROW_RECOVERABLE_MESSAGE("parent is not a directory",
       dir->tryOpenFile(Path("foo"), WriteMode::CREATE | WriteMode::MODIFY));
   KJ_EXPECT_THROW_RECOVERABLE_MESSAGE("parent is not a directory",
@@ -647,9 +652,9 @@ KJ_TEST("InMemoryDirectory symlinks") {
   clock.expectChanged(*dir);
 
   // Link still points to non-existing file so cannot be open in most modes.
-  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == nullptr);
-  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::CREATE) == nullptr);
-  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::MODIFY) == nullptr);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == kj::none);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::CREATE) == kj::none);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo"), WriteMode::MODIFY) == kj::none);
   clock.expectUnchanged(*dir);
 
   // But... CREATE | MODIFY works.
@@ -667,11 +672,11 @@ KJ_TEST("InMemoryDirectory symlinks") {
   KJ_EXPECT(dir->readlink(Path("foo")) == "corge");
   KJ_EXPECT(!dir->exists(Path("foo")));
   KJ_EXPECT(dir->lstat(Path("foo")).type == FsNode::Type::SYMLINK);
-  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == nullptr);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == kj::none);
 
   dir->remove(Path("foo"));
   KJ_EXPECT(!dir->exists(Path("foo")));
-  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == nullptr);
+  KJ_EXPECT(dir->tryOpenFile(Path("foo")) == kj::none);
 }
 
 KJ_TEST("InMemoryDirectory link") {
@@ -747,6 +752,23 @@ KJ_TEST("InMemoryDirectory move") {
   KJ_EXPECT(dst->openFile(Path({"link", "baz", "qux"}))->readAllText() == "bazqux");
 }
 
+KJ_TEST("InMemoryDirectory transfer from self") {
+  TestClock clock;
+
+  auto dir = newInMemoryDirectory(clock);
+
+  auto file = dir->openFile(Path({"foo"}), WriteMode::CREATE);
+
+  dir->transfer(Path({"bar"}), WriteMode::CREATE, Path({"foo"}), TransferMode::MOVE);
+
+  auto list = dir->listNames();
+  KJ_EXPECT(list.size() == 1);
+  KJ_EXPECT(list[0] == "bar");
+
+  auto file2 = dir->openFile(Path({"bar"}));
+  KJ_EXPECT(file.get() == file2.get());
+}
+
 KJ_TEST("InMemoryDirectory createTemporary") {
   TestClock clock;
 
@@ -755,7 +777,39 @@ KJ_TEST("InMemoryDirectory createTemporary") {
   file->writeAll("foobar");
   KJ_EXPECT(file->readAllText() == "foobar");
   KJ_EXPECT(dir->listNames() == nullptr);
+  KJ_EXPECT(file->getFd() == kj::none);
 }
+
+#if __linux__
+
+KJ_TEST("InMemoryDirectory backed my memfd") {
+  // Test memfd-backed in-memory directory. We're not going to test all functionality here, since
+  // we assume filesystem-disk-test covers fd-backed files in depth.
+
+  TestClock clock;
+  auto dir = newInMemoryDirectory(clock, memfdInMemoryFileFactory());
+  auto file = dir->openFile(Path({"foo", "bar"}), WriteMode::CREATE | WriteMode::CREATE_PARENT);
+
+  // Write directly to the FD, verify it is reflected in the file object.
+  int fd = KJ_ASSERT_NONNULL(file->getFd());
+  ssize_t n;
+  KJ_SYSCALL(n = write(fd, "foo", 3));
+  KJ_EXPECT(n == 3);
+
+  KJ_EXPECT(file->readAllText() == "foo"_kj);
+
+  // Re-opening the same file produces an alias of the same memfd.
+  auto file2 = dir->openFile(Path({"foo", "bar"}));
+  KJ_EXPECT(file2->readAllText() == "foo"_kj);
+  file->writeAll("bar"_kj);
+  KJ_EXPECT(file2->readAllText() == "bar"_kj);
+  KJ_EXPECT(file2->getFd() != kj::none);
+  KJ_EXPECT(file->stat().hashCode == file2->stat().hashCode);
+
+  KJ_EXPECT(dir->createTemporary()->getFd() != kj::none);
+}
+
+#endif  // __linux__
 
 }  // namespace
 }  // namespace kj

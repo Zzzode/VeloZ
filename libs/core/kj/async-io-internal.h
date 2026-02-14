@@ -23,8 +23,6 @@
 
 #include "async-io.h"
 #include "cidr.h"
-#include "one-of.h"
-#include "string.h"
 #include "vector.h"
 
 #include <stdint.h>
@@ -35,6 +33,9 @@ struct sockaddr;
 struct sockaddr_un;
 
 namespace kj {
+
+class StringPtr;
+
 namespace _ { // private
 
 // =======================================================================================
@@ -45,7 +46,7 @@ kj::ArrayPtr<const char> safeUnixPath(const struct sockaddr_un* addr, uint addrl
 // paths MUST be read using this function.
 #endif
 
-class NetworkFilter : public LowLevelAsyncIoProvider::NetworkFilter {
+class NetworkFilter final : public LowLevelAsyncIoProvider::NetworkFilter {
 public:
   NetworkFilter();
   NetworkFilter(ArrayPtr<const StringPtr> allow, ArrayPtr<const StringPtr> deny,

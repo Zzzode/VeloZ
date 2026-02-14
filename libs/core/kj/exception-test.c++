@@ -21,6 +21,7 @@
 
 #include "exception.h"
 #include "debug.h"
+#include "main.h"
 #include <kj/compat/gtest.h>
 #include <stdexcept>
 #include <stdint.h>
@@ -47,27 +48,22 @@ TEST(Exception, RunCatchingExceptions) {
     recovered = true;
   });
 
-#if KJ_NO_EXCEPTIONS
-  EXPECT_TRUE(recovered);
-#else
   EXPECT_FALSE(recovered);
-#endif
 
-  KJ_IF_MAYBE(ex, e) {
-    EXPECT_EQ("foo", ex->getDescription());
+  KJ_IF_SOME(ex, e) {
+    EXPECT_EQ("foo", ex.getDescription());
   } else {
     ADD_FAILURE() << "Expected exception";
   }
 }
 
-#if !KJ_NO_EXCEPTIONS
 TEST(Exception, RunCatchingExceptionsStdException) {
   Maybe<Exception> e = kj::runCatchingExceptions([&]() {
     throw std::logic_error("foo");
   });
 
-  KJ_IF_MAYBE(ex, e) {
-    EXPECT_EQ("std::exception: foo", ex->getDescription());
+  KJ_IF_SOME(ex, e) {
+    EXPECT_EQ("std::exception: foo", ex.getDescription());
   } else {
     ADD_FAILURE() << "Expected exception";
   }
@@ -78,22 +74,16 @@ TEST(Exception, RunCatchingExceptionsOtherException) {
     throw 123;
   });
 
-  KJ_IF_MAYBE(ex, e) {
+  KJ_IF_SOME(ex, e) {
 #if __GNUC__ && !KJ_NO_RTTI
-    EXPECT_EQ("unknown non-KJ exception of type: int", ex->getDescription());
+    EXPECT_EQ("unknown non-KJ exception of type: int", ex.getDescription());
 #else
-    EXPECT_EQ("unknown non-KJ exception", ex->getDescription());
+    EXPECT_EQ("unknown non-KJ exception", ex.getDescription());
 #endif
   } else {
     ADD_FAILURE() << "Expected exception";
   }
 }
-#endif
-
-#if !KJ_NO_EXCEPTIONS
-// We skip this test when exceptions are disabled because making it no-exceptions-safe defeats
-// the purpose of the test: recoverable exceptions won't throw inside a destructor in the first
-// place.
 
 class ThrowingDestructor: public UnwindDetector {
 public:
@@ -110,8 +100,8 @@ TEST(Exception, UnwindDetector) {
     ThrowingDestructor t;
   });
 
-  KJ_IF_MAYBE(ex, e) {
-    EXPECT_EQ("this is a test, not a real bug", ex->getDescription());
+  KJ_IF_SOME(ex, e) {
+    EXPECT_EQ("this is a test, not a real bug", ex.getDescription());
   } else {
     ADD_FAILURE() << "Expected exception";
   }
@@ -124,13 +114,12 @@ TEST(Exception, UnwindDetector) {
     }
   });
 
-  KJ_IF_MAYBE(ex, e) {
-    EXPECT_EQ("baz", ex->getDescription());
+  KJ_IF_SOME(ex, e) {
+    EXPECT_EQ("baz", ex.getDescription());
   } else {
     ADD_FAILURE() << "Expected exception";
   }
 }
-#endif
 
 #if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION) || \
     KJ_HAS_COMPILER_FEATURE(address_sanitizer) || \
@@ -144,7 +133,6 @@ TEST(Exception, ExceptionCallbackMustBeOnStack) {
 #endif
 #endif  // !__MINGW32__
 
-#if !KJ_NO_EXCEPTIONS
 TEST(Exception, ScopeSuccessFail) {
   bool success = false;
   bool failure = false;
@@ -176,7 +164,6 @@ TEST(Exception, ScopeSuccessFail) {
   EXPECT_FALSE(success);
   EXPECT_TRUE(failure);
 }
-#endif
 
 #if __GNUG__ || defined(__clang__)
 kj::String testStackTrace() __attribute__((noinline));
@@ -211,10 +198,9 @@ KJ_TEST("getStackTrace() returns correct line number, not line + 1") {
   auto trace = testStackTrace();
   auto wrong = kj::str("exception-test.c++:", __LINE__);
 
-  KJ_ASSERT(strstr(trace.cStr(), wrong.cStr()) == nullptr, trace, wrong);
+  KJ_ASSERT(!trace.contains(wrong), trace, wrong);
 }
 
-#if !KJ_NO_EXCEPTIONS
 KJ_TEST("InFlightExceptionIterator works") {
   bool caught = false;
   try {
@@ -223,19 +209,19 @@ KJ_TEST("InFlightExceptionIterator works") {
         KJ_FAIL_ASSERT("bar");
       } catch (const kj::Exception& e) {
         InFlightExceptionIterator iter;
-        KJ_IF_MAYBE(e2, iter.next()) {
-          KJ_EXPECT(e2 == &e, e2->getDescription());
+        KJ_IF_SOME(e2, iter.next()) {
+          KJ_EXPECT(&e2 == &e, e2.getDescription());
         } else {
           KJ_FAIL_EXPECT("missing first exception");
         }
 
-        KJ_IF_MAYBE(e2, iter.next()) {
-          KJ_EXPECT(e2->getDescription() == "foo", e2->getDescription());
+        KJ_IF_SOME(e2, iter.next()) {
+          KJ_EXPECT(e2.getDescription() == "foo", e2.getDescription());
         } else {
           KJ_FAIL_EXPECT("missing second exception");
         }
 
-        KJ_EXPECT(iter.next() == nullptr, "more than two exceptions");
+        KJ_EXPECT(iter.next() == kj::none, "more than two exceptions");
 
         caught = true;
       }
@@ -247,7 +233,6 @@ KJ_TEST("InFlightExceptionIterator works") {
 
   KJ_EXPECT(caught);
 }
-#endif
 
 KJ_TEST("computeRelativeTrace") {
   auto testCase = [](uint expectedPrefix,
@@ -292,6 +277,371 @@ KJ_TEST("computeRelativeTrace") {
   testCase(5,
       {1, 2, 3, 4, 5, 6, 7, 8},
       {8, 7, 6, 5, 6, 7, 8, 7, 8});
+}
+
+KJ_TEST("exception details") {
+  kj::Exception e = KJ_EXCEPTION(FAILED, "foo");
+
+  e.setDetail(123, kj::heapArray("foo"_kjb));
+  e.setDetail(456, kj::heapArray("bar"_kjb));
+
+  KJ_EXPECT(kj::str(KJ_ASSERT_NONNULL(e.getDetail(123)).asChars()) == "foo");
+  KJ_EXPECT(kj::str(KJ_ASSERT_NONNULL(e.getDetail(456)).asChars()) == "bar");
+  KJ_EXPECT(e.getDetail(789) == kj::none);
+
+  kj::Exception e2 = kj::cp(e);
+  KJ_EXPECT(kj::str(KJ_ASSERT_NONNULL(e2.getDetail(123)).asChars()) == "foo");
+  KJ_EXPECT(kj::str(KJ_ASSERT_NONNULL(e2.getDetail(456)).asChars()) == "bar");
+  KJ_EXPECT(e2.getDetail(789) == kj::none);
+
+  KJ_EXPECT(kj::str(KJ_ASSERT_NONNULL(e2.releaseDetail(123)).asChars()) == "foo");
+  KJ_EXPECT(e2.getDetail(123) == kj::none);
+  KJ_EXPECT(kj::str(KJ_ASSERT_NONNULL(e2.getDetail(456)).asChars()) == "bar");
+}
+
+KJ_TEST("Maybe<Exception> move-assignment is safe when this owns other") {
+  // Test that move-assignment works correctly when `other` is inside `this`'s value.
+  // An Exception can own another Exception via a detail array with attach().
+  //
+  // This scenario is extremely contrived and almost certainly won't happen in practice,
+  // but we're testing for good measure.
+
+  // Create an inner exception that we'll attach to the outer one
+  Own<Exception> innerOwn = heap<Exception>(Exception::Type::FAILED, __FILE__, __LINE__,
+      str("inner exception"));
+  Exception& inner = *innerOwn;
+
+  // Create an outer exception and attach the inner one to a detail
+  Maybe<Exception> outer = KJ_EXCEPTION(FAILED, "outer exception");
+  auto detailArray = heapArray<byte>(0).attach(kj::mv(innerOwn));
+  KJ_ASSERT_NONNULL(outer).setDetail(123, kj::mv(detailArray));
+
+  // Now `inner` is owned by outer's detail. Verify we can still access it.
+  KJ_EXPECT(inner.getDescription() == "inner exception");
+
+  // Move-assign outer from inner. Without a correctly implemented assignment operator, this
+  // would be use-after-free because outer would be destroyed (freeing inner) before inner
+  // is accessed.
+  outer = kj::mv(inner);
+
+  KJ_EXPECT(outer != kj::none);
+  KJ_EXPECT(KJ_ASSERT_NONNULL(outer).getDescription() == "inner exception");
+}
+
+KJ_TEST("copy constructor") {
+  auto e = new kj::Exception(kj::Exception::Type::FAILED, kj::str("src/bar.cc"),
+                             35, kj::str("test_exception"));
+  KJ_EXPECT(e->getFile() == "bar.cc"_kj);
+  KJ_EXPECT(e->getLine() == 35);
+  KJ_EXPECT(e->getDescription() == "test_exception"_kj);
+
+  kj::Exception e1(*e);
+  delete e;
+
+  KJ_EXPECT(e1.getFile() == "bar.cc"_kj);
+  KJ_EXPECT(e1.getLine() == 35);
+  KJ_EXPECT(e1.getDescription() == "test_exception"_kj);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH basic functionality") {
+  bool caughtException = false;
+
+  KJ_TRY {
+    KJ_FAIL_ASSERT("test exception");
+  } KJ_CATCH(e) {
+    caughtException = true;
+    KJ_EXPECT(e.getDescription() == "test exception");
+    KJ_EXPECT(e.getType() == kj::Exception::Type::FAILED);
+  }
+
+  KJ_EXPECT(caughtException);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH with no exception") {
+  bool handlerCalled = false;
+  bool tryBlockCompleted = false;
+
+  KJ_TRY {
+    tryBlockCompleted = true;
+  } KJ_CATCH(_) {
+    handlerCalled = true;
+  }
+
+  KJ_EXPECT(tryBlockCompleted);
+  KJ_EXPECT(!handlerCalled);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH with std::exception") {
+  bool caughtException = false;
+
+  KJ_TRY {
+    throw std::runtime_error("std exception test");
+  } KJ_CATCH(e) {
+    caughtException = true;
+    KJ_EXPECT(e.getDescription().contains("std::exception: std exception test"));
+  }
+
+  KJ_EXPECT(caughtException);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH with multiple statements") {
+  bool caughtException = false;
+  int value = 0;
+
+  KJ_TRY {
+    value = 42;
+    KJ_FAIL_ASSERT("delayed exception");
+  } KJ_CATCH(e) {
+    caughtException = true;
+    KJ_EXPECT(e.getDescription() == "delayed exception");
+    KJ_EXPECT(value == 42);
+  }
+
+  KJ_EXPECT(caughtException);
+  KJ_EXPECT(value == 42);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH handler can access variables") {
+  int handlerValue = 0;
+  bool caughtException = false;
+
+  KJ_TRY {
+    KJ_FAIL_ASSERT("handler test");
+  } KJ_CATCH(ex) {
+    caughtException = true;
+    handlerValue = 123;
+    KJ_EXPECT(ex.getDescription() == "handler test");
+  }
+
+  KJ_EXPECT(caughtException);
+  KJ_EXPECT(handlerValue == 123);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH nested usage") {
+  bool outerCaught = false;
+  bool innerCaught = false;
+
+  KJ_TRY {
+    KJ_TRY {
+      KJ_FAIL_ASSERT("inner exception");
+    } KJ_CATCH(innerEx) {
+      innerCaught = true;
+      KJ_EXPECT(innerEx.getDescription() == "inner exception");
+      KJ_FAIL_ASSERT("outer exception");
+    }
+  } KJ_CATCH(outerEx) {
+    outerCaught = true;
+    KJ_EXPECT(outerEx.getDescription() == "outer exception");
+  }
+
+  KJ_EXPECT(innerCaught);
+  KJ_EXPECT(outerCaught);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH with different exception types") {
+  bool disconnectedCaught = false;
+  bool overloadedCaught = false;
+
+  KJ_TRY {
+    throw KJ_EXCEPTION(DISCONNECTED, "test disconnection");
+  } KJ_CATCH(e1) {
+    disconnectedCaught = true;
+    KJ_EXPECT(e1.getType() == kj::Exception::Type::DISCONNECTED);
+    KJ_EXPECT(e1.getDescription() == "test disconnection");
+  }
+
+  KJ_TRY {
+    throw KJ_EXCEPTION(OVERLOADED, "test overloaded");
+  } KJ_CATCH(e2) {
+    overloadedCaught = true;
+    KJ_EXPECT(e2.getType() == kj::Exception::Type::OVERLOADED);
+    KJ_EXPECT(e2.getDescription() == "test overloaded");
+  }
+
+  KJ_EXPECT(disconnectedCaught);
+  KJ_EXPECT(overloadedCaught);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH inside try/catch") {
+  bool kjCaught = false;
+  bool stdCaught = false;
+
+  try {
+    KJ_TRY {
+      KJ_FAIL_ASSERT("inner kj exception");
+    } KJ_CATCH(e) {
+      kjCaught = true;
+      KJ_EXPECT(e.getDescription() == "inner kj exception");
+    }
+  } catch (const kj::Exception& e) {
+    stdCaught = true;
+    KJ_FAIL_EXPECT("should not reach outer catch");
+  }
+
+  KJ_EXPECT(kjCaught);
+  KJ_EXPECT(!stdCaught);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH inside try/catch with uncaught exception") {
+  bool kjCaught = false;
+  bool stdCaught = false;
+
+  try {
+    KJ_TRY {
+      // This should not throw
+      int x = 42;
+      (void)x;
+    } KJ_CATCH(_) {
+      kjCaught = true;
+      KJ_FAIL_EXPECT("handler should not be called");
+    }
+    // This throws after KJ_TRY/KJ_CATCH completes normally
+    KJ_FAIL_ASSERT("outer exception");
+  } catch (const kj::Exception& e) {
+    stdCaught = true;
+    KJ_EXPECT(e.getDescription() == "outer exception");
+  }
+
+  KJ_EXPECT(!kjCaught);
+  KJ_EXPECT(stdCaught);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH inside try/catch with std::exception") {
+  bool kjCaught = false;
+  bool stdCaught = false;
+
+  try {
+    KJ_TRY {
+      throw std::logic_error("std exception in KJ_TRY/KJ_CATCH");
+    } KJ_CATCH(e) {
+      kjCaught = true;
+      KJ_EXPECT(e.getDescription().contains("std::exception: std exception in KJ_TRY/KJ_CATCH"));
+    }
+  } catch (const std::exception& e) {
+    stdCaught = true;
+    KJ_FAIL_EXPECT("should not reach outer catch");
+  }
+
+  KJ_EXPECT(kjCaught);
+  KJ_EXPECT(!stdCaught);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH does not catch CanceledException") {
+  bool kjCatchCalled = false;
+  bool outerCatchCalled = false;
+
+  try {
+    KJ_TRY {
+      throw kj::CanceledException();
+    } KJ_CATCH(_) {
+      kjCatchCalled = true;
+      KJ_FAIL_EXPECT("KJ_CATCH should not handle CanceledException");
+    }
+  } catch (const kj::CanceledException&) {
+    outerCatchCalled = true;
+  }
+
+  KJ_EXPECT(!kjCatchCalled);
+  KJ_EXPECT(outerCatchCalled);
+}
+
+KJ_TEST("KJ_TRY/KJ_CATCH does not catch CleanShutdownException") {
+  bool kjCatchCalled = false;
+  bool outerCatchCalled = false;
+
+  try {
+    KJ_TRY {
+      throw kj::TopLevelProcessContext::CleanShutdownException{42};
+    } KJ_CATCH(_) {
+      kjCatchCalled = true;
+      KJ_FAIL_EXPECT("KJ_CATCH should not handle CleanShutdownException");
+    }
+  } catch (const kj::TopLevelProcessContext::CleanShutdownException& e) {
+    outerCatchCalled = true;
+    KJ_EXPECT(e.exitCode == 42);
+  }
+
+  KJ_EXPECT(!kjCatchCalled);
+  KJ_EXPECT(outerCatchCalled);
+}
+
+KJ_TEST("getDestructionReason returns default exception if exception wasn't thrown") {
+  auto e =
+      kj::getDestructionReason(nullptr, kj::Exception::Type::FAILED, __FILE__,
+                               __LINE__, "default description"_kj);
+  KJ_EXPECT(e.getType() == kj::Exception::Type::FAILED);
+  KJ_EXPECT(e.getDescription() == "default description"_kj);
+}
+
+KJ_TEST("getDestructionReason returns thrown exception if it wasn't consumed") {
+  try {
+    kj::throwFatalException(KJ_EXCEPTION(DISCONNECTED, "test exception"));
+  } catch (...) {
+    auto e =
+        kj::getDestructionReason(nullptr, kj::Exception::Type::FAILED, __FILE__,
+                                 __LINE__, "default description"_kj);
+    KJ_EXPECT(e.getType() == kj::Exception::Type::DISCONNECTED);
+    KJ_EXPECT(e.getDescription() == "test exception"_kj);
+  }
+}
+
+KJ_TEST("getDestructionReason returns default exception if exception was "
+        "consumed") {
+  try {
+    kj::throwFatalException(KJ_EXCEPTION(DISCONNECTED, "test exception"));
+  } catch (...) {
+    auto caughtException = kj::getCaughtExceptionAsKj();
+    KJ_EXPECT(caughtException.getType() == kj::Exception::Type::DISCONNECTED);
+    KJ_EXPECT(caughtException.getDescription() == "test exception"_kj);
+
+    auto e =
+        kj::getDestructionReason(nullptr, kj::Exception::Type::FAILED, __FILE__,
+                                 __LINE__, "default description"_kj);
+    KJ_EXPECT(e.getType() == kj::Exception::Type::FAILED);
+    KJ_EXPECT(e.getDescription() == "default description"_kj);
+  }
+}
+
+// =======================================================================================
+// Maybe<Exception> niche optimization tests
+
+KJ_TEST("Maybe<Exception> niche optimization") {
+  // Maybe<Exception> should use niche optimization, storing Exception directly without a
+  // separate bool flag. This means sizeof(Maybe<Exception>) == sizeof(Exception).
+  static_assert(sizeof(Maybe<Exception>) == sizeof(Exception),
+      "Maybe<Exception> should be niche-optimized to the same size as Exception");
+
+  // Test basic Maybe<Exception> functionality with niche optimization
+  {
+    Maybe<Exception> empty;
+    KJ_EXPECT(empty == kj::none);
+  }
+
+  {
+    Maybe<Exception> m = KJ_EXCEPTION(FAILED, "test error");
+    KJ_EXPECT(m != kj::none);
+    KJ_EXPECT(KJ_ASSERT_NONNULL(m).getDescription() == "test error");
+  }
+
+  // Test move semantics
+  {
+    Maybe<Exception> m1 = KJ_EXCEPTION(DISCONNECTED, "disconnect error");
+    Maybe<Exception> m2 = kj::mv(m1);
+    KJ_EXPECT(m1 == kj::none);  // Source should be empty after move
+    KJ_EXPECT(m2 != kj::none);
+    KJ_EXPECT(KJ_ASSERT_NONNULL(m2).getType() == Exception::Type::DISCONNECTED);
+  }
+
+  // Test assignment
+  {
+    Maybe<Exception> m;
+    m = KJ_EXCEPTION(OVERLOADED, "overload error");
+    KJ_EXPECT(m != kj::none);
+    KJ_EXPECT(KJ_ASSERT_NONNULL(m).getType() == Exception::Type::OVERLOADED);
+
+    m = kj::none;
+    KJ_EXPECT(m == kj::none);
+  }
 }
 
 }  // namespace

@@ -427,21 +427,21 @@ struct TlsTest {
     static TlsCertificate caCert(CA_CERT);
     TlsContext::Options options;
     options.useSystemTrustStore = false;
-    options.trustedCertificates = kj::arrayPtr(&caCert, 1);
+    options.trustedCertificates = kj::arrayPtr(caCert);
     return options;
   }
 
   Promise<void> writeToServer(AsyncIoStream& client) {
-    return client.write("foo", 4);
+    return client.write("foo\x00"_kjb);
   }
 
   Promise<void> readFromClient(AsyncIoStream& server) {
-    auto buf = heapArray<char>(4);
+    auto buf = heapArray<byte>(4);
 
-    auto readPromise = server.read(buf.begin(), buf.size());
+    auto readPromise = server.read(buf);
 
     auto checkBuffer = [buf = kj::mv(buf)]() {
-      KJ_ASSERT(kj::StringPtr(buf.begin(), buf.end()-1) == kj::StringPtr("foo"));
+      KJ_ASSERT(buf == "foo\x00"_kjb);
     };
 
     return readPromise.then(kj::mv(checkBuffer));
@@ -508,13 +508,12 @@ KJ_TEST("TLS half-duplex") {
   KJ_EXPECT(server->readAllText().wait(test.io.waitScope) == "");
 
   for (uint i = 0; i < 100; i++) {
-    char buffer[7];
-    auto writePromise = server->write("foobar", 6);
-    auto readPromise = client->read(buffer, 6);
+    byte buffer[6]{};
+    auto writePromise = server->write("foobar"_kjb);
+    auto readPromise = client->read(buffer);
     writePromise.wait(test.io.waitScope);
     readPromise.wait(test.io.waitScope);
-    buffer[6] = '\0';
-    KJ_ASSERT(kj::StringPtr(buffer, 6) == "foobar");
+    KJ_ASSERT(buffer == "foobar"_kjb);
   }
 
   server->shutdownWrite();
@@ -573,32 +572,31 @@ KJ_TEST("TLS multiple messages") {
   auto client = clientPromise.wait(test.io.waitScope);
   auto server = serverPromise.wait(test.io.waitScope);
 
-  auto writePromise = client->write("foo", 3)
-      .then([&]() { return client->write("bar", 3); });
+  auto writePromise = client->write("foo"_kjb)
+      .then([&]() { return client->write("bar"_kjb); });
 
-  char buf[4];
-  buf[3] = '\0';
+  byte buf[3]{};
 
-  server->read(&buf, 3).wait(test.io.waitScope);
-  KJ_ASSERT(kj::StringPtr(buf) == "foo");
+  server->read(buf).wait(test.io.waitScope);
+  KJ_ASSERT(buf == "foo"_kjb);
 
   writePromise = writePromise
-      .then([&]() { return client->write("baz", 3); });
+      .then([&]() { return client->write("baz"_kjb); });
 
-  server->read(&buf, 3).wait(test.io.waitScope);
-  KJ_ASSERT(kj::StringPtr(buf) == "bar");
+  server->read(buf).wait(test.io.waitScope);
+  KJ_ASSERT(buf == "bar"_kjb);
 
-  server->read(&buf, 3).wait(test.io.waitScope);
-  KJ_ASSERT(kj::StringPtr(buf) == "baz");
+  server->read(buf).wait(test.io.waitScope);
+  KJ_ASSERT(buf == "baz"_kjb);
 
-  auto readPromise = server->read(&buf, 3);
+  auto readPromise = server->read(buf);
   KJ_EXPECT(!readPromise.poll(test.io.waitScope));
 
   writePromise = writePromise
-      .then([&]() { return client->write("qux", 3); });
+      .then([&]() { return client->write("qux"_kjb); });
 
   readPromise.wait(test.io.waitScope);
-  KJ_ASSERT(kj::StringPtr(buf) == "qux");
+  KJ_ASSERT(buf == "qux"_kjb);
 }
 
 KJ_TEST("TLS zero-sized write") {
@@ -613,25 +611,23 @@ KJ_TEST("TLS zero-sized write") {
   auto client = clientPromise.wait(test.io.waitScope);
   auto server = serverPromise.wait(test.io.waitScope);
 
-  char buf[7];
-  auto readPromise = server->read(&buf, 6);
+  byte buf[6]{};
+  auto readPromise = server->read(buf);
 
-  client->write("", 0).wait(test.io.waitScope);
-  client->write("foo", 3).wait(test.io.waitScope);
-  client->write("", 0).wait(test.io.waitScope);
-  client->write("bar", 3).wait(test.io.waitScope);
+  client->write(""_kjb).wait(test.io.waitScope);
+  client->write("foo"_kjb).wait(test.io.waitScope);
+  client->write(""_kjb).wait(test.io.waitScope);
+  client->write("bar"_kjb).wait(test.io.waitScope);
 
   readPromise.wait(test.io.waitScope);
-  buf[6] = '\0';
 
-  KJ_ASSERT(kj::StringPtr(buf) == "foobar");
+  KJ_ASSERT(buf == "foobar"_kjb);
 }
 
 kj::Promise<void> writeN(kj::AsyncIoStream& stream, kj::StringPtr text, size_t count) {
   if (count == 0) return kj::READY_NOW;
   --count;
-  return stream.write(text.begin(), text.size())
-      .then([&stream, text, count]() {
+  return stream.write(text.asBytes()).then([&stream, text, count]() {
     return writeN(stream, text, count);
   });
 }
@@ -640,7 +636,7 @@ kj::Promise<void> readN(kj::AsyncIoStream& stream, kj::StringPtr text, size_t co
   if (count == 0) return kj::READY_NOW;
   --count;
   auto buf = kj::heapString(text.size());
-  auto promise = stream.read(buf.begin(), buf.size());
+  auto promise = stream.read(buf.asBytes());
   return promise.then([&stream, text, buf=kj::mv(buf), count]() {
     KJ_ASSERT(buf == text, buf, text, count);
     return readN(stream, text, count);
@@ -723,7 +719,7 @@ KJ_TEST("TLS SNI") {
 }
 
 void expectInvalidCert(kj::StringPtr hostname, TlsCertificate cert,
-                       kj::StringPtr message, kj::Maybe<kj::StringPtr> altMessage = nullptr) {
+                       kj::StringPtr message, kj::Maybe<kj::StringPtr> altMessage = kj::none) {
   TlsKeypair keypair = { TlsPrivateKey(HOST_KEY), kj::mv(cert) };
   TlsContext::Options serverOpts;
   serverOpts.defaultKeypair = keypair;
@@ -738,12 +734,12 @@ void expectInvalidCert(kj::StringPtr hostname, TlsCertificate cert,
   clientPromise.then([](kj::Own<kj::AsyncOutputStream>) {
     KJ_FAIL_EXPECT("expected exception");
   }, [message, altMessage](kj::Exception&& e) {
-    if (kj::_::hasSubstring(e.getDescription(), message)) {
+    if (e.getDescription().contains(message)) {
       return;
     }
 
-    KJ_IF_MAYBE(a, altMessage) {
-      if (kj::_::hasSubstring(e.getDescription(), *a)) {
+    KJ_IF_SOME(a, altMessage) {
+      if (e.getDescription().contains(a)) {
         return;
       }
     }
@@ -974,9 +970,9 @@ private:
     auto request = kj::mv(clientRequests.back());
     clientRequests.removeLast();
 
-    KJ_IF_MAYBE(exception, kj::mv(request.maybeException)) {
+    KJ_IF_SOME(exception, kj::mv(request.maybeException)) {
       request.clientFulfiller = nullptr;  // The other end had an issue, break the promise.
-      return kj::mv(*exception);
+      return kj::mv(exception);
     } else {
       auto pipe = provider.newTwoWayPipe();
       request.clientFulfiller->fulfill(kj::mv(pipe.ends[0]));
@@ -984,7 +980,7 @@ private:
     }
   }
 
-  Promise<Own<AsyncIoStream>> connectImpl(Maybe<Exception> maybeException = nullptr) {
+  Promise<Own<AsyncIoStream>> connectImpl(Maybe<Exception> maybeException = kj::none) {
     auto paf = newPromiseAndFulfiller<Own<AsyncIoStream>>();
     clientRequests.add(ClientRequest{ kj::mv(maybeException), kj::mv(paf.fulfiller) });
 
@@ -1037,15 +1033,15 @@ KJ_TEST("TLS receiver experiences pre-TLS error") {
   TlsReceiverTest test;
 
   KJ_LOG(INFO, "Accepting before a bad connect");
-  auto promise = test.receiver->accept();
+  auto acceptPromise = test.receiver->accept();
 
   KJ_LOG(INFO, "Disappointing our server");
-  test.baseReceiver->badConnect();
+  auto connectPromise = test.baseReceiver->badConnect();
 
   // Can't use KJ_EXPECT_THROW_RECOVERABLE_MESSAGE because wait() that returns a value can't throw
   // recoverable exceptions. Can't use KJ_EXPECT_THROW_MESSAGE because non-recoverable exceptions
   // will fork() in -fno-exception which screws up our state.
-  promise.then([](auto) {
+  acceptPromise.then([](auto) {
     KJ_FAIL_EXPECT("expected exception");
   }, [](kj::Exception&& e) {
     KJ_EXPECT(e.getDescription() == "Pipes are leaky");
@@ -1203,8 +1199,8 @@ kj::Promise<void> expectRead(kj::AsyncInputStream& in, kj::StringPtr expected) {
       KJ_FAIL_ASSERT("expected data never sent", expected);
     }
 
-    auto actual = buffer.slice(0, amount);
-    if (memcmp(actual.begin(), expected.begin(), actual.size()) != 0) {
+    auto actual = buffer.first(amount);
+    if (actual != expected.asBytes().first(amount)) {
       KJ_FAIL_ASSERT("data from stream doesn't match expected", expected, actual);
     }
 
@@ -1239,18 +1235,18 @@ KJ_TEST("NetworkHttpClient connect with tlsStarter") {
   clientSettings.tlsContext = tls;
   auto client = newHttpClient(clientTimer, headerTable,
       io.provider->getNetwork(), *tlsNetwork, clientSettings);
-  kj::HttpConnectSettings httpConnectSettings = { false, nullptr };
+  kj::HttpConnectSettings httpConnectSettings = { false, kj::none };
   kj::TlsStarterCallback tlsStarter;
   httpConnectSettings.tlsStarter = tlsStarter;
   auto request = client->connect(
       kj::str("127.0.0.1:", listener1->getPort()), HttpHeaders(headerTable), httpConnectSettings);
 
-  KJ_ASSERT(tlsStarter != nullptr);
+  KJ_ASSERT(tlsStarter != kj::none);
 
   auto buf = kj::heapArray<char>(4);
 
   auto promises = kj::heapArrayBuilder<kj::Promise<void>>(2);
-  promises.add(request.connection->write("hello", 5));
+  promises.add(request.connection->write("hello"_kjb));
   promises.add(expectRead(*request.connection, "hello"_kj));
   kj::joinPromisesFailFast(promises.finish())
       .then([io=kj::mv(request.connection)]() mutable {

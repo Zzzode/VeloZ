@@ -22,15 +22,17 @@
 
 #pragma once
 
-#include "common.h"
-
 #include <cstdint>
+#include <kj/common.h>
 
 KJ_BEGIN_HEADER
 
 struct sockaddr;
 
 namespace kj {
+
+class String;
+class StringPtr;
 
 class CidrRange {
 public:
@@ -46,6 +48,7 @@ public:
   }
 
   bool matches(const struct sockaddr* addr) const;
+  bool matches(StringPtr addr) const;
   bool matchesFamily(int family) const;
 
   String toString() const;

@@ -22,6 +22,7 @@
 #pragma once
 
 #include "common.h"
+#include "string.h"
 
 KJ_BEGIN_HEADER
 
@@ -1630,9 +1631,6 @@ public:
   inline bool operator==(decltype(nullptr)) const {
     return tag == 0;
   }
-  inline bool operator!=(decltype(nullptr)) const {
-    return tag != 0;
-  }
 
   template <typename T> bool is() const {
     return tag == typeIndex<T>();
@@ -1667,14 +1665,14 @@ public:
     if (is<T>()) {
       return *reinterpret_cast<T*>(space);
     } else {
-      return nullptr;
+      return kj::none;
     }
   }
   template <typename T> Maybe<const T&> tryGet() const {
     if (is<T>()) {
       return *reinterpret_cast<const T*>(space);
     } else {
-      return nullptr;
+      return kj::none;
     }
   }
 
@@ -1718,15 +1716,8 @@ private:
   // TODO(someday):  Generalize the above template and make it common.  I tried, but C++ decided to
   //   be difficult so I cut my losses.
 
-  static constexpr auto spaceSize = maxSize(sizeof(Variants)...);
-  // TODO(msvc):  This constant could just as well go directly inside space's bracket's, where it's
-  // used, but MSVC suffers a parse error on `...`.
-
-  union {
-    byte space[spaceSize];
-
-    void* forceAligned;
-    // TODO(someday):  Use C++11 alignas() once we require GCC 4.8 / Clang 3.3.
+  union alignas(void*) {
+    byte space[maxSize(sizeof(Variants)...)];
   };
 
   template <typename... T> inline void doAll(T... t) {}
@@ -1835,15 +1826,8 @@ template <typename... Variants> template <uint i> void OneOf<Variants...>::allHa
   KJ_UNREACHABLE;
 }
 
-#if KJ_CPP_STD > 201402L
 #define KJ_SWITCH_ONEOF(value)                                                                     \
   switch (auto _kj_switch_subject = (value)._switchSubject(); _kj_switch_subject->which())
-#else
-#define KJ_SWITCH_ONEOF(value)                                                                     \
-  /* Without C++17, we can only support one switch per containing block. Deal with it. */          \
-  auto _kj_switch_subject = (value)._switchSubject();                                              \
-  switch (_kj_switch_subject->which())
-#endif
 #if !_MSC_VER || defined(__clang__)
 #define KJ_CASE_ONEOF(name, ...)                                                                   \
   break;                                                                                           \
@@ -1886,15 +1870,58 @@ template <typename... Variants> template <uint i> void OneOf<Variants...>::allHa
 //   compiler warning, just like a regular switch() over an enum where one of the enum values is
 //   missing.
 // - There's no need for a `break` statement in a KJ_CASE_ONEOF; it is implied.
-// - Under C++11 and C++14, only one KJ_SWITCH_ONEOF() can appear in a block. Wrap the switch in
-//   a pair of braces if you need a second switch in the same block. If C++17 is enabled, this is
-//   not an issue.
 //
 // Implementation notes:
 // - The use of __VA_ARGS__ is to account for template types that have commas separating type
 //   parameters, since macros don't recognize <> as grouping.
 // - _kj_switch_done is really used as a boolean flag to prevent the for() loop from actually
 //   looping, but it's defined as a pointer since that's all we can define in this context.
+
+namespace _ {
+
+// Helper that tries comparing a and b as type T, but only if a.is<T>().
+template <typename T, typename... Variants>
+bool compareIfIs(const OneOf<Variants...>& a, const OneOf<Variants...>& b) {
+  if (a.template is<T>()) {
+    // We know a.which() == b.which(), so b is also T.
+    return a.template get<T>() == b.template get<T>();
+  } else {
+    return false;
+  }
+}
+
+} // namespace _
+
+template <typename... Variants>
+bool operator==(const OneOf<Variants...>& a, const OneOf<Variants...>& b) {
+  if (a == nullptr && b == nullptr)
+    return true;
+  if ((a == nullptr) != (b == nullptr))
+    return false;
+
+  if (a.which() != b.which())
+    return false;
+
+  return (_::compareIfIs<Variants>(a, b) || ...);
+}
+
+// TODO(someday) an ideal implementation would use kj::toCharSequence instead of kj::str,
+// producing a OneOf all the possible result types, and then would implement kj::_::fill()
+// for such a OneOf. This would avoid an extra copy and allocation when the OneOf is embedded
+// in a larger string.
+template <typename... Ts>
+  requires(kj::Stringifiable<Ts> && ...)
+kj::String KJ_STRINGIFY(const kj::OneOf<Ts...>& o) {
+  kj::String result;
+  bool handled = false;
+
+  ((o.template is<Ts>() && (result = kj::str(o.template get<Ts>()), handled = true)), ...);
+
+  if (handled == false) {
+    return kj::str("(null OneOf)");
+  }
+  return result;
+}
 
 } // namespace kj
 

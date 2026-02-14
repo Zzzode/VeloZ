@@ -12,6 +12,7 @@ set(kj_sources_lite
   mutex.c++
   string.c++
   source-location.c++
+  glob-filter.c++
   hash.c++
   table.c++
   thread.c++
@@ -47,6 +48,7 @@ set(kj_headers
   string.h
   string-tree.h
   source-location.h
+  glob-filter.h
   hash.h
   table.h
   map.h
@@ -60,7 +62,6 @@ set(kj_headers
   function.h
   mutex.h
   thread.h
-  threadlocal.h
   filesystem.h
   time.h
   main.h
@@ -76,7 +77,7 @@ set(kj-std_headers
 )
 add_library(kj ${kj_sources})
 add_library(CapnProto::kj ALIAS kj)
-target_compile_features(kj PUBLIC cxx_std_17)
+target_compile_features(kj PUBLIC cxx_std_23)
 
 if(UNIX AND NOT ANDROID)
   target_link_libraries(kj PUBLIC pthread)
@@ -104,12 +105,12 @@ target_include_directories(kj PUBLIC
   $<BUILD_INTERFACE:${PARENT_DIR}>
   $<INSTALL_INTERFACE:include>
 )
-# VeloZ: Skip install targets for KJ since it's embedded
-# set_target_properties(kj PROPERTIES VERSION ${VERSION})
-# install(TARGETS kj ${INSTALL_TARGETS_DEFAULT_ARGS})
-# install(FILES ${kj_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj")
-# install(FILES ${kj-parse_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/parse")
-# install(FILES ${kj-std_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/std")
+# Ensure the library has a version set to match autotools build
+set_target_properties(kj PROPERTIES VERSION ${VERSION})
+install(TARGETS kj ${INSTALL_TARGETS_DEFAULT_ARGS})
+install(FILES ${kj_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj")
+install(FILES ${kj-parse_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/parse")
+install(FILES ${kj-std_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/std")
 
 set(kj-test_sources
   test.c++
@@ -120,13 +121,14 @@ set(kj-test_headers
 set(kj-test-compat_headers
   compat/gtest.h
 )
-# Enable KJ test library for VeloZ
 add_library(kj-test ${kj-test_sources})
 add_library(CapnProto::kj-test ALIAS kj-test)
 target_link_libraries(kj-test PUBLIC kj)
-# install(TARGETS kj-test ${INSTALL_TARGETS_DEFAULT_ARGS})
-# install(FILES ${kj-test_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj")
-# install(FILES ${kj-test-compat_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
+# Ensure the library has a version set to match autotools build
+set_target_properties(kj-test PROPERTIES VERSION ${VERSION})
+install(TARGETS kj-test ${INSTALL_TARGETS_DEFAULT_ARGS})
+install(FILES ${kj-test_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj")
+install(FILES ${kj-test-compat_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
 
 set(kj-async_sources
   async.c++
@@ -141,6 +143,7 @@ set(kj-async_sources
 set(kj-async_headers
   async-prelude.h
   async.h
+  async-coroutine-alloc.h
   async-inl.h
   async-unix.h
   async-win32.h
@@ -168,10 +171,10 @@ if(NOT CAPNP_LITE)
   elseif(WIN32)
     target_link_libraries(kj-async PUBLIC ws2_32)
   endif()
-  # VeloZ: Skip install targets for KJ since it's embedded
-  # set_target_properties(kj-async PROPERTIES VERSION ${VERSION})
-  # install(TARGETS kj-async ${INSTALL_TARGETS_DEFAULT_ARGS})
-  # install(FILES ${kj-async_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj")
+  # Ensure the library has a version set to match autotools build
+  set_target_properties(kj-async PROPERTIES VERSION ${VERSION})
+  install(TARGETS kj-async ${INSTALL_TARGETS_DEFAULT_ARGS})
+  install(FILES ${kj-async_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj")
 endif()
 
 # kj-http ======================================================================
@@ -193,16 +196,14 @@ if(NOT CAPNP_LITE)
   else()
     target_link_libraries(kj-http PUBLIC kj-async kj)
   endif()
-  # VeloZ: Skip install targets for KJ since it's embedded
-  # set_target_properties(kj-http PROPERTIES VERSION ${VERSION})
-  # install(TARGETS kj-http ${INSTALL_TARGETS_DEFAULT_ARGS})
-  # install(FILES ${kj-http_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
+  # Ensure the library has a version set to match autotools build
+  set_target_properties(kj-http PROPERTIES VERSION ${VERSION})
+  install(TARGETS kj-http ${INSTALL_TARGETS_DEFAULT_ARGS})
+  install(FILES ${kj-http_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
 endif()
 
 # kj-tls ======================================================================
-# VeloZ: Enable TLS support for HTTPS connections (requires OpenSSL)
-find_package(OpenSSL 1.1.0 REQUIRED)
-if(OpenSSL_FOUND)
+if(WITH_OPENSSL)
   set(kj-tls_sources
     compat/readiness-io.c++
     compat/tls.c++
@@ -215,43 +216,44 @@ if(OpenSSL_FOUND)
     add_library(kj-tls ${kj-tls_sources})
     add_library(CapnProto::kj-tls ALIAS kj-tls)
     target_link_libraries(kj-tls PUBLIC kj-async)
+
     target_compile_definitions(kj-tls PRIVATE KJ_HAS_OPENSSL)
-    target_link_libraries(kj-tls PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-    # VeloZ: Skip install targets for KJ since it's embedded
-    # set_target_properties(kj-tls PROPERTIES VERSION ${VERSION})
-    # install(TARGETS kj-tls ${INSTALL_TARGETS_DEFAULT_ARGS})
-    # install(FILES ${kj-tls_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
+    target_link_libraries(kj-tls PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    if(WIN32)
+      target_link_libraries(kj-tls PUBLIC crypt32)
+    endif()
+
+    # Ensure the library has a version set to match autotools build
+    set_target_properties(kj-tls PROPERTIES VERSION ${VERSION})
+    install(TARGETS kj-tls ${INSTALL_TARGETS_DEFAULT_ARGS})
+    install(FILES ${kj-tls_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
   endif()
-else()
-  message(FATAL_ERROR "OpenSSL not found but is required for WebSocket support. "
-                  "Install OpenSSL development packages (libssl-dev, libcrypto-dev on Ubuntu)")
 endif()
 
 # kj-gzip ======================================================================
-# VeloZ: Skip GZIP support for now (WITH_ZLIB not defined)
-# if(WITH_ZLIB)
-#   set(kj-gzip_sources
-#     compat/gzip.c++
-#   )
-#   set(kj-gzip_headers
-#     compat/gzip.h
-#   )
-#   if(NOT CAPNP_LITE)
-#     add_library(kj-gzip ${kj-gzip_sources})
-#     add_library(CapnProto::kj-gzip ALIAS kj-gzip)
-#     target_compile_definitions(kj-gzip PRIVATE KJ_HAS_ZLIB)
-#     target_link_libraries(kj-gzip PUBLIC kj-async kj ZLIB::ZLIB)
-#     # Ensure the library has a version set to match autotools build
-#     set_target_properties(kj-gzip PROPERTIES VERSION ${VERSION})
-#     install(TARGETS kj-gzip ${INSTALL_TARGETS_DEFAULT_ARGS})
-#     install(FILES ${kj-gzip_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
-#   endif()
-# endif()
+
+if(WITH_ZLIB)
+  set(kj-gzip_sources
+    compat/gzip.c++
+  )
+  set(kj-gzip_headers
+    compat/gzip.h
+  )
+  if(NOT CAPNP_LITE)
+    add_library(kj-gzip ${kj-gzip_sources})
+    add_library(CapnProto::kj-gzip ALIAS kj-gzip)
+
+    target_compile_definitions(kj-gzip PRIVATE KJ_HAS_ZLIB)
+    target_link_libraries(kj-gzip PUBLIC kj-async kj ZLIB::ZLIB)
+
+    # Ensure the library has a version set to match autotools build
+    set_target_properties(kj-gzip PROPERTIES VERSION ${VERSION})
+    install(TARGETS kj-gzip ${INSTALL_TARGETS_DEFAULT_ARGS})
+    install(FILES ${kj-gzip_headers} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/kj/compat")
+  endif()
+endif()
 
 # Tests ========================================================================
-
-# VeloZ: Force enable testing for KJ library
-set(BUILD_TESTING ON CACHE BOOL "Build Testing" FORCE)
 
 if(BUILD_TESTING)
   add_executable(kj-tests
@@ -262,16 +264,21 @@ if(BUILD_TESTING)
     string-test.c++
     table-test.c++
     map-test.c++
+    maybe-test.c++
     exception-test.c++
+    # this test overrides symbolizer and has to be linked separately
+    # exception-override-symbolizer-test.c++
     debug-test.c++
     io-test.c++
     mutex-test.c++
     time-test.c++
-    threadlocal-test.c++
     test-test.c++
+    glob-filter-test.c++
     std/iostream-test.c++
   )
+  # TODO: Link with librt on Solaris for sched_yield
   target_link_libraries(kj-tests kj-test kj)
+  add_dependencies(check kj-tests)
   add_test(NAME kj-tests-run COMMAND kj-tests)
 
   if(NOT CAPNP_LITE)
@@ -279,6 +286,7 @@ if(BUILD_TESTING)
       async-test.c++
       async-xthread-test.c++
       async-coroutine-test.c++
+      async-coroutine-alloc-test.c++
       async-unix-test.c++
       async-unix-xthread-test.c++
       async-win32-test.c++
@@ -297,8 +305,30 @@ if(BUILD_TESTING)
       filesystem-disk-test.c++
       parse/common-test.c++
       parse/char-test.c++
+      compat/url-test.c++
+      compat/http-test.c++
+      compat/gzip-test.c++
+      compat/tls-test.c++
     )
     target_link_libraries(kj-heavy-tests kj-http kj-async kj-test kj)
+    if(WITH_OPENSSL)
+      target_link_libraries(kj-heavy-tests kj-tls)
+      # tls-test.c++ needs to use OpenSSL directly.
+      target_link_libraries(kj-heavy-tests OpenSSL::SSL OpenSSL::Crypto)
+      target_compile_definitions(kj-heavy-tests PRIVATE KJ_HAS_OPENSSL)
+      set_property(
+        SOURCE compat/tls-test.c++
+        APPEND PROPERTY COMPILE_DEFINITIONS KJ_HAS_OPENSSL
+      )
+    endif()
+    if(WITH_ZLIB)
+      target_link_libraries(kj-heavy-tests kj-gzip)
+      set_property(
+        SOURCE compat/gzip-test.c++
+        APPEND PROPERTY COMPILE_DEFINITIONS KJ_HAS_ZLIB
+      )
+    endif()
+    add_dependencies(check kj-heavy-tests)
     add_test(NAME kj-heavy-tests-run COMMAND kj-heavy-tests)
-  endif()
-endif()
+  endif()  # NOT CAPNP_LITE
+endif()  # BUILD_TESTING

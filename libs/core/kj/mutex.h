@@ -21,9 +21,7 @@
 
 #pragma once
 
-#include "debug.h"
 #include "memory.h"
-#include "one-of.h"
 #include "source-location.h"
 #include "time.h"
 
@@ -47,86 +45,17 @@ KJ_BEGIN_HEADER
 #include <pthread.h>
 #endif
 
-// There are 3 macros controlling lock tracking:
-// KJ_TRACK_LOCK_BLOCKING will set up async signal safe TLS variables that can be used to identify
-// the KJ primitive blocking the current thread.
-// KJ_SAVE_ACQUIRED_LOCK_INFO will allow introspection of a Mutex to get information about what is
-// currently holding the lock.
-// KJ_TRACK_LOCK_ACQUISITION is automatically enabled by either one of them.
-
-#if KJ_TRACK_LOCK_BLOCKING
-// Lock tracking is required to keep track of what blocked.
-#define KJ_TRACK_LOCK_ACQUISITION 1
-#endif
-
-#if KJ_SAVE_ACQUIRED_LOCK_INFO
-#define KJ_TRACK_LOCK_ACQUISITION 1
-#include <unistd.h>
-#endif
-
 namespace kj {
-#if KJ_TRACK_LOCK_ACQUISITION
-#if !KJ_USE_FUTEX
-#error Lock tracking is only currently supported for futex-based mutexes.
-#endif
-
-#if !KJ_COMPILER_SUPPORTS_SOURCE_LOCATION
-#error C++20 or newer is required (or the use of clang/gcc).
-#endif
-
-using LockSourceLocation = SourceLocation;
-using LockSourceLocationArg = const SourceLocation&;
-// On x86-64 the codegen is optimal if the argument has type const& for the location. However,
-// since this conflicts with the optimal call signature for NoopSourceLocation,
-// LockSourceLocationArg is used to conditionally select the right type without polluting the usage
-// themselves. Interestingly this makes no difference on ARM.
-// https://godbolt.org/z/q6G8ee5a3
-#else
-using LockSourceLocation = NoopSourceLocation;
-using LockSourceLocationArg = NoopSourceLocation;
-#endif
 
 class Exception;
+
+using LockSourceLocation = NoopSourceLocation;
+using LockSourceLocationArg = NoopSourceLocation;
 
 // =======================================================================================
 // Private details -- public interfaces follow below.
 
 namespace _ { // private
-
-#if KJ_SAVE_ACQUIRED_LOCK_INFO
-class HoldingExclusively {
-  // The lock is being held in exclusive mode.
-public:
-  constexpr HoldingExclusively(pid_t tid, const SourceLocation& location)
-      : heldBy(tid), acquiredAt(location) {}
-
-  pid_t threadHoldingLock() const {
-    return heldBy;
-  }
-  const SourceLocation& lockAcquiredAt() const {
-    return acquiredAt;
-  }
-
-private:
-  pid_t heldBy;
-  SourceLocation acquiredAt;
-};
-
-class HoldingShared {
-  // The lock is being held in shared mode currently. Which threads are holding this lock open
-  // is unknown.
-public:
-  constexpr HoldingShared(const SourceLocation& location) : acquiredAt(location) {}
-
-  const SourceLocation& lockAcquiredAt() const {
-    return acquiredAt;
-  }
-
-private:
-  SourceLocation acquiredAt;
-};
-#endif
-
 class Mutex {
   // Internal implementation details.  See `MutexGuarded<T>`.
 
@@ -171,15 +100,6 @@ public:
   // validate certain invariants.
 #endif
 
-#if KJ_SAVE_ACQUIRED_LOCK_INFO
-  using AcquiredMetadata = kj::OneOf<HoldingExclusively, HoldingShared>;
-  KJ_DISABLE_TSAN AcquiredMetadata lockedInfo() const;
-  // Returns metadata about this lock when its held. This method is async signal safe. It must also
-  // be called in a state where it's guaranteed that the lock state won't be released by another
-  // thread. In other words this has to be called from the signal handler within the thread that's
-  // holding the lock.
-#endif
-
 private:
 #if KJ_USE_FUTEX
   uint futex;
@@ -204,32 +124,6 @@ private:
   mutable pthread_rwlock_t mutex;
 #endif
 
-#if KJ_SAVE_ACQUIRED_LOCK_INFO
-  pid_t lockedExclusivelyByThread = 0;
-  SourceLocation lockAcquiredLocation;
-
-  KJ_DISABLE_TSAN void acquiredExclusive(pid_t tid, const SourceLocation& location) noexcept {
-    lockAcquiredLocation = location;
-    __atomic_store_n(&lockedExclusivelyByThread, tid, __ATOMIC_RELAXED);
-  }
-
-  KJ_DISABLE_TSAN void acquiredShared(const SourceLocation& location) noexcept {
-    lockAcquiredLocation = location;
-  }
-
-  KJ_DISABLE_TSAN SourceLocation releasingExclusive() noexcept {
-    auto tmp = lockAcquiredLocation;
-    lockAcquiredLocation = SourceLocation{};
-    lockedExclusivelyByThread = 0;
-    return tmp;
-  }
-#else
-  static constexpr void acquiredExclusive(uint, LockSourceLocationArg) {}
-  static constexpr void acquiredShared(LockSourceLocationArg) {}
-  static constexpr NoopSourceLocation releasingExclusive() {
-    return NoopSourceLocation{};
-  }
-#endif
   struct Waiter {
     kj::Maybe<Waiter&> next;
     kj::Maybe<Waiter&>* prev;
@@ -250,7 +144,7 @@ private:
 #endif
   };
 
-  kj::Maybe<Waiter&> waitersHead = nullptr;
+  kj::Maybe<Waiter&> waitersHead = kj::none;
   kj::Maybe<Waiter&>* waitersTail = &waitersHead;
   // linked list of waiters; can only modify under lock
 
@@ -381,7 +275,7 @@ public:
   }
 
   template <typename Cond>
-  void wait(Cond&& condition, Maybe<Duration> timeout = nullptr,
+  void wait(Cond&& condition, Maybe<Duration> timeout = kj::none,
             LockSourceLocationArg location = {}) {
     // Unlocks the lock until `condition(state)` evaluates true (where `state` is type `const T&`
     // referencing the object protected by the lock).
@@ -482,7 +376,7 @@ public:
   // Like `getWithoutLock()`, but asserts that the lock is already held by the calling thread.
 
   template <typename Cond, typename Func>
-  auto when(Cond&& condition, Func&& callback, Maybe<Duration> timeout = nullptr,
+  auto when(Cond&& condition, Func&& callback, Maybe<Duration> timeout = kj::none,
             LockSourceLocationArg location = {}) const -> decltype(callback(instance<T&>())) {
     // Waits until condition(state) returns true, then calls callback(state) under lock.
     //
@@ -536,10 +430,6 @@ template <typename T> class ExternalMutexGuarded {
   //   - The value has been moved away.
   // - If ExternalMutexGuarded<T> is ever moved, then T must have a move constructor and move
   //   assignment operator that do not follow any pointers, therefore do not need to take a lock.
-  //
-  // Inherits from LockSourceLocation to perform an empty base class optimization when lock tracking
-  // is compiled out. Once the minimum C++ standard for the KJ library is C++20, this optimization
-  // could be replaced by a member variable with a [[no_unique_address]] annotation.
 public:
   ExternalMutexGuarded(LockSourceLocationArg location = {}) : location(location) {}
 
@@ -559,7 +449,7 @@ public:
 
   ~ExternalMutexGuarded() noexcept(false) {
     if (mutex != nullptr) {
-      mutex->lock(_::Mutex::EXCLUSIVE, nullptr, location);
+      mutex->lock(_::Mutex::EXCLUSIVE, kj::none, location);
       KJ_DEFER(mutex->unlock(_::Mutex::EXCLUSIVE));
       value = T();
     }
@@ -640,13 +530,13 @@ inline MutexGuarded<T>::MutexGuarded(Params&&... params) : value(kj::fwd<Params>
 
 template <typename T>
 inline Locked<T> MutexGuarded<T>::lockExclusive(LockSourceLocationArg location) const {
-  mutex.lock(_::Mutex::EXCLUSIVE, nullptr, location);
+  mutex.lock(_::Mutex::EXCLUSIVE, kj::none, location);
   return Locked<T>(mutex, value);
 }
 
 template <typename T>
 inline Locked<const T> MutexGuarded<T>::lockShared(LockSourceLocationArg location) const {
-  mutex.lock(_::Mutex::SHARED, nullptr, location);
+  mutex.lock(_::Mutex::SHARED, kj::none, location);
   return Locked<const T>(mutex, value);
 }
 
@@ -656,7 +546,7 @@ MutexGuarded<T>::lockExclusiveWithTimeout(Duration timeout, LockSourceLocationAr
   if (mutex.lock(_::Mutex::EXCLUSIVE, timeout, location)) {
     return Locked<T>(mutex, value);
   } else {
-    return nullptr;
+    return kj::none;
   }
 }
 
@@ -666,7 +556,7 @@ MutexGuarded<T>::lockSharedWithTimeout(Duration timeout, LockSourceLocationArg l
   if (mutex.lock(_::Mutex::SHARED, timeout, location)) {
     return Locked<const T>(mutex, value);
   } else {
-    return nullptr;
+    return kj::none;
   }
 }
 
@@ -723,52 +613,6 @@ inline const T& Lazy<T>::get(Func&& init, LockSourceLocationArg location) const 
   }
   return *value;
 }
-
-#if KJ_TRACK_LOCK_BLOCKING
-struct BlockedOnMutexAcquisition {
-  const _::Mutex& mutex;
-  // The mutex we are blocked on.
-
-  const SourceLocation& origin;
-  // Where did the blocking operation originate from.
-};
-
-struct BlockedOnCondVarWait {
-  const _::Mutex& mutex;
-  // The mutex the condition variable is using (may or may not be locked).
-
-  const void* waiter;
-  // Pointer to the waiter that's being waited on.
-
-  const SourceLocation& origin;
-  // Where did the blocking operation originate from.
-};
-
-struct BlockedOnOnceInit {
-  const _::Once& once;
-
-  const SourceLocation& origin;
-  // Where did the blocking operation originate from.
-};
-
-using BlockedOnReason = OneOf<BlockedOnMutexAcquisition, BlockedOnCondVarWait, BlockedOnOnceInit>;
-
-Maybe<const BlockedOnReason&> blockedReason() noexcept;
-// Returns the information about the reason the current thread is blocked synchronously on KJ
-// lock primitives. Returns nullptr if the current thread is not currently blocked on such
-// primitives. This is intended to be called from a signal handler to check whether the current
-// thread is blocked. Outside of a signal handler there is little value to this function. In those
-// cases by definition the thread is not blocked. This includes the callable used as part of a
-// condition variable since that happens after the lock is acquired & the current thread is no
-// longer blocked). The utility could be made useful for non-signal handler use-cases by being able
-// to fetch the pointer to the TLS variable directly (i.e. const BlockedOnReason&*). However, there
-// would have to be additional changes/complexity to try make that work since you'd need
-// synchronization to ensure that the memory you'd try to reference is still valid. The likely
-// solution would be to make these mutually exclusive options where you can use either the fast
-// async-safe option, or a mutex-guarded TLS variable you can get a reference to that isn't
-// async-safe. That being said, maybe someone can come up with a way to make something that works
-// in both use-cases which would of course be more preferable.
-#endif
 
 } // namespace kj
 

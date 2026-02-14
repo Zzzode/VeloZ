@@ -60,46 +60,38 @@
 #define KJ_HAS_COMPILER_FEATURE(x) 0
 #endif
 
-#if defined(_MSVC_LANG) && !defined(__clang__)
-#define KJ_CPP_STD _MSVC_LANG
-#else
-#define KJ_CPP_STD __cplusplus
-#endif
-
 KJ_BEGIN_HEADER
 
 #ifndef KJ_NO_COMPILER_CHECK
-// Technically, __cplusplus should be 201402L for C++14, but GCC 4.9 -- which is supported -- still
-// had it defined to 201300L even with -std=c++14.
-#if KJ_CPP_STD < 201300L && !__CDT_PARSER__
-#error "This code requires C++14. Either your compiler does not support it or it is not enabled."
+#if __cplusplus < 202002L && !__CDT_PARSER__
+#error "This code requires C++20. Either your compiler does not support it or it is not enabled."
 #ifdef __GNUC__
 // Compiler claims compatibility with GCC, so presumably supports -std.
-#error "Pass -std=c++14 on the compiler command line to enable C++14."
+#error "Pass -std=c++23 on the compiler command line to enable C++20."
 #endif
 #endif
 
 #ifdef __GNUC__
 #if __clang__
-#if __clang_major__ < 5
-#warning "This library requires at least Clang 5.0."
-#elif KJ_CPP_STD >= 201402L && !__has_include(<initializer_list>)
-#warning "Your compiler supports C++14 but your C++ standard library does not.  If your "\
+#if __clang_major__ < 14
+#warning "This library requires at least Clang 14.0."
+#endif
+#if __cplusplus >= 202002L && !(__has_include(<coroutine>) || __has_include(<experimental/coroutine>))
+#warning "Your compiler supports C++20 but your C++ standard library does not.  If your "\
                "system has libc++ installed (as should be the case on e.g. Mac OSX), try adding "\
                "-stdlib=libc++ to your CXXFLAGS."
 #endif
-#else
-#if __GNUC__ < 5
-#warning "This library requires at least GCC 5.0."
-#endif
+#elif (__GNUC__ < 14) || (__GNUC__ == 14 && __GNUC_MINOR__ < 3)
+#warning                                                                                           \
+    "This library requires at least GCC 14.3 due to https://gcc.gnu.org/bugzilla/show_bug.cgi?id=102051."
 #endif
 #elif defined(_MSC_VER)
-#if _MSC_VER < 1910 && !defined(__clang__)
-#error "You need Visual Studio 2017 or better to compile this code."
+#if _MSC_VER < 1930 && !defined(__clang__)
+#error "You need Visual Studio 2022 or better to compile this code."
 #endif
 #else
 #warning "I don't recognize your compiler. As of this writing, Clang, GCC, and Visual Studio "\
-           "are the only known compilers with enough C++14 support for this library. "\
+           "are the only known compilers with enough C++20 support for this library. "\
            "#define KJ_NO_COMPILER_CHECK to make this warning go away."
 #endif
 #endif
@@ -108,14 +100,6 @@ KJ_BEGIN_HEADER
 #include <initializer_list>
 #include <stddef.h>
 #include <string.h>
-
-#if __linux__ && KJ_CPP_STD > 201200L
-// Hack around stdlib bug with C++14 that exists on some Linux systems.
-// Apparently in this mode the C library decides not to define gets() but the C++ library still
-// tries to import it into the std namespace. This bug has been fixed at the source but is still
-// widely present in the wild e.g. on Ubuntu 14.04.
-#undef _GLIBCXX_HAVE_GETS
-#endif
 
 #if _WIN32
 // Windows likes to define macros for min() and max(). We just can't deal with this.
@@ -129,8 +113,12 @@ KJ_BEGIN_HEADER
 #endif
 #endif
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__)
+#if _MSC_VER < 1920
 #include <intrin.h> // __popcnt
+#else
+#include <intrin0.h> // __popcnt
+#endif
 #endif
 
 // =======================================================================================
@@ -144,8 +132,8 @@ typedef unsigned char byte;
 // Common macros, especially for common yet compiler-specific features.
 
 // Detect whether RTTI and exceptions are enabled, assuming they are unless we have specific
-// evidence to the contrary.  Clients can always define KJ_NO_RTTI or KJ_NO_EXCEPTIONS explicitly
-// to override these checks.
+// evidence to the contrary.  Clients can always define KJ_NO_RTTI explicitly to override the
+// check. As of version 2, exceptions are required, so this produces an error otherwise.
 
 // TODO: Ideally we'd use __cpp_exceptions/__cpp_rtti not being defined as the first pass since
 //   that is the standard compliant way. However, it's unclear how to use those macros (or any
@@ -155,22 +143,22 @@ typedef unsigned char byte;
 #if !defined(KJ_NO_RTTI) && !__has_feature(cxx_rtti)
 #define KJ_NO_RTTI 1
 #endif
-#if !defined(KJ_NO_EXCEPTIONS) && !__has_feature(cxx_exceptions)
-#define KJ_NO_EXCEPTIONS 1
+#if !__has_feature(cxx_exceptions)
+#error "KJ requires C++ exceptions, please enable them"
 #endif
 #elif defined(__GNUC__)
 #if !defined(KJ_NO_RTTI) && !__GXX_RTTI
 #define KJ_NO_RTTI 1
 #endif
-#if !defined(KJ_NO_EXCEPTIONS) && !__EXCEPTIONS
-#define KJ_NO_EXCEPTIONS 1
+#if !__EXCEPTIONS
+#error "KJ requires C++ exceptions, please enable them"
 #endif
 #elif defined(_MSC_VER)
 #if !defined(KJ_NO_RTTI) && !defined(_CPPRTTI)
 #define KJ_NO_RTTI 1
 #endif
-#if !defined(KJ_NO_EXCEPTIONS) && !defined(_CPPUNWIND)
-#define KJ_NO_EXCEPTIONS 1
+#if !defined(_CPPUNWIND)
+#error "KJ requires C++ exceptions, please enable them"
 #endif
 #endif
 
@@ -274,6 +262,14 @@ typedef unsigned char byte;
 // by allowing a syntax like `[[clang::lifetimebound(*this)]]`.
 // https://clang.llvm.org/docs/AttributeReference.html#lifetimebound
 
+#if KJ_HAS_CPP_ATTRIBUTE(clang::musttail)
+#define KJ_MUSTTAIL [[clang::musttail]]
+#else
+#define KJ_MUSTTAIL
+#endif
+// Annotation for "return" statements to require that they be compiled as tail calls.
+// https://clang.llvm.org/docs/AttributeReference.html#musttail
+
 #if __clang__
 #define KJ_UNUSED_MEMBER __attribute__((unused))
 // Inhibits "unused" warning for member variables.  Only Clang produces such a warning, while GCC
@@ -282,13 +278,7 @@ typedef unsigned char byte;
 #define KJ_UNUSED_MEMBER
 #endif
 
-#if KJ_CPP_STD > 201703L || (__clang__ && __clang_major__ >= 9 && KJ_CPP_STD >= 201103L)
-// Technically this was only added to C++20 but Clang allows it for >= C++11 and spelunking the
-// attributes manual indicates it first came in with Clang 9.
 #define KJ_NO_UNIQUE_ADDRESS [[no_unique_address]]
-#else
-#define KJ_NO_UNIQUE_ADDRESS
-#endif
 
 #if KJ_HAS_COMPILER_FEATURE(thread_sanitizer) || defined(__SANITIZE_THREAD__)
 #define KJ_DISABLE_TSAN __attribute__((no_sanitize("thread"), noinline))
@@ -302,7 +292,7 @@ typedef unsigned char byte;
 #elif __GNUC__
 #define KJ_DEPRECATED(reason) __attribute__((deprecated))
 #define KJ_UNAVAILABLE(reason) = delete
-// If the `unavailable` attribute is not supproted, just mark the method deleted, which at least
+// If the `unavailable` attribute is not supported, just mark the method deleted, which at least
 // makes it a compile-time error to try to call it. Note that on Clang, marking a method deleted
 // *and* unavailable unfortunately defeats the purpose of the unavailable annotation, as the
 // generic "deleted" error is reported instead.
@@ -322,6 +312,17 @@ namespace _ { // private
 KJ_NORETURN(void inlineRequireFailure(const char* file, int line, const char* expectation,
                                       const char* macroArgs, const char* message = nullptr));
 
+KJ_NORETURN(void inlineRequireFailure(const char* file, int line, const char* expectation,
+                                      const char* macroArgs, const char* message, size_t arg1));
+
+KJ_NORETURN(void inlineRequireFailure(const char* file, int line, const char* expectation,
+                                      const char* macroArgs, const char* message, size_t arg1,
+                                      size_t arg2));
+
+KJ_NORETURN(void inlineRequireFailure(const char* file, int line, const char* expectation,
+                                      const char* macroArgs, const char* message, size_t arg1,
+                                      size_t arg2, size_t arg3));
+
 KJ_NORETURN(void unreachable());
 
 } // namespace _
@@ -330,7 +331,7 @@ KJ_NORETURN(void unreachable());
 #define KJ_MSVC_TRADITIONAL_CPP 1
 #endif
 
-#ifdef KJ_DEBUG
+#if defined(KJ_DEBUG) || (defined(KJ_ENABLE_IREQUIRE) && KJ_ENABLE_IREQUIRE)
 #if KJ_MSVC_TRADITIONAL_CPP
 #define KJ_IREQUIRE(condition, ...)                                                                \
   if (KJ_LIKELY(condition))                                                                        \
@@ -396,6 +397,8 @@ KJ_NORETURN(void unreachable());
 // variable-sized arrays.  For other compilers we could just use a fixed-size array.  `minStack`
 // is the stack array size to use if variable-width arrays are not supported.  `maxStack` is the
 // maximum stack array size if variable-width arrays *are* supported.
+//
+// TODO(cleanup): Deprecate this in favor of kj::SmallArray, over in array.h
 #if __GNUC__ && !__clang__
 #define KJ_STACK_ARRAY(type, name, size, minStack, maxStack)                                       \
   size_t name##_size = (size);                                                                     \
@@ -666,6 +669,8 @@ template <typename T> struct IsSameType_<T, T> {
 template <typename T, typename U> constexpr bool isSameType() {
   return IsSameType_<T, U>::value;
 }
+template <typename T, typename U>
+concept SameAs = IsSameType_<T, U>::value;
 
 template <typename T> constexpr bool isIntegral() {
   return false;
@@ -881,15 +886,11 @@ static KJ_CONSTEXPR(const) MaxValue_ maxValue = MaxValue_();
 // A special constant which, when cast to an integer type, takes on the maximum possible value of
 // that type.  This is useful to use as e.g. a parameter to a function because it will be robust
 // in the face of changes to the parameter's type.
-//
-// `char` is not supported, but `signed char` and `unsigned char` are.
 
 static KJ_CONSTEXPR(const) MinValue_ minValue = MinValue_();
 // A special constant which, when cast to an integer type, takes on the minimum possible value
 // of that type.  This is useful to use as e.g. a parameter to a function because it will be robust
 // in the face of changes to the parameter's type.
-//
-// `char` is not supported, but `signed char` and `unsigned char` are.
 
 template <typename T> inline bool operator==(T t, MaxValue_) {
   return t == Decay<T>(maxValue);
@@ -991,24 +992,11 @@ public:
       return value - other.value;
     }
 
-    inline bool operator==(const Iterator& other) const {
-      return value == other.value;
-    }
-    inline bool operator!=(const Iterator& other) const {
-      return value != other.value;
-    }
-    inline bool operator<=(const Iterator& other) const {
-      return value <= other.value;
-    }
-    inline bool operator>=(const Iterator& other) const {
-      return value >= other.value;
-    }
-    inline bool operator<(const Iterator& other) const {
-      return value < other.value;
-    }
-    inline bool operator>(const Iterator& other) const {
-      return value > other.value;
-    }
+    inline bool operator==(const Iterator& other) const = default;
+    inline bool operator<=(const Iterator& other) const = default;
+    inline bool operator>=(const Iterator& other) const = default;
+    inline bool operator<(const Iterator& other) const = default;
+    inline bool operator>(const Iterator& other) const = default;
 
   private:
     T value;
@@ -1111,9 +1099,6 @@ public:
     inline bool operator==(const Iterator& other) const {
       return index == other.index;
     }
-    inline bool operator!=(const Iterator& other) const {
-      return index != other.index;
-    }
     inline bool operator<=(const Iterator& other) const {
       return index <= other.index;
     }
@@ -1211,9 +1196,6 @@ public:
   inline bool operator==(const MappedIterator& other) const {
     return inner == other.inner;
   }
-  inline bool operator!=(const MappedIterator& other) const {
-    return inner != other.inner;
-  }
   inline bool operator<=(const MappedIterator& other) const {
     return inner <= other.inner;
   }
@@ -1302,23 +1284,174 @@ template <typename T> inline void dtor(T& location) {
 // forces the caller to handle the null case in order to satisfy the compiler, thus reliably
 // preventing null pointer dereferences at runtime.
 //
-// Maybe<T> can be implicitly constructed from T and from nullptr.
+// Maybe<T> can be implicitly constructed from T and from kj::none.
 // To read the value of a Maybe<T>, do:
 //
-//    KJ_IF_MAYBE(value, someFuncReturningMaybe()) {
-//      doSomething(*value);
+//    KJ_IF_SOME(value, someFuncReturningMaybe()) {
+//      doSomething(value);
 //    } else {
-//      maybeWasNull();
+//      maybeWasNone();
 //    }
 //
-// KJ_IF_MAYBE's first parameter is a variable name which will be defined within the following
-// block.  The variable will behave like a (guaranteed non-null) pointer to the Maybe's value,
-// though it may or may not actually be a pointer.
+// KJ_IF_SOME's first parameter is a variable name which will be defined within the following
+// block.  The variable will be a reference to the Maybe's value.  If the KJ_IF_SOME appears
+// on the 64th line of the source file, then the name cannot be `w`, because Microsoft.
 //
 // Note that Maybe<T&> actually just wraps a pointer, whereas Maybe<T> wraps a T and a boolean
 // indicating nullness.
 
 template <typename T> class Maybe;
+
+// =======================================================================================
+// MaybeTraits: Customization point for Maybe<T> behavior
+//
+// MaybeTraits controls three aspects of Maybe<T>:
+//
+// 1. NICHE OPTIMIZATION: When initNone/isNone are defined, Maybe<T> stores T directly
+//    without a separate bool flag, using a special "none" state of T (e.g., nullptr for Own<T>).
+//    This reduces sizeof(Maybe<Own<T>>) from 24 to 16 bytes. Both functions must be defined
+//    together, or neither.
+//
+// 2. CONVERTING CONSTRUCTOR/ASSIGNMENT: When convertingConstructor is true, Maybe<T> has a
+//    converting constructor Maybe<T>(U&&) and assignment operator operator=(U&&) that accept
+//    types U convertible to T. When false or not defined (default), these do not exist at all.
+//    See the detailed discussion in struct MaybeTraits below.
+//
+// 3. REFERENCE CONVERSION: When dereferencingConversion is true, Maybe<T> can implicitly
+//    convert to Maybe<U&> when *T returns a reference convertible to U&. This is useful for
+//    smart pointer types like Own<T>.
+//
+// WARNING: kj-rs (the Rust bindings for KJ) has its own knowledge of Maybe<T> memory layout
+// for interoperability with Rust. As of this writing, kj-rs supports Maybe<T&> and Maybe<Own<T>>
+// niche-optimized types, but not others. When adding niche optimization for a new type, you may
+// need to add corresponding support in kj-rs.
+//
+// To customize MaybeTraits for your type, specialize it in the same header where your type is
+// defined (after the type definition). See memory.h for an example (MaybeTraits<Own<T, D>>).
+
+template <typename T> struct MaybeTraits {
+  // Default traits: no niche optimization, no converting constructor, no ref conversion.
+  //
+  // NICHE OPTIMIZATION: To enable, define both of these static member functions:
+  //   static void initNone(T* ptr) noexcept;  // Use kj::ctor() to initialize a "none" value
+  //   static bool isNone(const T& value) noexcept;  // Returns true if value represents "none"
+  // If one is defined, both must be defined or you'll get a compile error.
+  //
+  // Note that if your type's "none constructor" is private, you won't be able to use kj::ctor() in
+  // your implementation of initNone(), but will have to use placement new directly.
+  //
+  // IMPORTANT: Both functions MUST be noexcept. This is required for exception safety in
+  // Maybe's assignment operators - if a constructor throws, we need to be able to safely
+  // leave the Maybe in the none state.
+  //
+  // IMPORTANT: The none value must not require destruction. Maybe will NEVER call T's destructor
+  // on a none value. This allows T's destructor to assume it is always destroying a valid
+  // (non-none) value, simplifying the implementation of RAII types. For example, a guard type
+  // that stores a pointer and calls ptr->exit() in its destructor can use nullptr as its none
+  // state without checking for null in the destructor.
+  //
+  // Choosing a none value: If your type T has a moved-from state which is practically
+  // unusable (supporting only destruction and assignment), then that state is likely a
+  // good candidate for being the none value. Ideally, the chosen state would not be constructible
+  // by the type's public API, though this is up to your judgment. See Own<T> as an example, which
+  // uses nullptr as its moved-from / none state.
+  //
+  // Beware that not all moved-from states are appropriate none values. Consider kj::Vector,
+  // which becomes empty when moved from but remains fully usable. An empty vector inside
+  // Maybe<kj::Vector> should probably NOT be considered a none Maybe - it should be a Maybe
+  // containing a value that happens to be an empty vector. The same is generally true of most
+  // container types.
+  //
+  // Lastly, niche optimizing a type using its moved-from state as the none state is technically a
+  // breaking change for code which moves from Maybes with KJ_IF_SOME. Moving from the Maybe changes
+  // to imply setting it to none, whereas this is not the case for normal Maybes.
+  //   KJ_IF_SOME(v, kj::mv(normalMaybe)) { ... }
+  //   // normalMaybe != kj::none, contains moved-from value,
+  //   KJ_IF_SOME(v, kj::mv(nicheOptimizedMaybe)) { ... }
+  //   // nicheOptimizedMaybe == kj::none
+  // This caveat only applies to KJ_IF_SOME. Moving from a Maybe to another Maybe always leaves the
+  // source Maybe in a none state.
+  //
+  // CONVERTING CONSTRUCTOR/ASSIGNMENT: To enable Maybe<T>(U&&) and operator=(U&&) for types U
+  // convertible to T, define:
+  //   static constexpr bool convertingConstructor = true;
+  // The constructor will be implicit when U→T is implicit, explicit when U→T is explicit.
+  // By default (when not defined), these do not exist.
+  //
+  // Understanding when this is needed:
+  //
+  // C++ only allows one user-defined conversion in an implicit conversion sequence. Without
+  // the converting constructor, `Maybe<T> m = u;` requires two user-defined conversions
+  // (U→T, then T→Maybe<T>), so it fails. However, brace initialization `Maybe<T> m = {u};`
+  // works because list-initialization has special rules: the U→T conversion happens "inside"
+  // the list-init when initializing the Maybe(T&&) parameter, not as a separate conversion.
+  //
+  // The converting constructor Maybe<T>(U&&) provides a single user-defined conversion path
+  // (U→Maybe<T>), enabling `Maybe<T> m = u;` without braces. This is needed for code patterns
+  // like `return ownDerived;` from a function returning `Maybe<Own<Base>>`.
+  //
+  // Why opt-in? If the converting constructor exists and is implicit, it can cause ambiguity
+  // in overload resolution. For example, given:
+  //   void f(Maybe<StringPtr>);
+  //   void f(Maybe<ArrayPtr<const char>>);
+  // A call `f(myStringPtr)` becomes ambiguous, since StringPtr can implicitly convert to both
+  // Maybe<StringPtr> (identity + wrap) and Maybe<ArrayPtr> (via the converting constructor).
+  //
+  // Therefore, types must explicitly opt in. Own<T> opts in because returning Own<Derived>
+  // from functions returning Maybe<Own<Base>> is common and would otherwise require braces.
+  //
+  // REFERENCE CONVERSION: To enable Maybe<T> -> Maybe<U&> conversion (where *T returns U&),
+  // define:
+  //   static constexpr bool dereferencingConversion = true;
+  // The conversion will work for any U& that *T can convert to. For example, if T is Own<X>,
+  // then *T returns X&, which can convert to Base& if X derives from Base.
+  // This also handles const: if Maybe<T> is const, it converts to Maybe<const U&>.
+};
+
+namespace _ { // private
+
+// Helpers to detect which MaybeTraits functions are defined.
+// Note: initNone and isNone must be noexcept for exception safety in NullableValue.
+
+template <typename T>
+concept HasNicheInitNone = requires(T* ptr) {
+  { MaybeTraits<T>::initNone(ptr) } noexcept;
+};
+template <typename T>
+concept HasNicheIsNone = requires(const T& v) {
+  { MaybeTraits<T>::isNone(v) } noexcept -> SameAs<bool>;
+};
+
+template <typename T>
+concept HasAnyNicheFunction = HasNicheInitNone<T> || HasNicheIsNone<T>;
+template <typename T>
+concept HasAllNicheFunctions = HasNicheInitNone<T> && HasNicheIsNone<T>;
+
+template <typename T>
+concept HasConvertingConstructorFlag = requires {
+  { MaybeTraits<T>::convertingConstructor } -> SameAs<const bool&>;
+} && MaybeTraits<T>::convertingConstructor;
+// Concept: MaybeTraits<T>::convertingConstructor exists and is true
+
+template <typename T>
+concept HasDereferencingConversionFlag = requires {
+  { MaybeTraits<T>::dereferencingConversion } -> SameAs<const bool&>;
+} && MaybeTraits<T>::dereferencingConversion;
+// Concept: MaybeTraits<T>::dereferencingConversion exists and is true
+
+template <typename T, typename U>
+concept DerefConvertsTo = HasDereferencingConversionFlag<T> &&
+                          requires(T& t) { requires canConvert<decltype(*t), U&>(); };
+// Concept: *T returns something convertible to U&, and dereferencingConversion is enabled
+
+} // namespace _
+
+template <typename T>
+concept NicheOptimizable = _::HasAnyNicheFunction<T>;
+// Concept for types that support niche optimization in Maybe<T>.
+// Matches when ANY niche function is defined, so the niche-optimized specialization is selected.
+// The specialization then static_asserts that ALL functions are defined, giving a clear error
+// message if someone defines only some functions.
 
 namespace _ { // private
 
@@ -1401,104 +1534,30 @@ public:
   inline NullableValue(const T& t) : isSet(true) {
     ctor(value, t);
   }
-  template <typename U> inline NullableValue(NullableValue<U>&& other) : isSet(other.isSet) {
+  template <typename U> inline NullableValue(NullableValue<U>&& other) : isSet(other != nullptr) {
+    // Written in terms of public API, in case U is niche-optimized.
     if (isSet) {
-      ctor(value, kj::mv(other.value));
+      ctor(value, kj::mv(*other));
     }
   }
-  template <typename U> inline NullableValue(const NullableValue<U>& other) : isSet(other.isSet) {
+  template <typename U>
+  inline NullableValue(const NullableValue<U>& other) : isSet(other != nullptr) {
+    // Written in terms of public API, in case U is niche-optimized.
     if (isSet) {
-      ctor(value, other.value);
+      ctor(value, *other);
     }
   }
-  template <typename U> inline NullableValue(const NullableValue<U&>& other) : isSet(other.isSet) {
-    if (isSet) {
-      ctor(value, *other.ptr);
-    }
+  template <typename U>
+    requires requires(U&& u) { T(kj::fwd<U>(u)); }
+  inline NullableValue(U&& other) : isSet(true) {
+    ctor(value, kj::fwd<U>(other));
   }
   inline NullableValue(decltype(nullptr)) : isSet(false) {}
 
-  inline NullableValue& operator=(NullableValue&& other) {
-    if (&other != this) {
-      // Careful about throwing destructors/constructors here.
-      if (isSet) {
-        isSet = false;
-        dtor(value);
-      }
-      if (other.isSet) {
-        ctor(value, kj::mv(other.value));
-        isSet = true;
-      }
-    }
-    return *this;
-  }
+  // Note: Assignment operators (except nullptr) are intentionally not provided here.
+  // Maybe<T> implements its own assignment operators that are safe against the case where
+  // `this` owns `other` (e.g., head = kj::mv(head->next) in a linked list).
 
-  inline NullableValue& operator=(NullableValue& other) {
-    if (&other != this) {
-      // Careful about throwing destructors/constructors here.
-      if (isSet) {
-        isSet = false;
-        dtor(value);
-      }
-      if (other.isSet) {
-        ctor(value, other.value);
-        isSet = true;
-      }
-    }
-    return *this;
-  }
-
-  inline NullableValue& operator=(const NullableValue& other) {
-    if (&other != this) {
-      // Careful about throwing destructors/constructors here.
-      if (isSet) {
-        isSet = false;
-        dtor(value);
-      }
-      if (other.isSet) {
-        ctor(value, other.value);
-        isSet = true;
-      }
-    }
-    return *this;
-  }
-
-  inline NullableValue& operator=(T&& other) {
-    emplace(kj::mv(other));
-    return *this;
-  }
-  inline NullableValue& operator=(T& other) {
-    emplace(other);
-    return *this;
-  }
-  inline NullableValue& operator=(const T& other) {
-    emplace(other);
-    return *this;
-  }
-  template <typename U> inline NullableValue& operator=(NullableValue<U>&& other) {
-    if (other.isSet) {
-      emplace(kj::mv(other.value));
-    } else {
-      *this = nullptr;
-    }
-    return *this;
-  }
-  template <typename U> inline NullableValue& operator=(const NullableValue<U>& other) {
-    if (other.isSet) {
-      emplace(other.value);
-    } else {
-      *this = nullptr;
-    }
-    return *this;
-  }
-  template <typename U> inline NullableValue& operator=(const NullableValue<U&>& other) {
-    if (other.isSet) {
-      emplace(other.value);
-    } else {
-      *this = nullptr;
-    }
-    return *this;
-  }
   inline NullableValue& operator=(decltype(nullptr)) {
     if (isSet) {
       isSet = false;
@@ -1509,9 +1568,6 @@ public:
 
   inline bool operator==(decltype(nullptr)) const {
     return !isSet;
-  }
-  inline bool operator!=(decltype(nullptr)) const {
-    return isSet;
   }
 
   NullableValue(const T* t) = delete;
@@ -1529,6 +1585,186 @@ private:
 // seems broken.
 #endif
 
+  union {
+    T value;
+  };
+
+#if _MSC_VER && !defined(__clang__)
+#pragma warning(pop)
+#endif
+
+  friend class kj::Maybe<T>;
+  template <typename U> friend NullableValue<U>&& readMaybe(Maybe<U>&& maybe);
+};
+
+template <typename T>
+  requires NicheOptimizable<T>
+class NullableValue<T> {
+  // Partial specialization of NullableValue for niche-optimizable types.
+  // Instead of storing a separate bool flag, this uses the type's "none" state.
+
+  // Verify that if any niche function is defined, all are defined.
+  static_assert(!HasAnyNicheFunction<T> || HasAllNicheFunctions<T>,
+                "MaybeTraits<T> must define both initNone and isNone, or neither");
+
+  // Convenience aliases
+  static inline void initNone(T* ptr) {
+    MaybeTraits<T>::initNone(ptr);
+  }
+  static inline bool isNone(const T& v) {
+    return MaybeTraits<T>::isNone(v);
+  }
+
+public:
+  inline NullableValue() {
+    initNone(&value);
+  }
+  inline NullableValue(T&& t) : value(kj::mv(t)) {}
+  inline NullableValue(T& t) : value(t) {}
+  inline NullableValue(const T& t) : value(t) {}
+
+  inline NullableValue(NullableValue&& other) {
+    // Careful not to construct from none values.
+    if (other != nullptr) {
+      ctor(value, kj::mv(other.value));
+    } else {
+      initNone(&value);
+    }
+  }
+  inline NullableValue(const NullableValue& other) {
+    // Careful not to construct from none values.
+    if (other != nullptr) {
+      ctor(value, other.value);
+    } else {
+      initNone(&value);
+    }
+  }
+  inline NullableValue(NullableValue& other) {
+    // Careful not to construct from none values.
+    if (other != nullptr) {
+      ctor(value, other.value);
+    } else {
+      initNone(&value);
+    }
+  }
+  inline ~NullableValue()
+#if _MSC_VER && !defined(__clang__)
+      noexcept(false)
+#else
+      noexcept(noexcept(instance<T&>().~T()))
+#endif
+  {
+    // Never destroy none values - they are treated as trivially destructible sentinels.
+    if (!isNone(value))
+      dtor(value);
+  }
+
+  inline T& operator*() & {
+    return value;
+  }
+  inline const T& operator*() const& {
+    return value;
+  }
+  inline T&& operator*() && {
+    return kj::mv(value);
+  }
+  inline const T&& operator*() const&& {
+    return kj::mv(value);
+  }
+  inline T* operator->() {
+    return &value;
+  }
+  inline const T* operator->() const {
+    return &value;
+  }
+  inline operator T*() {
+    return isNone(value) ? nullptr : &value;
+  }
+  inline operator const T*() const {
+    return isNone(value) ? nullptr : &value;
+  }
+
+  template <typename... Params> inline T& emplace(Params&&... params) {
+    // Exception safety: if dtor or ctor throws, leave in none state.
+    // Note: we never destroy none values - they are trivially destructible sentinels.
+    try {
+      if (!isNone(value))
+        dtor(value);
+      ctor(value, kj::fwd<Params>(params)...);
+    } catch (...) {
+      initNone(&value); // noexcept - leave in none state
+      throw;
+    }
+    return value;
+  }
+
+  template <typename U> inline NullableValue(NullableValue<U>&& other) {
+    // Written in terms of public API, in case U is non-niche-optimized.
+    if (other != nullptr) {
+      ctor(value, kj::mv(*other));
+    } else {
+      initNone(&value);
+    }
+  }
+  template <typename U> inline NullableValue(const NullableValue<U>& other) {
+    // Written in terms of public API, in case U is non-niche-optimized.
+    if (other != nullptr) {
+      ctor(value, *other);
+    } else {
+      initNone(&value);
+    }
+  }
+  template <typename U>
+    requires requires(U&& u) { T(kj::fwd<U>(u)); }
+  inline NullableValue(U&& other) : value(kj::fwd<U>(other)) {}
+  // Converting constructor for upcasting, e.g. Own<Derived> to NullableValue<Own<Base>>.
+
+  inline NullableValue(decltype(nullptr)) {
+    initNone(&value);
+  }
+
+  // Note: Assignment operators (except nullptr) are intentionally not provided here.
+  // Maybe<T> implements its own assignment operators that are safe against the case where
+  // `this` owns `other` (e.g., head = kj::mv(head->next) in a linked list).
+
+  inline NullableValue& operator=(decltype(nullptr)) {
+    // Never destroy none values - they are trivially destructible sentinels.
+    if (!isNone(value)) {
+      // Exception safety: if dtor throws, leave in none state.
+      try {
+        dtor(value);
+      } catch (...) {
+        initNone(&value); // noexcept
+        throw;
+      }
+      initNone(&value);
+    }
+    return *this;
+  }
+
+  inline bool operator==(decltype(nullptr)) const {
+    return isNone(value);
+  }
+
+  NullableValue(const T* t) = delete;
+  NullableValue& operator=(const T* other) = delete;
+
+private:
+#if _MSC_VER && !defined(__clang__)
+#pragma warning(push)
+#pragma warning(disable : 4624)
+#endif
+
+  // Unlike the default NullableValue template, our `value` is always guaranteed to be initialized
+  // for the lifetime of NullableValue (at least outside our own function bodies). However, we must
+  // store it in an anonymous union nevertheless. Why is that? The reason is that T might not expose
+  // a public constructor for its special none state, so we cannot call a constructor to initialize
+  // it. It also may not be a complete type when this NullableValue template is instantiated, so our
+  // constructor cannot call a T-returning function to initialize it -- a defined ~T() would be
+  // required, even if NRVO would kick in for such a "named constructor" function. That leaves a
+  // placement new helper function as our only way to construct it, which means it must remain
+  // uninitialized until our "none" constructor body has a chance to start running. So, we need to
+  // use an anonymous union.
   union {
     T value;
   };
@@ -1560,11 +1796,81 @@ template <typename T> inline T* readMaybe(const Maybe<T&>& maybe) {
 template <typename T> inline T* readMaybe(T* ptr) {
   return ptr;
 }
-// Allow KJ_IF_MAYBE to work on regular pointers.
+// Allow KJ_IF_SOME to work on regular pointers.
+
+#ifndef KJ_DEPRECATE_KJ_IF_MAYBE
+#define KJ_DEPRECATE_KJ_IF_MAYBE 1
+#endif
+
+#if KJ_DEPRECATE_KJ_IF_MAYBE
+[[deprecated("KJ_IF_MAYBE is deprecated and will be removed. Please use KJ_IF_SOME instead.")]]
+constexpr int KJ_IF_MAYBE_IS_DEPRECATED = 0;
+#define KJ_DEPRECATE_KJ_IF_MAYBE_STMT                                                              \
+  [[maybe_unused]] int KJ_UNIQUE_NAME(deprecation) = ::kj::_::KJ_IF_MAYBE_IS_DEPRECATED
+#else
+#define KJ_DEPRECATE_KJ_IF_MAYBE_STMT
+#endif
+// Before KJ_IF_SOME, we used KJ_IF_MAYBE, which does exactly the same thing as KJ_IF_SOME, but
+// provides a guaranteed-non-null pointer to the wrapped object instead of a reference. This has a
+// tendency to allow authors to inadvertently use pointers where they mean to use references. For
+// example, in `KJ_IF_MAYBE(obj, maybe) { KJ_LOG(INFO, obj); }` would stringify and log the address
+// of the object living in `maybe`, rather than the object itself as perhaps intended.
+//
+// Due to this footgun, we've deprecated KJ_IF_MAYBE in favor of KJ_IF_SOME. Please use KJ_IF_SOME.
+
+#ifndef KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR
+#define KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR 1
+#endif
+
+#if KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR
+#define KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR                                                 \
+  [[deprecated("Using nullptr as an empty Maybe is deprecated and will be removed. "               \
+               "Please use kj::none for this purpose instead.")]]
+#else
+#define KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
+#endif
+// Originally, we used `nullptr` to mean "an empty Maybe" in comparisons and initializations. For
+// example, `maybe == nullptr` would be true if `maybe` contained no value, and `Maybe<T>(nullptr)`
+// could be used to explicitly initialize an empty Maybe. This isn't the best design, because
+// `nullptr` could itself be a valid constructor parameter for the wrapped type T.
+//
+// Due to this flaw, we've deprecated using `nullptr` to mean "an empty Maybe" in favor of
+// `kj::none`. Please use `kj::none`.
+
+#if __GNUC__ || __clang__
+// Both clang and GCC understand the GCC set of pragma directives.
+#define KJ_SILENCE_DANGLING_ELSE_BEGIN                                                             \
+  _Pragma("GCC diagnostic push") _Pragma("GCC diagnostic ignored \"-Wdangling-else\"")
+#define KJ_SILENCE_DANGLING_ELSE_END _Pragma("GCC diagnostic pop")
+#else // __GNUC__ || __clang__
+// I guess we'll find out if MSVC needs similar warning suppression.
+#define KJ_SILENCE_DANGLING_ELSE_BEGIN
+#define KJ_SILENCE_DANGLING_ELSE_END
+#endif // __GNUC__
 
 } // namespace _
 
-#define KJ_IF_MAYBE(name, exp) if (auto name = ::kj::_::readMaybe(exp))
+#define KJ_IF_MAYBE(name, exp)                                                                     \
+  if (KJ_DEPRECATE_KJ_IF_MAYBE_STMT; auto name = ::kj::_::readMaybe(exp))
+
+#define KJ_IF_SOME(name, exp)                                                                      \
+  KJ_SILENCE_DANGLING_ELSE_BEGIN                                                                   \
+  if (auto KJ_UNIQUE_NAME(_##name) = ::kj::_::readMaybe(exp))                                      \
+    if (auto& name = *KJ_UNIQUE_NAME(_##name); false) {                                            \
+    } else                                                                                         \
+      KJ_SILENCE_DANGLING_ELSE_END
+
+struct None {};
+static constexpr None none;
+// A "none" value solely for use in comparisons with and initializations of Maybes. `kj::none` will
+// compare equal to all empty Maybes, and will compare not-equal to all non-empty Maybes. If you
+// construct or assign to a Maybe from `kj::none`, the constructed/assigned Maybe will be empty.
+
+template <typename T> inline Maybe<T> some(T&& t) {
+  return Maybe<T>(kj::mv(t));
+}
+// Helper function to auto-deduce maybe argument.
+// Useful when there is a complicated conversion chain to T to avoid spelling types out.
 
 #if __GNUC__ || __clang__
 // These two macros provide a friendly syntax to extract the value of a Maybe or return early.
@@ -1626,38 +1932,62 @@ template <typename T> inline T* readMaybe(T* ptr) {
 template <typename T> class Maybe {
   // A T, or nullptr.
 
-  // IF YOU CHANGE THIS CLASS:  Note that there is a specialization of it in memory.h.
-
 public:
   Maybe() : ptr(nullptr) {}
   Maybe(T&& t) : ptr(kj::mv(t)) {}
   Maybe(T& t) : ptr(t) {}
   Maybe(const T& t) : ptr(t) {}
   Maybe(Maybe&& other) : ptr(kj::mv(other.ptr)) {
-    other = nullptr;
+    other = kj::none;
   }
   Maybe(const Maybe& other) : ptr(other.ptr) {}
   Maybe(Maybe& other) : ptr(other.ptr) {}
 
   template <typename U> Maybe(Maybe<U>&& other) {
-    KJ_IF_MAYBE (val, kj::mv(other)) {
-      ptr.emplace(kj::mv(*val));
-      other = nullptr;
+    KJ_IF_SOME(val, kj::mv(other)) {
+      ptr.emplace(kj::mv(val));
+      other = kj::none;
     }
   }
   template <typename U> Maybe(Maybe<U&>&& other) {
-    KJ_IF_MAYBE (val, other) {
-      ptr.emplace(*val);
-      other = nullptr;
+    KJ_IF_SOME(val, other) {
+      ptr.emplace(val);
+      other = kj::none;
     }
   }
   template <typename U> Maybe(const Maybe<U>& other) {
-    KJ_IF_MAYBE (val, other) {
-      ptr.emplace(*val);
+    KJ_IF_SOME(val, other) {
+      ptr.emplace(val);
     }
   }
 
+  template <typename U>
+    requires _::HasConvertingConstructorFlag<T> && // Only when MaybeTraits<T> opts in
+             requires(U&& u) { T(kj::fwd<U>(u)); }
+  explicit(!canConvert<U&&, T>()) // Implicit when U→T is implicit, explicit otherwise
+      Maybe(U&& value)
+      : ptr(kj::fwd<U>(value)) {}
+  // Converting constructor: allows constructing Maybe<T> from a U that is convertible to T.
+  // Only exists when MaybeTraits<T>::convertingConstructor is true.
+  // Implicit when U is implicitly convertible to T, explicit otherwise.
+  //
+  // Note: When enabled, this converting constructor is preferred over the Maybe<T> copy constructor
+  // for Maybe<T>-derived types, because taking U&& directly is a better match than derived-to-base
+  // slicing. Why would would this matter? If a Maybe-like class is implemented using
+  // inheritance-by-implementation, and has a sloppy variadic constructor template which
+  // perfectly forwards to Maybe, then that constructor will end up choosing to forward to this
+  // converting constructor, rather than to the Maybe copy constructor. When compiling the
+  // expression MaybeDerived<T>(MaybeDerived<T>(...)), the compiler ends up trying to construct T
+  // with the Maybe<T>-derived argument, which is either a compiler error or, if T actually has a
+  // compatible constructor, highly surprising. This comment also applies to the converting
+  // assignment operator, defined elsewhere. The correct solution is to avoid
+  // implementation-by-inheritance, or at least use `using Maybe<T>::Maybe` for such Maybe-derived
+  // types.
+
+  KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
   Maybe(decltype(nullptr)) : ptr(nullptr) {}
+
+  Maybe(kj::None) : ptr(nullptr) {}
 
   template <typename... Params> inline T& emplace(Params&&... params) {
     // Replace this Maybe's content with a new value constructed by passing the given parameters to
@@ -1667,78 +1997,174 @@ public:
     return ptr.emplace(kj::fwd<Params>(params)...);
   }
 
+  // All assignment operators below are implemented by first extracting `other`'s value to a
+  // temporary, then emplacing into `this` (which destroys this's old value and constructs the new
+  // one). This pattern ensures:
+  // 1. If `other` is inside `this`'s value (e.g., head = kj::mv(head->next)), the value is
+  //    extracted before `this` is destroyed, so we don't access freed memory.
+  // 2. If the extraction throws, `this` is unchanged.
+  // 3. If emplace() throws, `this` is left in the none state (emplace has exception safety).
+
   inline Maybe& operator=(T&& other) {
-    ptr = kj::mv(other);
+    T temp(kj::mv(other));
+    ptr.emplace(kj::mv(temp));
     return *this;
   }
   inline Maybe& operator=(T& other) {
-    ptr = other;
+    T temp(other);
+    ptr.emplace(kj::mv(temp));
     return *this;
   }
   inline Maybe& operator=(const T& other) {
-    ptr = other;
+    T temp(other);
+    ptr.emplace(kj::mv(temp));
     return *this;
   }
 
   inline Maybe& operator=(Maybe&& other) {
-    ptr = kj::mv(other.ptr);
-    other = nullptr;
+    Maybe temp(kj::mv(other));
+    KJ_IF_SOME(value, kj::mv(temp)) {
+      ptr.emplace(kj::mv(value));
+    }
+    else {
+      *this = kj::none;
+    }
     return *this;
   }
   inline Maybe& operator=(Maybe& other) {
-    ptr = other.ptr;
+    Maybe temp(other);
+    KJ_IF_SOME(value, temp) {
+      ptr.emplace(kj::mv(value));
+    }
+    else {
+      *this = kj::none;
+    }
     return *this;
   }
   inline Maybe& operator=(const Maybe& other) {
-    ptr = other.ptr;
+    Maybe temp(other);
+    KJ_IF_SOME(value, temp) {
+      ptr.emplace(kj::mv(value));
+    }
+    else {
+      *this = kj::none;
+    }
     return *this;
   }
 
   template <typename U> Maybe& operator=(Maybe<U>&& other) {
-    KJ_IF_MAYBE (val, kj::mv(other)) {
-      ptr.emplace(kj::mv(*val));
-      other = nullptr;
-    } else {
-      ptr = nullptr;
+    Maybe temp(kj::mv(other));
+    KJ_IF_SOME(value, kj::mv(temp)) {
+      ptr.emplace(kj::mv(value));
+    }
+    else {
+      *this = kj::none;
     }
     return *this;
   }
   template <typename U> Maybe& operator=(const Maybe<U>& other) {
-    KJ_IF_MAYBE (val, other) {
-      ptr.emplace(*val);
-    } else {
-      ptr = nullptr;
+    Maybe temp(other);
+    KJ_IF_SOME(value, kj::mv(temp)) {
+      ptr.emplace(kj::mv(value));
+    }
+    else {
+      *this = kj::none;
     }
     return *this;
   }
 
+  template <typename U>
+    requires _::HasConvertingConstructorFlag<T> && // Only when MaybeTraits<T> opts in
+             requires(U&& u) { T(kj::fwd<U>(u)); }
+  Maybe& operator=(U&& value) {
+    T temp(kj::fwd<U>(value));
+    ptr.emplace(kj::mv(temp));
+    return *this;
+  }
+  // Converting assignment: allows assigning a U that is convertible to T.
+  // Only exists when MaybeTraits<T>::convertingConstructor is true.
+  //
+  // Note: This converting assignment operator may be preferred over the copy assignment operator
+  // for Maybe<T>-derived types. See the longer note on the converting constructor for a deeper
+  // explanation.
+
+  KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
   inline Maybe& operator=(decltype(nullptr)) {
     ptr = nullptr;
     return *this;
   }
 
+  KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
   inline bool operator==(decltype(nullptr)) const {
     return ptr == nullptr;
   }
-  inline bool operator!=(decltype(nullptr)) const {
-    return ptr != nullptr;
+
+  inline Maybe& operator=(kj::None) {
+    ptr = nullptr;
+    return *this;
+  }
+  inline bool operator==(kj::None) const {
+    return ptr == nullptr;
   }
 
   inline bool operator==(const Maybe<T>& other) const {
     if (ptr == nullptr) {
-      return other == nullptr;
+      return other == kj::none;
     } else {
       return other.ptr != nullptr && *ptr == *other.ptr;
     }
-  }
-  inline bool operator!=(const Maybe<T>& other) const {
-    return !(*this == other);
   }
 
   Maybe(const T* t) = delete;
   Maybe& operator=(const T* other) = delete;
   // We used to permit assigning a Maybe<T> directly from a T*, and the assignment would check for
   // nullness. This turned out never to be useful, and sometimes to be dangerous.
+
+  template <typename U>
+    requires _::DerefConvertsTo<T, U>
+  operator Maybe<U&>() & {
+    // Implicit conversion to Maybe<U&> when MaybeTraits<T>::dereferencingConversion is true
+    // and *T returns something convertible to U&. This allows Maybe<Own<X>> to convert to
+    // Maybe<X&>.
+    if (ptr == nullptr) {
+      return kj::none;
+    } else {
+      return **ptr;
+    }
+  }
+
+  template <typename U>
+    requires _::DerefConvertsTo<T, U>
+  operator Maybe<U&>() && {
+    // Rvalue version. This is safe when the temporary Maybe<Own<X>> lives for the duration of the
+    // function call that receives the Maybe<X&>.
+    if (ptr == nullptr) {
+      return kj::none;
+    } else {
+      return **ptr;
+    }
+  }
+
+  template <typename U>
+    requires _::DerefConvertsTo<T, const U>
+  operator Maybe<const U&>() const& {
+    if (ptr == nullptr) {
+      return kj::none;
+    } else {
+      return **ptr;
+    }
+  }
+
+  template <typename U>
+    requires _::DerefConvertsTo<T, const U>
+  operator Maybe<const U&>() const&& {
+    // Rvalue version.
+    if (ptr == nullptr) {
+      return kj::none;
+    } else {
+      return **ptr;
+    }
+  }
 
   T& orDefault(T& defaultValue) & {
     if (ptr == nullptr) {
@@ -1811,7 +2237,7 @@ public:
 
   template <typename Func> auto map(Func&& f) & -> Maybe<decltype(f(instance<T&>()))> {
     if (ptr == nullptr) {
-      return nullptr;
+      return kj::none;
     } else {
       return f(*ptr);
     }
@@ -1819,7 +2245,7 @@ public:
 
   template <typename Func> auto map(Func&& f) const& -> Maybe<decltype(f(instance<const T&>()))> {
     if (ptr == nullptr) {
-      return nullptr;
+      return kj::none;
     } else {
       return f(*ptr);
     }
@@ -1827,7 +2253,7 @@ public:
 
   template <typename Func> auto map(Func&& f) && -> Maybe<decltype(f(instance<T&&>()))> {
     if (ptr == nullptr) {
-      return nullptr;
+      return kj::none;
     } else {
       return f(kj::mv(*ptr));
     }
@@ -1835,7 +2261,7 @@ public:
 
   template <typename Func> auto map(Func&& f) const&& -> Maybe<decltype(f(instance<const T&&>()))> {
     if (ptr == nullptr) {
-      return nullptr;
+      return kj::none;
     } else {
       return f(kj::mv(*ptr));
     }
@@ -1882,7 +2308,17 @@ public:
   constexpr Maybe(Maybe<U>& other) : ptr(other.ptr.operator U*()) {}
   template <typename U, typename = EnableIf<canConvert<const U*, T*>()>>
   constexpr Maybe(const Maybe<U>& other) : ptr(other.ptr.operator const U*()) {}
+
+  KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
   inline constexpr Maybe(decltype(nullptr)) : ptr(nullptr) {}
+
+  inline constexpr Maybe(kj::None) : ptr(nullptr) {}
+
+  KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
+  inline Maybe& operator=(decltype(nullptr)) {
+    ptr = nullptr;
+    return *this;
+  }
 
   inline Maybe& operator=(T& other) {
     ptr = &other;
@@ -1916,11 +2352,13 @@ public:
   }
   template <typename U> inline Maybe& operator=(const Maybe<U&>&& other) = delete;
 
+  KJ_DEPRECATE_EMPTY_MAYBE_FROM_NULLPTR_ATTR
   inline bool operator==(decltype(nullptr)) const {
     return ptr == nullptr;
   }
-  inline bool operator!=(decltype(nullptr)) const {
-    return ptr != nullptr;
+
+  inline bool operator==(kj::None) const {
+    return ptr == nullptr;
   }
 
   T& orDefault(T& defaultValue) {
@@ -1940,7 +2378,7 @@ public:
 
   template <typename Func> auto map(Func&& f) -> Maybe<decltype(f(instance<T&>()))> {
     if (ptr == nullptr) {
-      return nullptr;
+      return kj::none;
     } else {
       return f(*ptr);
     }
@@ -1948,7 +2386,7 @@ public:
 
   template <typename Func> auto map(Func&& f) const -> Maybe<decltype(f(instance<const T&>()))> {
     if (ptr == nullptr) {
-      return nullptr;
+      return kj::none;
     } else {
       const T& ref = *ptr;
       return f(ref);
@@ -1994,7 +2432,7 @@ public:
 //     ArrayPtr<const int> ptr = { 1, 2, 3 };
 //     foo(ptr[1]); // undefined behavior!
 // Any KJ programmer should be able to recognize that this is UB, because an ArrayPtr does not own
-// its content. That's not what this constructor is for, tohugh. This constructor is meant to allow
+// its content. That's not what this constructor is for, though. This constructor is meant to allow
 // code like this:
 //     int foo(ArrayPtr<const int> p);
 //     // ... later ...
@@ -2054,25 +2492,25 @@ public:
   inline constexpr size_t size() const {
     return size_;
   }
-  inline const T& operator[](size_t index) const {
-    KJ_IREQUIRE(index < size_, "Out-of-bounds ArrayPtr access.");
+  inline constexpr const T& operator[](size_t index) const {
+    KJ_IREQUIRE(index < size_, "Out-of-bounds ArrayPtr access.", index, size_);
     return ptr[index];
   }
   inline T& operator[](size_t index) {
-    KJ_IREQUIRE(index < size_, "Out-of-bounds ArrayPtr access.");
+    KJ_IREQUIRE(index < size_, "Out-of-bounds ArrayPtr access.", index, size_);
     return ptr[index];
   }
 
-  inline T* begin() {
+  inline constexpr T* begin() {
     return ptr;
   }
-  inline T* end() {
+  inline constexpr T* end() {
     return ptr + size_;
   }
-  inline T& front() {
+  inline constexpr T& front() {
     return *ptr;
   }
-  inline T& back() {
+  inline constexpr T& back() {
     return *(ptr + size_ - 1);
   }
   inline constexpr const T* begin() const {
@@ -2081,26 +2519,43 @@ public:
   inline constexpr const T* end() const {
     return ptr + size_;
   }
-  inline const T& front() const {
+  inline constexpr const T& front() const {
     return *ptr;
   }
-  inline const T& back() const {
+  inline constexpr const T& back() const {
     return *(ptr + size_ - 1);
   }
 
-  inline ArrayPtr<const T> slice(size_t start, size_t end) const {
-    KJ_IREQUIRE(start <= end && end <= size_, "Out-of-bounds ArrayPtr::slice().");
+  inline constexpr ArrayPtr<const T> slice(size_t start, size_t end) const {
+    KJ_IREQUIRE(start <= end && end <= size_, "Out-of-bounds ArrayPtr::slice().", start, end,
+                size_);
     return ArrayPtr<const T>(ptr + start, end - start);
   }
-  inline ArrayPtr slice(size_t start, size_t end) {
-    KJ_IREQUIRE(start <= end && end <= size_, "Out-of-bounds ArrayPtr::slice().");
+  inline constexpr ArrayPtr slice(size_t start, size_t end) {
+    KJ_IREQUIRE(start <= end && end <= size_, "Out-of-bounds ArrayPtr::slice().", start, end,
+                size_);
     return ArrayPtr(ptr + start, end - start);
   }
-  inline bool startsWith(const ArrayPtr<const T>& other) const {
+  inline constexpr ArrayPtr<const T> slice(size_t start) const {
+    KJ_IREQUIRE(start <= size_, "Out-of-bounds ArrayPtr::slice().", start, size_);
+    return ArrayPtr<const T>(ptr + start, size_ - start);
+  }
+  inline constexpr ArrayPtr slice(size_t start) {
+    KJ_IREQUIRE(start <= size_, "Out-of-bounds ArrayPtr::slice().", start, size_);
+    return ArrayPtr(ptr + start, size_ - start);
+  }
+  inline constexpr bool startsWith(const ArrayPtr<const T>& other) const {
     return other.size() <= size_ && slice(0, other.size()) == other;
   }
-  inline bool endsWith(const ArrayPtr<const T>& other) const {
+  inline constexpr bool endsWith(const ArrayPtr<const T>& other) const {
     return other.size() <= size_ && slice(size_ - other.size(), size_) == other;
+  }
+
+  inline constexpr ArrayPtr first(size_t count) {
+    return slice(0, count);
+  }
+  inline constexpr ArrayPtr<const T> first(size_t count) const {
+    return slice(0, count);
   }
 
   inline Maybe<size_t> findFirst(const T& match) const {
@@ -2109,7 +2564,7 @@ public:
         return i;
       }
     }
-    return nullptr;
+    return kj::none;
   }
   inline Maybe<size_t> findLast(const T& match) const {
     for (size_t i = size_; i--;) {
@@ -2117,48 +2572,44 @@ public:
         return i;
       }
     }
-    return nullptr;
+    return kj::none;
   }
 
-  inline ArrayPtr<PropagateConst<T, byte>> asBytes() const {
+  constexpr ArrayPtr<PropagateConst<T, byte>> asBytes() const {
     // Reinterpret the array as a byte array. This is explicitly legal under C++ aliasing
     // rules.
+    KJ_ASSERT_CAN_MEMCPY(RemoveConst<T>);
     return {reinterpret_cast<PropagateConst<T, byte>*>(ptr), size_ * sizeof(T)};
   }
   inline ArrayPtr<PropagateConst<T, char>> asChars() const {
     // Reinterpret the array as a char array. This is explicitly legal under C++ aliasing
     // rules.
+    KJ_ASSERT_CAN_MEMCPY(RemoveConst<T>);
     return {reinterpret_cast<PropagateConst<T, char>*>(ptr), size_ * sizeof(T)};
   }
 
-  inline bool operator==(decltype(nullptr)) const {
+  inline constexpr bool operator==(decltype(nullptr)) const {
     return size_ == 0;
   }
-  inline bool operator!=(decltype(nullptr)) const {
-    return size_ != 0;
-  }
 
-  inline bool operator==(const ArrayPtr& other) const {
+  inline constexpr bool operator==(const ArrayPtr& other) const {
     if (size_ != other.size_)
       return false;
+#if KJ_HAS_COMPILER_FEATURE(cxx_constexpr_string_builtins)
     if (isIntegral<RemoveConst<T>>()) {
       if (size_ == 0)
         return true;
-      return memcmp(ptr, other.ptr, size_ * sizeof(T)) == 0;
+      return __builtin_memcmp(ptr, other.ptr, size_ * sizeof(T)) == 0;
     }
+#endif
     for (size_t i = 0; i < size_; i++) {
       if (ptr[i] != other[i])
         return false;
     }
     return true;
   }
-#if !__cpp_impl_three_way_comparison
-  inline bool operator!=(const ArrayPtr& other) const {
-    return !(*this == other);
-  }
-#endif
 
-  template <typename U> inline bool operator==(const ArrayPtr<U>& other) const {
+  template <typename U> inline constexpr bool operator==(const ArrayPtr<U>& other) const {
     if (size_ != other.size())
       return false;
     for (size_t i = 0; i < size_; i++) {
@@ -2167,11 +2618,45 @@ public:
     }
     return true;
   }
-#if !__cpp_impl_three_way_comparison
-  template <typename U> inline bool operator!=(const ArrayPtr<U>& other) const {
-    return !(*this == other);
-  }
+
+  inline constexpr bool operator<(const ArrayPtr& other) const {
+    size_t comparisonSize = kj::min(size_, other.size_);
+    if constexpr (isSameType<RemoveConst<T>, char>() ||
+                  isSameType<RemoveConst<T>, unsigned char>()) {
+#if KJ_HAS_COMPILER_FEATURE(cxx_constexpr_string_builtins)
+      int ret = __builtin_memcmp(ptr, other.ptr, comparisonSize * sizeof(T));
+      if (ret != 0) {
+        return ret < 0;
+      }
+#else
+      for (size_t i = 0; i < comparisonSize; ++i) {
+        if (static_cast<unsigned char>(ptr[i]) != static_cast<unsigned char>(other.ptr[i])) {
+          return static_cast<unsigned char>(ptr[i]) < static_cast<unsigned char>(other.ptr[i]);
+        }
+      }
 #endif
+    } else {
+      for (size_t i = 0; i < comparisonSize; i++) {
+        bool ret = ptr[i] == other.ptr[i];
+        if (!ret) {
+          return ptr[i] < other.ptr[i];
+        }
+      }
+    }
+    // arrays are equal up to comparisonSize
+    return size_ < other.size_;
+  }
+
+  inline constexpr bool operator<=(const ArrayPtr& other) const {
+    return !(other < *this);
+  }
+  inline constexpr bool operator>=(const ArrayPtr& other) const {
+    return other <= *this;
+  }
+  // Note that only strongly ordered types are currently supported
+  inline constexpr bool operator>(const ArrayPtr& other) const {
+    return other < *this;
+  }
 
   template <typename... Attachments>
   Array<T> attach(Attachments&&... attachments) const KJ_WARN_UNUSED_RESULT;
@@ -2180,15 +2665,73 @@ public:
   //
   // You must include kj/array.h to call this.
 
+  template <typename U> inline auto as() {
+    return asImpl((U*)nullptr, *this);
+  }
+  // Syntax sugar for invoking asImpl(U*, ArrayPtr&).
+  // Used to chain conversion calls rather than wrap with function.
+
+  template <typename U> inline auto as() const {
+    return asImpl((U*)nullptr, *this);
+  }
+  // Syntax sugar for invoking asImpl(U*, const ArrayPtr&).
+  // Used to chain conversion calls rather than wrap with function.
+
+  inline void fill(T t) {
+    // Fill the area by copying t over every element.
+
+    for (size_t i = 0; i < size_; i++) {
+      ptr[i] = t;
+    }
+    // All modern compilers are smart enough to optimize this loop for simple T's.
+    // libc++ std::fill doesn't have memset specialization either.
+  }
+
+  inline void fill(ArrayPtr<const T> other) {
+    // Fill the area by copying each element of other, in sequence, over every element.
+    const size_t otherSize = other.size();
+    KJ_IREQUIRE(otherSize > 0, "fill requires non-empty source array");
+    T* __restrict__ dst = begin();
+    const T* __restrict__ src = other.begin();
+    size_t counter = 0;
+    for (size_t s = size_, i = 0; i < s; i++) {
+      dst[i] = src[counter];
+      if (++counter == otherSize)
+        counter = 0;
+    }
+  }
+
+  inline void copyFrom(kj::ArrayPtr<const T> other) {
+    // Copy data from the other array pointer.
+    // Arrays have to be of the same size and memory area MUST NOT overlap.
+    KJ_IREQUIRE(size_ == other.size(), "copy requires arrays of the same size", size_,
+                other.size());
+    KJ_IREQUIRE(!intersects(other), "copy memory area must not overlap");
+    T* __restrict__ dst = begin();
+    const T* __restrict__ src = other.begin();
+    for (size_t s = size_, i = 0; i < s; i++) {
+      dst[i] = src[i];
+    }
+  }
+
 private:
   T* ptr;
   size_t size_;
+
+  inline bool intersects(kj::ArrayPtr<const T> other) const {
+    // Checks if memory area intersects with another pointer.
+
+    // Memory _does not_ intersect if one of the arrays is completely on one side of the other:
+    //    begin() >= other.end() || other.begin() >= end()
+    // Negating the expression gets the result:
+    return begin() < other.end() && other.begin() < end();
+  }
 };
 
 template <> inline Maybe<size_t> ArrayPtr<const char>::findFirst(const char& c) const {
   const char* pos = reinterpret_cast<const char*>(memchr(ptr, c, size_));
   if (pos == nullptr) {
-    return nullptr;
+    return kj::none;
   } else {
     return pos - ptr;
   }
@@ -2197,7 +2740,7 @@ template <> inline Maybe<size_t> ArrayPtr<const char>::findFirst(const char& c) 
 template <> inline Maybe<size_t> ArrayPtr<char>::findFirst(const char& c) const {
   char* pos = reinterpret_cast<char*>(memchr(ptr, c, size_));
   if (pos == nullptr) {
-    return nullptr;
+    return kj::none;
   } else {
     return pos - ptr;
   }
@@ -2206,7 +2749,7 @@ template <> inline Maybe<size_t> ArrayPtr<char>::findFirst(const char& c) const 
 template <> inline Maybe<size_t> ArrayPtr<const byte>::findFirst(const byte& c) const {
   const byte* pos = reinterpret_cast<const byte*>(memchr(ptr, c, size_));
   if (pos == nullptr) {
-    return nullptr;
+    return kj::none;
   } else {
     return pos - ptr;
   }
@@ -2215,7 +2758,7 @@ template <> inline Maybe<size_t> ArrayPtr<const byte>::findFirst(const byte& c) 
 template <> inline Maybe<size_t> ArrayPtr<byte>::findFirst(const byte& c) const {
   byte* pos = reinterpret_cast<byte*>(memchr(ptr, c, size_));
   if (pos == nullptr) {
-    return nullptr;
+    return kj::none;
   } else {
     return pos - ptr;
   }
@@ -2235,6 +2778,20 @@ inline constexpr ArrayPtr<T> arrayPtr(T* begin KJ_LIFETIMEBOUND, T* end KJ_LIFET
   return ArrayPtr<T>(begin, end);
 }
 
+template <typename T> inline constexpr ArrayPtr<T> arrayPtr(T& t KJ_LIFETIMEBOUND) {
+  // Construct ArrayPtr pointing to a single object instance.
+  return arrayPtr(&t, 1);
+}
+
+template <typename T, size_t s> inline constexpr ArrayPtr<T> arrayPtr(T (&arr)[s]) {
+  // Use this function to construct ArrayPtrs without writing out the type name.
+  return ArrayPtr<T>(arr);
+}
+
+template <typename... Params> auto asBytes(Params&&... params) {
+  return kj::arrayPtr(kj::fwd<Params>(params)...).asBytes();
+}
+
 // =======================================================================================
 // Casts
 
@@ -2245,7 +2802,7 @@ template <typename To, typename From> To implicitCast(From&& from) {
 }
 
 template <typename To, typename From> Maybe<To&> dynamicDowncastIfAvailable(From& from) {
-  // If RTTI is disabled, always returns nullptr.  Otherwise, works like dynamic_cast.  Useful
+  // If RTTI is disabled, always returns kj::none.  Otherwise, works like dynamic_cast.  Useful
   // in situations where dynamic_cast could allow an optimization, but isn't strictly necessary
   // for correctness.  It is highly recommended that you try to arrange all your dynamic_casts
   // this way, as a dynamic_cast that is necessary for correctness implies a flaw in the interface
@@ -2258,7 +2815,7 @@ template <typename To, typename From> Maybe<To&> dynamicDowncastIfAvailable(From
   }
 
 #if KJ_NO_RTTI
-  return nullptr;
+  return kj::none;
 #else
   return dynamic_cast<To*>(&from);
 #endif
@@ -2281,6 +2838,22 @@ template <typename To, typename From> To& downcast(From& from) {
   return static_cast<To&>(from);
 }
 
+#if !KJ_NO_RTTI
+template <typename To, typename From> Maybe<To&> tryDowncast(From& from) {
+  // Identical to `dynamicDowncastIfAvailable()` except for use in code where RTTI is known to be
+  // enabled always. Use this when the calling code cannot cope with a spurious `none` result from
+  // RTTI being disabled.
+
+  // Force a compile error if To is not a subtype of From.  Cross-casting is rare; if it is needed
+  // we should have a separate cast function like tryCrosscast().
+  if (false) {
+    kj::implicitCast<From*>(kj::implicitCast<To*>(nullptr));
+  }
+
+  return dynamic_cast<To*>(&from);
+}
+#endif
+
 // =======================================================================================
 // Defer
 
@@ -2300,13 +2873,13 @@ public:
   void run() {
     // Move `maybeFunc` to the local scope so that even if we throw, we destroy the functor we had.
     auto maybeLocalFunc = kj::mv(maybeFunc);
-    KJ_IF_MAYBE (func, maybeLocalFunc) {
-      (*func)();
+    KJ_IF_SOME(func, maybeLocalFunc) {
+      func();
     }
   }
 
   void cancel() {
-    maybeFunc = nullptr;
+    maybeFunc = kj::none;
   }
 
 private:
@@ -2336,6 +2909,117 @@ template <typename Func> _::Deferred<Func> defer(Func&& func) {
 #define KJ_DEFER(code) auto KJ_UNIQUE_NAME(_kjDefer) = ::kj::defer([&]() { code; })
 // Run the given code when the function exits, whether by return or exception.
 
+// =======================================================================================
+// IsDisallowedInCoroutine
+
+namespace _ {
+
+template <typename T, typename = void> struct IsDisallowedInCoroutine {
+  static constexpr bool value = false;
+};
+
+template <typename T>
+struct IsDisallowedInCoroutine<T, typename Decay<T>::_kj_DissalowedInCoroutine> {
+  static constexpr bool value = true;
+};
+
+template <typename T> struct IsDisallowedInCoroutine<T*, typename T::_kj_DissalowedInCoroutine> {
+  static constexpr bool value = true;
+};
+
+template <typename T> constexpr bool isDisallowedInCoroutine() {
+  return IsDisallowedInCoroutine<T>::value;
+}
+
+} // namespace _
+
+#define KJ_DISALLOW_AS_COROUTINE_PARAM                                                             \
+  using _kj_DissalowedInCoroutine = void;                                                          \
+  template <typename T> friend constexpr bool kj::_::isDisallowedInCoroutine();                    \
+  template <typename T, typename> friend struct kj::_::IsDisallowedInCoroutine
+// Place in the body of a class or struct to indicate that an instance of or reference to this
+// type cannot be passed as the parameter to a KJ coroutine. This makes sense, for example, for
+// mutex locks, or other types which should never be held across a co_await.
+//
+// (Types annotated with this likely also should not be used as local variables inside coroutines,
+// but there is no way for us to enforce that.)
+//
+// struct Foo {
+//    KJ_DISALLOW_AS_COROUTINE_PARAM;
+// }
+//
+
+template <typename T, typename = EnableIf<KJ_HAS_TRIVIAL_CONSTRUCTOR(T)>>
+inline void memzero(T& t) {
+  // Zero-initialize memory region belonging to t. Type-safe wrapper around `memset`.
+  memset(&t, 0, sizeof(T));
+}
+
+namespace _ {
+template <size_t N> struct ByteLiteral {
+  // Helper class to implement _kjb suffix: constexpr is not allowed to cast `char*`
+  // to `unsigned char*`. To overcome this limitation every char needs to be cast individually
+  // (which is apparently ok for constexpr).
+  // This class may not contain any private members, or else you get a
+  // misleading compiler error.
+
+  constexpr ByteLiteral(const char (&init)[N]) {
+    for (auto i = 0; i < N - 1; ++i)
+      data[i] = (kj::byte)(init[i]);
+  }
+  constexpr size_t size() const {
+    return N - 1;
+  }
+  constexpr const kj::byte* begin() const {
+    return data;
+  }
+  kj::byte data[N - 1]; // do not store 0-terminator
+};
+
+template <> struct ByteLiteral<1ul> {
+  // Empty string specialization to avoid `data` array of 0 size.
+  constexpr ByteLiteral(const char (&init)[1]) {}
+  constexpr size_t size() const {
+    return 0;
+  }
+  constexpr const kj::byte* begin() const {
+    return nullptr;
+  }
+};
+
+} // namespace _
+
+class ThreadId {
+  // Unique thread identifier.
+  // Implemented as thread_local address, so could be efficient even for production
+  // environments especially with LTO.
+
+public:
+  static ThreadId current();
+  // Obtain current thread id
+
+  inline bool operator==(const ThreadId& other) const = default;
+
+  void assertCurrentThread() const;
+  // KJ_ASSERTs that current thread matches this identifier.
+
+private:
+  inline ThreadId(void* id) : id(id) {}
+  void* id;
+};
+
+template <typename U, typename T> decltype(auto) from(T&& t) {
+  // Helper method for uniform conversion of non-kj objects to kj.
+  // Usage: `kj::from<Something>(t)` that will translate into fromImpl((Something*)nullptr, t) call.
+  return fromImpl((U*)nullptr, kj::fwd<T>(t));
+}
+
 } // namespace kj
+
+template <kj::_::ByteLiteral s> constexpr kj::ArrayPtr<const kj::byte> operator""_kjb() {
+  // "string"_kjb creates constexpr byte array pointer to the content of the string
+  // WITHOUT the trailing 0.
+  return kj::ArrayPtr<const kj::byte>(s.begin(), s.size());
+};
 
 KJ_END_HEADER

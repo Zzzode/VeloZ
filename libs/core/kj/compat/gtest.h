@@ -100,15 +100,10 @@ private:
 
 #define ADD_FAILURE() ::kj::AddFailureAdapter(__FILE__, __LINE__)
 
-#if KJ_NO_EXCEPTIONS
-#define EXPECT_ANY_THROW(code)                                                                     \
-  KJ_EXPECT(::kj::_::expectFatalThrow(nullptr, nullptr, [&]() { code; }))
-#else
-#define EXPECT_ANY_THROW(code) KJ_EXPECT(::kj::runCatchingExceptions([&]() { code; }) != nullptr)
-#endif
+#define EXPECT_ANY_THROW(code) KJ_EXPECT(::kj::runCatchingExceptions([&]() { code; }) != kj::none)
 
 #define EXPECT_NONFATAL_FAILURE(code)                                                              \
-  EXPECT_TRUE(kj::runCatchingExceptions([&]() { code; }) != nullptr);
+  EXPECT_TRUE(kj::runCatchingExceptions([&]() { code; }) != kj::none);
 
 #ifdef KJ_DEBUG
 #define EXPECT_DEBUG_ANY_THROW EXPECT_ANY_THROW

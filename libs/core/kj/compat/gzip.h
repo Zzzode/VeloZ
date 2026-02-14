@@ -31,7 +31,9 @@ namespace kj {
 
 namespace _ { // private
 
-constexpr size_t KJ_GZ_BUF_SIZE = 4096;
+// Default buffer size for gzip streams. Larger buffers reduce per-call overhead but use more
+// memory. Testing on an amd64 Linux machine gets about 2 GiB/s at 16 KiB vs 850 MiB/s at 4 KiB.
+constexpr size_t KJ_GZ_BUF_SIZE = 16384;
 
 class GzipOutputContext final {
 public:
@@ -45,7 +47,7 @@ public:
 private:
   bool compressing;
   z_stream ctx = {};
-  byte buffer[_::KJ_GZ_BUF_SIZE];
+  kj::Array<byte> buffer = kj::heapArray<byte>(_::KJ_GZ_BUF_SIZE);
 
   [[noreturn]] void fail(int result);
 };
@@ -58,16 +60,16 @@ public:
   ~GzipInputStream() noexcept(false);
   KJ_DISALLOW_COPY_AND_MOVE(GzipInputStream);
 
-  size_t tryRead(void* buffer, size_t minBytes, size_t maxBytes) override;
+  size_t tryRead(ArrayPtr<byte> buffer, size_t minBytes) override;
 
 private:
   InputStream& inner;
   z_stream ctx = {};
   bool atValidEndpoint = false;
 
-  byte buffer[_::KJ_GZ_BUF_SIZE];
+  kj::Array<byte> buffer = kj::heapArray<byte>(_::KJ_GZ_BUF_SIZE);
 
-  size_t readImpl(byte* buffer, size_t minBytes, size_t maxBytes, size_t alreadyRead);
+  size_t readImpl(ArrayPtr<byte> buffer, size_t minBytes, size_t alreadyRead);
 };
 
 class GzipOutputStream final : public OutputStream {
@@ -79,7 +81,8 @@ public:
   ~GzipOutputStream() noexcept(false);
   KJ_DISALLOW_COPY_AND_MOVE(GzipOutputStream);
 
-  void write(const void* buffer, size_t size) override;
+  void write(ArrayPtr<const byte> data) override;
+
   using OutputStream::write;
 
   inline void flush() {
@@ -106,7 +109,7 @@ private:
   z_stream ctx = {};
   bool atValidEndpoint = false;
 
-  byte buffer[_::KJ_GZ_BUF_SIZE];
+  kj::Array<byte> buffer = kj::heapArray<byte>(_::KJ_GZ_BUF_SIZE);
 
   Promise<size_t> readImpl(byte* buffer, size_t minBytes, size_t maxBytes, size_t alreadyRead);
 };
@@ -119,7 +122,7 @@ public:
   GzipAsyncOutputStream(AsyncOutputStream& inner, decltype(DECOMPRESS));
   KJ_DISALLOW_COPY_AND_MOVE(GzipAsyncOutputStream);
 
-  Promise<void> write(const void* buffer, size_t size) override;
+  Promise<void> write(ArrayPtr<const byte> buffer) override;
   Promise<void> write(ArrayPtr<const ArrayPtr<const byte>> pieces) override;
 
   Promise<void> whenWriteDisconnected() override {

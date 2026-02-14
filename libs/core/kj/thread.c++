@@ -28,6 +28,7 @@
 #else
 #include <pthread.h>
 #include <signal.h>
+#include <time.h>
 #endif
 
 namespace kj {
@@ -48,9 +49,9 @@ Thread::~Thread() noexcept(false) {
 
     KJ_ASSERT(WaitForSingleObject(threadHandle, INFINITE) != WAIT_FAILED);
 
-    KJ_IF_MAYBE(e, state->exception) {
-      Exception ecopy = kj::mv(*e);
-      state->exception = nullptr;  // don't complain of uncaught exception when deleting
+    KJ_IF_SOME(e, state->exception) {
+      Exception ecopy = kj::mv(e);
+      state->exception = kj::none;  // don't complain of uncaught exception when deleting
       kj::throwRecoverableException(kj::mv(ecopy));
     }
   }
@@ -59,6 +60,20 @@ Thread::~Thread() noexcept(false) {
 void Thread::detach() {
   KJ_ASSERT(CloseHandle(threadHandle));
   detached = true;
+}
+
+kj::Duration Thread::getCpuTime() const {
+  FILETIME creationTime;
+  FILETIME exitTime;
+  FILETIME kernelTime;
+  FILETIME userTime;
+
+  KJ_WIN32(GetThreadTimes(threadHandle, &creationTime, &exitTime, &kernelTime, &userTime));
+
+  // FILETIME is a 64-bit integer split into two 32-bit pieces, with a base unit of 100ns.
+  int64_t utime = (static_cast<uint64_t>(userTime.dwHighDateTime) << 32) | userTime.dwLowDateTime;
+  int64_t ktime = (static_cast<uint64_t>(kernelTime.dwHighDateTime) << 32) | kernelTime.dwLowDateTime;
+  return (utime + ktime) * 100 * kj::NANOSECONDS;
 }
 
 #else  // _WIN32
@@ -84,9 +99,9 @@ Thread::~Thread() noexcept(false) {
       KJ_FAIL_SYSCALL("pthread_join", pthreadResult) { break; }
     }
 
-    KJ_IF_MAYBE(e, state->exception) {
-      Exception ecopy = kj::mv(*e);
-      state->exception = nullptr;  // don't complain of uncaught exception when deleting
+    KJ_IF_SOME(e, state->exception) {
+      Exception ecopy = kj::mv(e);
+      state->exception = kj::none;  // don't complain of uncaught exception when deleting
       kj::throwRecoverableException(kj::mv(ecopy));
     }
   }
@@ -108,12 +123,28 @@ void Thread::detach() {
   state->unref();
 }
 
+#if !__APPLE__  // Mac doesn't implement pthread_getcpuclockid().
+kj::Duration Thread::getCpuTime() const {
+  clockid_t clockId;
+  int pthreadResult = pthread_getcpuclockid(
+      *reinterpret_cast<const pthread_t*>(&threadId), &clockId);
+  if (pthreadResult != 0) {
+    KJ_FAIL_SYSCALL("pthread_getcpuclockid", pthreadResult);
+  }
+
+  struct timespec ts;
+  KJ_SYSCALL(clock_gettime(clockId, &ts));
+
+  return ts.tv_sec * kj::SECONDS + ts.tv_nsec * kj::NANOSECONDS;
+}
+#endif  // !__APPLE__
+
 #endif  // _WIN32, else
 
 Thread::ThreadState::ThreadState(Function<void()> func)
     : func(kj::mv(func)),
       initializer(getExceptionCallback().getThreadInitializer()),
-      exception(nullptr),
+      exception(kj::none),
       refcount(2) {}
 
 void Thread::ThreadState::unref() {
@@ -124,14 +155,14 @@ void Thread::ThreadState::unref() {
     __atomic_thread_fence(__ATOMIC_ACQUIRE);
 #endif
 
-    KJ_IF_MAYBE(e, exception) {
+    KJ_IF_SOME(e, exception) {
       // If the exception is still present in ThreadState, this must be a detached thread, so
       // the exception will never be rethrown. We should at least log it.
       //
       // We need to run the thread initializer again before we log anything because the main
       // purpose of the thread initializer is to set up a logging callback.
       initializer([&]() {
-        KJ_LOG(ERROR, "uncaught exception thrown by detached thread", *e);
+        KJ_LOG(ERROR, "uncaught exception thrown by detached thread", e);
       });
     }
 
@@ -145,10 +176,10 @@ DWORD Thread::runThread(void* ptr) {
 void* Thread::runThread(void* ptr) {
 #endif
   ThreadState* state = reinterpret_cast<ThreadState*>(ptr);
-  KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
     state->initializer(kj::mv(state->func));
   })) {
-    state->exception = kj::mv(*exception);
+    state->exception = kj::mv(exception);
   }
   state->unref();
   return 0;

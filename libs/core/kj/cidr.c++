@@ -53,7 +53,7 @@ CidrRange::CidrRange(StringPtr pattern) {
   memcpy(addr.begin(), pattern.begin(), slashPos);
   addr[slashPos] = '\0';
 
-  if (pattern.findFirst(':') == nullptr) {
+  if (pattern.findFirst(':') == kj::none) {
     family = AF_INET;
     KJ_REQUIRE(bitCount <= 32, "invalid CIDR", pattern);
   } else {
@@ -112,7 +112,7 @@ bool CidrRange::matches(const struct sockaddr* addr) const {
       if (addr->sa_family == AF_INET6) {
         otherBits = reinterpret_cast<const struct sockaddr_in6*>(addr)->sin6_addr.s6_addr;
         static constexpr byte V6MAPPED[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff };
-        if (memcmp(otherBits, V6MAPPED, sizeof(V6MAPPED)) == 0) {
+        if (arrayPtr(otherBits, sizeof(V6MAPPED)) == V6MAPPED) {
           // We're an ipv4 range and the address is ipv6, but it's a "v6 mapped" address, meaning
           // it's equivalent to an ipv4 address. Try to match against the ipv4 part.
           otherBits = otherBits + sizeof(V6MAPPED);
@@ -138,10 +138,28 @@ bool CidrRange::matches(const struct sockaddr* addr) const {
       KJ_UNREACHABLE;
   }
 
-  if (memcmp(bits, otherBits, bitCount / 8) != 0) return false;
+  if (arrayPtr(bits).first(bitCount / 8) != arrayPtr(otherBits, bitCount / 8)) return false;
 
   return bitCount == 128 ||
       bits[bitCount / 8] == (otherBits[bitCount / 8] & (0xff00 >> (bitCount % 8)));
+}
+
+bool CidrRange::matches(StringPtr addr) const {
+  struct sockaddr_storage ss;
+  memset(&ss, 0, sizeof(ss));
+
+  auto* sin = reinterpret_cast<struct sockaddr_in*>(&ss);
+  auto* sin6 = reinterpret_cast<struct sockaddr_in6*>(&ss);
+
+  if (inet_pton(AF_INET, addr.cStr(), &sin->sin_addr) == 1) {
+    ss.ss_family = AF_INET;
+  } else if (inet_pton(AF_INET6, addr.cStr(), &sin6->sin6_addr) == 1) {
+    ss.ss_family = AF_INET6;
+  } else {
+    KJ_FAIL_REQUIRE("Invalid IP address", addr);
+  }
+
+  return matches(reinterpret_cast<struct sockaddr*>(&ss));
 }
 
 bool CidrRange::matchesFamily(int family) const {
@@ -157,7 +175,7 @@ bool CidrRange::matchesFamily(int family) const {
 }
 
 String CidrRange::toString() const {
-  char result[128];
+  char result[128]{};
   KJ_ASSERT(inet_ntop(family, (void*)bits, result, sizeof(result)) == result);
   return kj::str(result, '/', bitCount);
 }

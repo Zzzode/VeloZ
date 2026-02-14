@@ -19,6 +19,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#include "kj/common.h"
 #if KJ_HAS_ZLIB
 
 #include "gzip.h"
@@ -31,10 +32,10 @@ namespace _ {  // private
 GzipOutputContext::GzipOutputContext(kj::Maybe<int> compressionLevel) {
   int initResult;
 
-  KJ_IF_MAYBE(level, compressionLevel) {
+  KJ_IF_SOME(level, compressionLevel) {
     compressing = true;
     initResult =
-      deflateInit2(&ctx, *level, Z_DEFLATED,
+      deflateInit2(&ctx, level, Z_DEFLATED,
                    15 + 16,  // windowBits = 15 (maximum) + magic value 16 to ask for gzip.
                    8,        // memLevel = 8 (the default)
                    Z_DEFAULT_STRATEGY);
@@ -58,8 +59,8 @@ void GzipOutputContext::setInput(const void* in, size_t size) {
 }
 
 kj::Tuple<bool, kj::ArrayPtr<const byte>> GzipOutputContext::pumpOnce(int flush) {
-  ctx.next_out = buffer;
-  ctx.avail_out = sizeof(buffer);
+  ctx.next_out = buffer.begin();
+  ctx.avail_out = buffer.size();
 
   auto result = compressing ? deflate(&ctx, flush) : inflate(&ctx, flush);
   if (result != Z_OK && result != Z_BUF_ERROR && result != Z_STREAM_END) {
@@ -69,7 +70,7 @@ kj::Tuple<bool, kj::ArrayPtr<const byte>> GzipOutputContext::pumpOnce(int flush)
   // - Z_STREAM_END means we have finished the stream successfully.
   // - Z_BUF_ERROR means we didn't have any more input to process
   //   (but still have to make a call to write to potentially flush data).
-  return kj::tuple(result == Z_OK, kj::arrayPtr(buffer, sizeof(buffer) - ctx.avail_out));
+  return kj::tuple(result == Z_OK, buffer.first(buffer.size() - ctx.avail_out));
 }
 
 void GzipOutputContext::fail(int result) {
@@ -93,16 +94,16 @@ GzipInputStream::~GzipInputStream() noexcept(false) {
   inflateEnd(&ctx);
 }
 
-size_t GzipInputStream::tryRead(void* out, size_t minBytes, size_t maxBytes) {
-  if (maxBytes == 0) return size_t(0);
+size_t GzipInputStream::tryRead(ArrayPtr<byte> out, size_t minBytes) {
+  if (out == nullptr) return size_t(0);
 
-  return readImpl(reinterpret_cast<byte*>(out), minBytes, maxBytes, 0);
+  return readImpl(out, minBytes, 0);
 }
 
 size_t GzipInputStream::readImpl(
-    byte* out, size_t minBytes, size_t maxBytes, size_t alreadyRead) {
+    ArrayPtr<byte> out, size_t minBytes, size_t alreadyRead) {
   if (ctx.avail_in == 0) {
-    size_t amount = inner.tryRead(buffer, 1, sizeof(buffer));
+    size_t amount = inner.tryRead(buffer.asPtr(), 1);
     // Note: This check would reject valid streams with a high compression ratio if zlib were to
     // read in the entire input data, getting more decompressed data than fits in the out buffer
     // and subsequently fill the output buffer and internally store some pending data. It turns
@@ -115,12 +116,13 @@ size_t GzipInputStream::readImpl(
       }
       return alreadyRead;
     } else {
-      ctx.next_in = buffer;
+      ctx.next_in = buffer.begin();
       ctx.avail_in = amount;
     }
   }
 
-  ctx.next_out = out;
+  size_t maxBytes = out.size();
+  ctx.next_out = out.begin();
   ctx.avail_out = maxBytes;
 
   auto inflateResult = inflate(&ctx, Z_NO_FLUSH);
@@ -135,7 +137,7 @@ size_t GzipInputStream::readImpl(
     if (n >= minBytes) {
       return n + alreadyRead;
     } else {
-      return readImpl(out + n, minBytes - n, maxBytes - n, alreadyRead + n);
+      KJ_MUSTTAIL return readImpl(out.slice(n), minBytes - n, alreadyRead + n);
     }
   } else {
     if (ctx.msg == nullptr) {
@@ -152,14 +154,14 @@ GzipOutputStream::GzipOutputStream(OutputStream& inner, int compressionLevel)
     : inner(inner), ctx(compressionLevel) {}
 
 GzipOutputStream::GzipOutputStream(OutputStream& inner, decltype(DECOMPRESS))
-    : inner(inner), ctx(nullptr) {}
+    : inner(inner), ctx(kj::none) {}
 
 GzipOutputStream::~GzipOutputStream() noexcept(false) {
   pump(Z_FINISH);
 }
 
-void GzipOutputStream::write(const void* in, size_t size) {
-  ctx.setInput(in, size);
+void GzipOutputStream::write(ArrayPtr<const byte> data) {
+  ctx.setInput(data.begin(), data.size());
   pump(Z_NO_FLUSH);
 }
 
@@ -170,7 +172,7 @@ void GzipOutputStream::pump(int flush) {
     ok = get<0>(result);
     auto chunk = get<1>(result);
     if (chunk.size() > 0) {
-      inner.write(chunk.begin(), chunk.size());
+      inner.write(chunk);
     }
   } while (ok);
 }
@@ -178,7 +180,7 @@ void GzipOutputStream::pump(int flush) {
 // =======================================================================================
 
 GzipAsyncInputStream::GzipAsyncInputStream(AsyncInputStream& inner)
-    : inner(inner) {
+    : inner(inner), buffer(kj::heapArray<byte>(_::KJ_GZ_BUF_SIZE)) {
   // windowBits = 15 (maximum) + magic value 16 to ask for gzip.
   KJ_ASSERT(inflateInit2(&ctx, 15 + 16) == Z_OK);
 }
@@ -196,7 +198,7 @@ Promise<size_t> GzipAsyncInputStream::tryRead(void* out, size_t minBytes, size_t
 Promise<size_t> GzipAsyncInputStream::readImpl(
     byte* out, size_t minBytes, size_t maxBytes, size_t alreadyRead) {
   if (ctx.avail_in == 0) {
-    return inner.tryRead(buffer, 1, sizeof(buffer))
+    return inner.tryRead(buffer.begin(), 1, buffer.size())
         .then([this,out,minBytes,maxBytes,alreadyRead](size_t amount) -> Promise<size_t> {
       if (amount == 0) {
         if (!atValidEndpoint) {
@@ -204,7 +206,7 @@ Promise<size_t> GzipAsyncInputStream::readImpl(
         }
         return alreadyRead;
       } else {
-        ctx.next_in = buffer;
+        ctx.next_in = buffer.begin();
         ctx.avail_in = amount;
         return readImpl(out, minBytes, maxBytes, alreadyRead);
       }
@@ -243,19 +245,15 @@ GzipAsyncOutputStream::GzipAsyncOutputStream(AsyncOutputStream& inner, int compr
     : inner(inner), ctx(compressionLevel) {}
 
 GzipAsyncOutputStream::GzipAsyncOutputStream(AsyncOutputStream& inner, decltype(DECOMPRESS))
-    : inner(inner), ctx(nullptr) {}
+    : inner(inner), ctx(kj::none) {}
 
-Promise<void> GzipAsyncOutputStream::write(const void* in, size_t size) {
-  ctx.setInput(in, size);
+Promise<void> GzipAsyncOutputStream::write(ArrayPtr<const byte> buffer) {
+  ctx.setInput(buffer.begin(), buffer.size());
   return pump(Z_NO_FLUSH);
 }
 
 Promise<void> GzipAsyncOutputStream::write(ArrayPtr<const ArrayPtr<const byte>> pieces) {
-  if (pieces.size() == 0) return kj::READY_NOW;
-  return write(pieces[0].begin(), pieces[0].size())
-      .then([this,pieces]() {
-    return write(pieces.slice(1, pieces.size()));
-  });
+  for (auto piece: pieces) co_await write(piece);
 }
 
 kj::Promise<void> GzipAsyncOutputStream::pump(int flush) {
@@ -270,7 +268,7 @@ kj::Promise<void> GzipAsyncOutputStream::pump(int flush) {
       return kj::READY_NOW;
     }
   } else {
-    auto promise = inner.write(chunk.begin(), chunk.size());
+    auto promise = inner.write(chunk);
     if (ok) {
       promise = promise.then([this, flush]() { return pump(flush); });
     }

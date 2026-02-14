@@ -20,9 +20,30 @@
 // THE SOFTWARE.
 
 #include "memory.h"
+#include "debug.h"
+#include <stdlib.h>
 
 namespace kj {
 
 const NullDisposer NullDisposer::instance = NullDisposer();
+
+namespace _ {
+
+#if KJ_ASSERT_PTR_COUNTERS
+
+void atomicPtrCounterAssertionFailed(char const* reason) {
+  KJ_FAIL_ASSERT("ptr counter contract violated", reason);
+
+  // Really make sure we abort.
+  KJ_KNOWN_UNREACHABLE(abort());
+}
+
+#endif // KJ_ASSERT_PTR_COUNTERS
+
+void throwWrongDisposerError() {
+  KJ_FAIL_REQUIRE("When disowning an object, disposer must be equal to Own's disposer");
+}
+
+}
 
 }  // namespace kj

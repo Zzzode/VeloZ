@@ -206,7 +206,7 @@ public:
   template <typename Input>
   Maybe<Decay<decltype(instance<Input>().consume())>> operator()(Input& input) const {
     if (input.atEnd()) {
-      return nullptr;
+      return kj::none;
     } else {
       return input.consume();
     }
@@ -226,7 +226,7 @@ public:
 
   template <typename Input> Maybe<Tuple<>> operator()(Input& input) const {
     if (input.atEnd() || input.current() != expected) {
-      return nullptr;
+      return kj::none;
     } else {
       input.next();
       return Tuple<>();
@@ -254,7 +254,7 @@ public:
 
   template <typename Input> Maybe<Tuple<>> operator()(Input& input) const {
     if (input.atEnd() || input.current() != expected) {
-      return nullptr;
+      return kj::none;
     } else {
       input.next();
       return Tuple<>();
@@ -279,8 +279,8 @@ public:
       : subParser(kj::fwd<SubParser>(subParser)), result(kj::fwd<Result>(result)) {}
 
   template <typename Input> Maybe<Result> operator()(Input& input) const {
-    if (subParser(input) == nullptr) {
-      return nullptr;
+    if (subParser(input) == kj::none) {
+      return kj::none;
     } else {
       return result;
     }
@@ -344,14 +344,15 @@ public:
                               instance<OutputType<SubParsers, Input>>()...))>
 #endif
   {
-    KJ_IF_MAYBE (firstResult, first(input)) {
-      return rest.parseNext(input, kj::fwd<InitialParams>(initialParams)..., kj::mv(*firstResult));
-    } else {
+    KJ_IF_SOME(firstResult, first(input)) {
+      return rest.parseNext(input, kj::fwd<InitialParams>(initialParams)..., kj::mv(firstResult));
+    }
+    else {
       // TODO(msvc): MSVC depends on return type deduction to compile this function, so we need to
       //   help it deduce the right type on this code path.
       return Maybe<decltype(tuple(kj::fwd<InitialParams>(initialParams)...,
                                   instance<OutputType<FirstSubParser, Input>>(),
-                                  instance<OutputType<SubParsers, Input>>()...))>{nullptr};
+                                  instance<OutputType<SubParsers, Input>>()...))>{kj::none};
     }
   }
 
@@ -409,16 +410,17 @@ struct Many_<SubParser, atLeastOne>::Impl {
     while (!input.atEnd()) {
       Input subInput(input);
 
-      KJ_IF_MAYBE (subResult, subParser(subInput)) {
+      KJ_IF_SOME(subResult, subParser(subInput)) {
         subInput.advanceParent();
-        results.add(kj::mv(*subResult));
-      } else {
+        results.add(kj::mv(subResult));
+      }
+      else {
         break;
       }
     }
 
     if (atLeastOne && results.empty()) {
-      return nullptr;
+      return kj::none;
     }
 
     return results.releaseAsArray();
@@ -436,7 +438,7 @@ struct Many_<SubParser, atLeastOne>::Impl<Input, Tuple<>> {
     while (!input.atEnd()) {
       Input subInput(input);
 
-      KJ_IF_MAYBE (subResult, subParser(subInput)) {
+      if (kj::none != subParser(subInput)) {
         subInput.advanceParent();
         ++count;
       } else {
@@ -445,7 +447,7 @@ struct Many_<SubParser, atLeastOne>::Impl<Input, Tuple<>> {
     }
 
     if (atLeastOne && count == 0) {
-      return nullptr;
+      return kj::none;
     }
 
     return count;
@@ -498,11 +500,13 @@ struct Times_<SubParser>::Impl {
 
     while (results.size() < count) {
       if (input.atEnd()) {
-        return nullptr;
-      } else KJ_IF_MAYBE (subResult, subParser(input)) {
-        results.add(kj::mv(*subResult));
-      } else {
-        return nullptr;
+        return kj::none;
+      } else
+        KJ_IF_SOME(subResult, subParser(input)) {
+          results.add(kj::mv(subResult));
+        }
+      else {
+        return kj::none;
       }
     }
 
@@ -520,11 +524,11 @@ struct Times_<SubParser>::Impl<Input, Tuple<>> {
 
     while (actualCount < count) {
       if (input.atEnd()) {
-        return nullptr;
-      } else KJ_IF_MAYBE (subResult, subParser(input)) {
+        return kj::none;
+      } else if (kj::none != subParser(input)) {
         ++actualCount;
       } else {
-        return nullptr;
+        return kj::none;
       }
     }
 
@@ -557,11 +561,12 @@ public:
     typedef Maybe<OutputType<SubParser, Input>> Result;
 
     Input subInput(input);
-    KJ_IF_MAYBE (subResult, subParser(subInput)) {
+    KJ_IF_SOME(subResult, subParser(subInput)) {
       subInput.advanceParent();
-      return Result(kj::mv(*subResult));
-    } else {
-      return Result(nullptr);
+      return Result(kj::mv(subResult));
+    }
+    else {
+      return Result(kj::none);
     }
   }
 
@@ -594,7 +599,7 @@ public:
       Input subInput(input);
       Maybe<OutputType<FirstSubParser, Input>> firstResult = first(subInput);
 
-      if (firstResult != nullptr) {
+      if (firstResult != kj::none) {
         subInput.advanceParent();
         return kj::mv(firstResult);
       }
@@ -611,8 +616,8 @@ private:
 
 template <> class OneOf_<> {
 public:
-  template <typename Input> decltype(nullptr) operator()(Input& input) const {
-    return nullptr;
+  template <typename Input> decltype(kj::none) operator()(Input& input) const {
+    return kj::none;
   }
 };
 
@@ -658,10 +663,11 @@ public:
   template <typename Input>
   Maybe<decltype(kj::apply(instance<TransformFunc&>(), instance<OutputType<SubParser, Input>&&>()))>
   operator()(Input& input) const {
-    KJ_IF_MAYBE (subResult, subParser(input)) {
-      return kj::apply(transform, kj::mv(*subResult));
-    } else {
-      return nullptr;
+    KJ_IF_SOME(subResult, subParser(input)) {
+      return kj::apply(transform, kj::mv(subResult));
+    }
+    else {
+      return kj::none;
     }
   }
 
@@ -678,10 +684,11 @@ public:
   template <typename Input>
   decltype(kj::apply(instance<TransformFunc&>(), instance<OutputType<SubParser, Input>&&>()))
   operator()(Input& input) const {
-    KJ_IF_MAYBE (subResult, subParser(input)) {
-      return kj::apply(transform, kj::mv(*subResult));
-    } else {
-      return nullptr;
+    KJ_IF_SOME(subResult, subParser(input)) {
+      return kj::apply(transform, kj::mv(subResult));
+    }
+    else {
+      return kj::none;
     }
   }
 
@@ -701,11 +708,12 @@ public:
                            instance<OutputType<SubParser, Input>&&>()))>
   operator()(Input& input) const {
     auto start = input.getPosition();
-    KJ_IF_MAYBE (subResult, subParser(input)) {
+    KJ_IF_SOME(subResult, subParser(input)) {
       return kj::apply(transform, Span<decltype(start)>(kj::mv(start), input.getPosition()),
-                       kj::mv(*subResult));
-    } else {
-      return nullptr;
+                       kj::mv(subResult));
+    }
+    else {
+      return kj::none;
     }
   }
 
@@ -755,10 +763,10 @@ public:
   template <typename Input> Maybe<Tuple<>> operator()(Input& input) const {
     Input subInput(input);
     subInput.forgetParent();
-    if (subParser(subInput) == nullptr) {
+    if (subParser(subInput) == kj::none) {
       return Tuple<>();
     } else {
-      return nullptr;
+      return kj::none;
     }
   }
 
@@ -783,7 +791,7 @@ public:
     if (input.atEnd()) {
       return Tuple<>();
     } else {
-      return nullptr;
+      return kj::none;
     }
   }
 };
