@@ -44,3 +44,10 @@ dist/
 ## Testing
 /Testing/
 
+## Test artifacts (WAL files, reports, etc.)
+*.wal
+test_*.html
+
+## Temporary files
+CHANGELOG.md
+
