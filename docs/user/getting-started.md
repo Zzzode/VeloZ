@@ -26,6 +26,15 @@ The gateway will start on `http://127.0.0.1:8080/`. Open this URL in your browse
 - **Compiler**: C++23-capable (Clang 16+ or GCC 13+)
 - **Python**: 3.x (for gateway, usually pre-installed)
 
+### Dependencies (Automatically Fetched)
+
+VeloZ automatically fetches these dependencies via CMake FetchContent:
+- **KJ Library** (v1.3.0) - Core C++ utilities from Cap'n Proto
+- **GoogleTest** - Testing framework
+- **yyjson** - High-performance JSON parser
+
+No manual dependency installation is required.
+
 ---
 
 ## Build Options
@@ -169,9 +178,11 @@ export VELOZ_BINANCE_API_SECRET=your_api_secret
 
 ## Next Steps
 
-- Read the [HTTP API Reference](../api/http-api.md) for detailed API documentation
+- Read the [HTTP API Reference](../api/http_api.md) for detailed API documentation
+- Check the [Backtest User Guide](backtest.md) for backtesting strategies
 - Explore the [design documents](../design/) for architecture details
 - Check the [implementation plans](../plans/) for development roadmap
+- Review the [CHANGELOG](../../CHANGELOG.md) for recent changes
 
 ---
 
