@@ -1,6 +1,12 @@
 #include "veloz/strategy/strategy.h"
 
-#include <gtest/gtest.h>
+#include <gtest/gtest.h> // Kept for gtest framework compatibility
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <kj/vector.h>
+#include <memory> // Kept for std::shared_ptr (gtest compatibility)
+#include <string> // Kept for gtest string comparisons
+#include <vector> // Kept for gtest compatibility
 
 namespace veloz::strategy::tests {
 
@@ -8,40 +14,46 @@ namespace veloz::strategy::tests {
 class TestStrategy;
 
 // Test strategy factory
+// Note: std::shared_ptr kept for gtest compatibility and StrategyFactory API
 class TestStrategyFactory : public StrategyFactory<TestStrategy> {
 public:
   std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config) override;
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 // Strategy manager test class
 class StrategyManagerTest : public ::testing::Test {
+public:
+  ~StrategyManagerTest() noexcept override = default;
+
 protected:
   void SetUp() override {
-    manager_ = std::make_unique<StrategyManager>();
+    manager_ = kj::heap<StrategyManager>();
     // Register test strategy factory
+    // Note: std::shared_ptr kept for gtest compatibility and StrategyManager API
     auto factory = std::make_shared<TestStrategyFactory>();
     manager_->register_strategy_factory(factory);
   }
 
   void TearDown() override {
-    manager_.reset();
+    manager_ = nullptr;
   }
 
-  std::unique_ptr<StrategyManager> manager_;
+  kj::Own<StrategyManager> manager_;
 };
 
 // Test strategy implementation for testing
 class TestStrategy : public IStrategy {
 public:
-  explicit TestStrategy(const StrategyConfig& config) : config_(config) {}
+  // Note: StrategyConfig contains kj::String which is not copyable, so we store a reference
+  explicit TestStrategy(const StrategyConfig& config) : config_ref_(config) {}
 
-  std::string get_id() const override {
-    return "test-strategy";
+  kj::StringPtr get_id() const override {
+    return "test-strategy"_kj;
   }
 
-  std::string get_name() const override {
-    return "Test Strategy";
+  kj::StringPtr get_name() const override {
+    return "Test Strategy"_kj;
   }
 
   StrategyType get_type() const override {
@@ -67,8 +79,8 @@ public:
   void on_timer(int64_t timestamp) override {}
 
   StrategyState get_state() const override {
-    return StrategyState{.strategy_id = get_id(),
-                         .strategy_name = get_name(),
+    return StrategyState{.strategy_id = kj::heapString(get_id()),
+                         .strategy_name = kj::heapString(get_name()),
                          .is_running = running_,
                          .pnl = 0.0,
                          .max_drawdown = 0.0,
@@ -79,8 +91,8 @@ public:
                          .profit_factor = 0.0};
   }
 
-  std::vector<exec::PlaceOrderRequest> get_signals() override {
-    return {};
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override {
+    return kj::Vector<exec::PlaceOrderRequest>();
   }
 
   void reset() override {
@@ -88,8 +100,8 @@ public:
     running_ = false;
   }
 
-  static std::string get_strategy_type() {
-    return "TestStrategy";
+  static kj::StringPtr get_strategy_type() {
+    return "Custom"_kj; // Must match StrategyType::Custom lookup in StrategyManager
   }
 
   bool is_initialized() const {
@@ -101,95 +113,96 @@ public:
   }
 
 private:
-  StrategyConfig config_;
+  const StrategyConfig& config_ref_; // Store reference since StrategyConfig is not copyable
   bool initialized_ = false;
   bool running_ = false;
 };
 
 // Test strategy factory implementation
+// Note: std::shared_ptr kept for gtest compatibility and StrategyFactory API
 std::shared_ptr<IStrategy> TestStrategyFactory::create_strategy(const StrategyConfig& config) {
   return std::make_shared<TestStrategy>(config);
 }
 
-std::string TestStrategyFactory::get_strategy_type() const {
+kj::StringPtr TestStrategyFactory::get_strategy_type() const {
   return TestStrategy::get_strategy_type();
 }
 
 // Test strategy registration
 TEST_F(StrategyManagerTest, TestStrategyRegistration) {
   // Verify that the test strategy factory is registered
-  StrategyConfig config{.name = "Test Strategy",
-                        .type = StrategyType::Custom,
-                        .risk_per_trade = 0.01,
-                        .max_position_size = 1.0,
-                        .stop_loss = 0.05,
-                        .take_profit = 0.1,
-                        .symbols = {"BTCUSDT"},
-                        .parameters = {}};
+  StrategyConfig config;
+  config.name = kj::str("Test Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
 
   auto strategy = manager_->create_strategy(config);
   EXPECT_TRUE(strategy);
-  EXPECT_EQ(strategy->get_name(), config.name);
+  EXPECT_EQ(std::string(strategy->get_name().cStr()), std::string(config.name.cStr()));
 }
 
 // Test strategy lifecycle management
 TEST_F(StrategyManagerTest, TestStrategyLifecycle) {
-  StrategyConfig config{.name = "Test Strategy",
-                        .type = StrategyType::Custom,
-                        .risk_per_trade = 0.01,
-                        .max_position_size = 1.0,
-                        .stop_loss = 0.05,
-                        .take_profit = 0.1,
-                        .symbols = {"BTCUSDT"},
-                        .parameters = {}};
+  StrategyConfig config;
+  config.name = kj::str("Test Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
 
   auto strategy = manager_->create_strategy(config);
   EXPECT_TRUE(strategy);
 
   // Test start and stop
-  std::string strategy_id = manager_->get_all_strategy_ids()[0];
+  auto ids = manager_->get_all_strategy_ids();
+  kj::StringPtr strategy_id = ids[0];
   EXPECT_TRUE(manager_->start_strategy(strategy_id));
   EXPECT_TRUE(manager_->stop_strategy(strategy_id));
 }
 
 // Test strategy state query
 TEST_F(StrategyManagerTest, TestStrategyStateQuery) {
-  StrategyConfig config{.name = "Test Strategy",
-                        .type = StrategyType::Custom,
-                        .risk_per_trade = 0.01,
-                        .max_position_size = 1.0,
-                        .stop_loss = 0.05,
-                        .take_profit = 0.1,
-                        .symbols = {"BTCUSDT"},
-                        .parameters = {}};
+  StrategyConfig config;
+  config.name = kj::str("Test Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
 
   manager_->create_strategy(config);
 
   // Get all strategy states
   auto states = manager_->get_all_strategy_states();
   EXPECT_EQ(states.size(), 1);
-  EXPECT_EQ(states[0].strategy_name, config.name);
+  EXPECT_EQ(std::string(states[0].strategy_name.cStr()), std::string(config.name.cStr()));
   EXPECT_FALSE(states[0].is_running);
 }
 
 // Test strategy event dispatch
 TEST_F(StrategyManagerTest, TestStrategyEventDispatch) {
-  StrategyConfig config{.name = "Test Strategy",
-                        .type = StrategyType::Custom,
-                        .risk_per_trade = 0.01,
-                        .max_position_size = 1.0,
-                        .stop_loss = 0.05,
-                        .take_profit = 0.1,
-                        .symbols = {"BTCUSDT"},
-                        .parameters = {}};
+  StrategyConfig config;
+  config.name = kj::str("Test Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
 
   manager_->create_strategy(config);
 
   // Create a test market event
-  market::MarketEvent event{
-      .type = market::MarketEventType::Ticker,
-      .symbol = "BTCUSDT",
-  };
+  market::MarketEvent event;
+  event.type = market::MarketEventType::Ticker;
+  event.symbol = veloz::common::SymbolId{"BTCUSDT"};
 
   // Dispatch event (should not throw exception)
   manager_->on_market_event(event);

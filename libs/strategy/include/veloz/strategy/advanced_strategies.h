@@ -2,7 +2,10 @@
 
 #include "veloz/strategy/strategy.h"
 
-#include <functional>
+#include <kj/common.h>
+#include <kj/function.h>
+#include <kj/string.h>
+#include <kj/vector.h>
 
 namespace veloz::strategy {
 
@@ -40,17 +43,20 @@ enum class AdvancedStrategyType {
 // Strategy configuration for advanced strategies
 struct AdvancedStrategyConfig : public StrategyConfig {
   AdvancedStrategyType advanced_type;
-  std::map<std::string, std::string> ml_model_config; // For ML strategies
-  std::vector<std::string> target_symbols;            // For arbitrage strategies
-  std::vector<std::string> venues;                    // For cross-exchange strategies
+  std::map<kj::String, kj::String>
+      ml_model_config;                   // For ML strategies (std::map for ordered lookup)
+  kj::Vector<kj::String> target_symbols; // For arbitrage strategies
+  kj::Vector<kj::String> venues;         // For cross-exchange strategies
 };
 
 // Base class for technical indicator based strategies
 class TechnicalIndicatorStrategy : public BaseStrategy {
 public:
   explicit TechnicalIndicatorStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  ~TechnicalIndicatorStrategy() noexcept override = default;
 
   // Common technical indicator calculations
+  // Using std::vector for these methods as they need iterator/algorithm support
   double calculate_rsi(const std::vector<double>& prices, int period = 14) const;
   double calculate_macd(const std::vector<double>& prices, double& signal, int fast_period = 12,
                         int slow_period = 26, int signal_period = 9) const;
@@ -66,15 +72,16 @@ public:
 class RsiStrategy : public TechnicalIndicatorStrategy {
 public:
   explicit RsiStrategy(const StrategyConfig& config);
+  ~RsiStrategy() noexcept override = default;
   StrategyType get_type() const override;
   void on_event(const market::MarketEvent& event) override;
   void on_timer(int64_t timestamp) override;
-  std::vector<exec::PlaceOrderRequest> get_signals() override;
-  static std::string get_strategy_type();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override;
+  static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  kj::Vector<exec::PlaceOrderRequest> signals_;
   int rsi_period_;
   double overbought_level_;
   double oversold_level_;
@@ -84,15 +91,16 @@ private:
 class MacdStrategy : public TechnicalIndicatorStrategy {
 public:
   explicit MacdStrategy(const StrategyConfig& config);
+  ~MacdStrategy() noexcept override = default;
   StrategyType get_type() const override;
   void on_event(const market::MarketEvent& event) override;
   void on_timer(int64_t timestamp) override;
-  std::vector<exec::PlaceOrderRequest> get_signals() override;
-  static std::string get_strategy_type();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override;
+  static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  kj::Vector<exec::PlaceOrderRequest> signals_;
   int fast_period_;
   int slow_period_;
   int signal_period_;
@@ -102,15 +110,16 @@ private:
 class BollingerBandsStrategy : public TechnicalIndicatorStrategy {
 public:
   explicit BollingerBandsStrategy(const StrategyConfig& config);
+  ~BollingerBandsStrategy() noexcept override = default;
   StrategyType get_type() const override;
   void on_event(const market::MarketEvent& event) override;
   void on_timer(int64_t timestamp) override;
-  std::vector<exec::PlaceOrderRequest> get_signals() override;
-  static std::string get_strategy_type();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override;
+  static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  kj::Vector<exec::PlaceOrderRequest> signals_;
   int period_;
   double std_dev_;
 };
@@ -119,15 +128,16 @@ private:
 class StochasticOscillatorStrategy : public TechnicalIndicatorStrategy {
 public:
   explicit StochasticOscillatorStrategy(const StrategyConfig& config);
+  ~StochasticOscillatorStrategy() noexcept override = default;
   StrategyType get_type() const override;
   void on_event(const market::MarketEvent& event) override;
   void on_timer(int64_t timestamp) override;
-  std::vector<exec::PlaceOrderRequest> get_signals() override;
-  static std::string get_strategy_type();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override;
+  static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  kj::Vector<exec::PlaceOrderRequest> signals_;
   int k_period_;
   int d_period_;
   double overbought_level_;
@@ -138,14 +148,15 @@ private:
 class MarketMakingHFTStrategy : public BaseStrategy {
 public:
   explicit MarketMakingHFTStrategy(const StrategyConfig& config);
+  ~MarketMakingHFTStrategy() noexcept override = default;
   StrategyType get_type() const override;
   void on_event(const market::MarketEvent& event) override;
   void on_timer(int64_t timestamp) override;
-  std::vector<exec::PlaceOrderRequest> get_signals() override;
-  static std::string get_strategy_type();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override;
+  static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<exec::PlaceOrderRequest> signals_;
+  kj::Vector<exec::PlaceOrderRequest> signals_;
   double spread_;
   double order_size_;
   int refresh_rate_ms_;
@@ -156,15 +167,16 @@ private:
 class CrossExchangeArbitrageStrategy : public BaseStrategy {
 public:
   explicit CrossExchangeArbitrageStrategy(const StrategyConfig& config);
+  ~CrossExchangeArbitrageStrategy() noexcept override = default;
   StrategyType get_type() const override;
   void on_event(const market::MarketEvent& event) override;
   void on_timer(int64_t timestamp) override;
-  std::vector<exec::PlaceOrderRequest> get_signals() override;
-  static std::string get_strategy_type();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override;
+  static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<exec::PlaceOrderRequest> signals_;
-  std::map<veloz::common::Venue, double> prices_by_venue_;
+  kj::Vector<exec::PlaceOrderRequest> signals_;
+  std::map<veloz::common::Venue, double> prices_by_venue_; // std::map for ordered lookup
   double min_profit_;
   double max_slippage_;
 };
@@ -176,11 +188,11 @@ public:
   ~StrategyPortfolioManager() = default;
 
   void add_strategy(const std::shared_ptr<IStrategy>& strategy, double weight);
-  void remove_strategy(const std::string& strategy_id);
-  void update_strategy_weight(const std::string& strategy_id, double weight);
-  std::vector<exec::PlaceOrderRequest> get_combined_signals();
+  void remove_strategy(kj::StringPtr strategy_id);
+  void update_strategy_weight(kj::StringPtr strategy_id, double weight);
+  kj::Vector<exec::PlaceOrderRequest> get_combined_signals();
   StrategyState get_portfolio_state() const;
-  void set_risk_model(const std::function<double(const std::vector<double>&)>& risk_model);
+  void set_risk_model(kj::Function<double(const kj::Vector<double>&)> risk_model);
   void rebalance_portfolio();
 
 private:
@@ -189,41 +201,41 @@ private:
     double weight;
   };
 
-  std::map<std::string, StrategyWeight> strategies_;
-  std::function<double(const std::vector<double>&)> risk_model_;
+  std::map<std::string, StrategyWeight> strategies_; // std::map for ordered lookup
+  kj::Maybe<kj::Function<double(const kj::Vector<double>&)>> risk_model_;
   double total_exposure_;
 };
 
 // Strategy factories for advanced strategies
 class RsiStrategyFactory : public StrategyFactory<RsiStrategy> {
 public:
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 class MacdStrategyFactory : public StrategyFactory<MacdStrategy> {
 public:
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 class BollingerBandsStrategyFactory : public StrategyFactory<BollingerBandsStrategy> {
 public:
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 class StochasticOscillatorStrategyFactory : public StrategyFactory<StochasticOscillatorStrategy> {
 public:
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 class MarketMakingHFTStrategyFactory : public StrategyFactory<MarketMakingHFTStrategy> {
 public:
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 class CrossExchangeArbitrageStrategyFactory
     : public StrategyFactory<CrossExchangeArbitrageStrategy> {
 public:
-  std::string get_strategy_type() const override;
+  kj::StringPtr get_strategy_type() const override;
 };
 
 } // namespace veloz::strategy

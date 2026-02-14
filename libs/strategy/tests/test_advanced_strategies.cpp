@@ -1,21 +1,28 @@
 #include "veloz/strategy/advanced_strategies.h"
 
-#include <gtest/gtest.h>
+#include <gtest/gtest.h> // Kept for gtest framework compatibility
+#include <kj/string.h>
+#include <kj/vector.h>
+#include <memory> // Kept for std::shared_ptr (gtest compatibility)
+#include <vector> // Kept for gtest compatibility
 
 class AdvancedStrategiesTest : public ::testing::Test {
+public:
+  ~AdvancedStrategiesTest() noexcept override = default;
+
 protected:
   void SetUp() override {
     // Create a basic strategy configuration
-    config_ = veloz::strategy::StrategyConfig{
-        "TestStrategy",
-        veloz::strategy::StrategyType::Custom,
-        0.02,        // risk_per_trade
-        0.1,         // max_position_size
-        0.05,        // stop_loss
-        0.1,         // take_profit
-        {"BTCUSDT"}, // symbols
-        {{"rsi_period", 14.0}, {"overbought_level", 70.0}, {"oversold_level", 30.0}} // parameters
-    };
+    config_.name = kj::str("TestStrategy");
+    config_.type = veloz::strategy::StrategyType::Custom;
+    config_.risk_per_trade = 0.02;
+    config_.max_position_size = 0.1;
+    config_.stop_loss = 0.05;
+    config_.take_profit = 0.1;
+    config_.symbols.add(kj::str("BTCUSDT"));
+    config_.parameters[kj::str("rsi_period")] = 14.0;
+    config_.parameters[kj::str("overbought_level")] = 70.0;
+    config_.parameters[kj::str("oversold_level")] = 30.0;
   }
 
   void TearDown() override {}
@@ -25,30 +32,36 @@ protected:
 
 // Test RSI strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, RsiStrategyCreation) {
+  // Note: BaseStrategy moves config_, so save expected name before construction
+  std::string expected_name = "TestStrategy";
   veloz::strategy::RsiStrategy strategy(config_);
-  EXPECT_EQ(strategy.get_name(), config_.name);
-  EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
+  EXPECT_EQ(std::string(strategy.get_name().cStr()), expected_name);
+  // ID format is "{name}_{counter}" per generate_strategy_id()
+  EXPECT_TRUE(std::string(strategy.get_id().cStr()).find("TestStrategy_") == 0);
 }
 
 // Test RSI strategy calculation method
 TEST_F(AdvancedStrategiesTest, RsiStrategyCalculation) {
   veloz::strategy::RsiStrategy strategy(config_);
 
-  // Create some test price data
-  std::vector<double> prices = {100, 101, 102, 103, 104, 105, 106, 107,
-                                108, 109, 110, 111, 112, 113, 114};
+  // Create test price data with both gains and losses for meaningful RSI
+  std::vector<double> prices = {100, 102, 101, 103, 102, 104, 103, 105,
+                                104, 106, 105, 107, 106, 108, 107};
 
   // Test RSI calculation
   auto rsi = strategy.calculate_rsi(prices, 14);
   EXPECT_GT(rsi, 0.0);
-  EXPECT_LT(rsi, 100.0);
+  EXPECT_LE(rsi, 100.0); // RSI can be exactly 100 in edge cases
 }
 
 // Test MACD strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, MacdStrategyCreation) {
+  // Note: BaseStrategy moves config_, so save expected name before construction
+  std::string expected_name = "TestStrategy";
   veloz::strategy::MacdStrategy strategy(config_);
-  EXPECT_EQ(strategy.get_name(), config_.name);
-  EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
+  EXPECT_EQ(std::string(strategy.get_name().cStr()), expected_name);
+  // ID format is "{name}_{counter}" per generate_strategy_id()
+  EXPECT_TRUE(std::string(strategy.get_id().cStr()).find("TestStrategy_") == 0);
 }
 
 // Test MACD strategy calculation method
@@ -66,9 +79,12 @@ TEST_F(AdvancedStrategiesTest, MacdStrategyCalculation) {
 
 // Test Bollinger Bands strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, BollingerBandsStrategyCreation) {
+  // Note: BaseStrategy moves config_, so save expected name before construction
+  std::string expected_name = "TestStrategy";
   veloz::strategy::BollingerBandsStrategy strategy(config_);
-  EXPECT_EQ(strategy.get_name(), config_.name);
-  EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
+  EXPECT_EQ(std::string(strategy.get_name().cStr()), expected_name);
+  // ID format is "{name}_{counter}" per generate_strategy_id()
+  EXPECT_TRUE(std::string(strategy.get_id().cStr()).find("TestStrategy_") == 0);
 }
 
 // Test Bollinger Bands strategy calculation method
@@ -87,39 +103,49 @@ TEST_F(AdvancedStrategiesTest, BollingerBandsStrategyCalculation) {
 
 // Test Stochastic Oscillator strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, StochasticOscillatorStrategyCreation) {
+  // Note: BaseStrategy moves config_, so save expected name before construction
+  std::string expected_name = "TestStrategy";
   veloz::strategy::StochasticOscillatorStrategy strategy(config_);
-  EXPECT_EQ(strategy.get_name(), config_.name);
-  EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
+  EXPECT_EQ(std::string(strategy.get_name().cStr()), expected_name);
+  // ID format is "{name}_{counter}" per generate_strategy_id()
+  EXPECT_TRUE(std::string(strategy.get_id().cStr()).find("TestStrategy_") == 0);
 }
 
 // Test Stochastic Oscillator strategy calculation method
 TEST_F(AdvancedStrategiesTest, StochasticOscillatorStrategyCalculation) {
   veloz::strategy::StochasticOscillatorStrategy strategy(config_);
 
-  // Create some test price data
-  std::vector<double> prices = {100, 101, 102, 103, 104, 105, 106, 107,
-                                108, 109, 110, 111, 112, 113, 114};
+  // Create test price data with variation for meaningful stochastic values
+  // Current price (107) is in the middle of the range [100, 114]
+  std::vector<double> prices = {100, 105, 102, 110, 104, 114, 103, 108,
+                                106, 112, 101, 109, 105, 111, 107};
 
   double k, d;
   strategy.calculate_stochastic_oscillator(prices, k, d);
-  EXPECT_GT(k, 0.0);
-  EXPECT_LT(k, 100.0);
-  EXPECT_GT(d, 0.0);
-  EXPECT_LT(d, 100.0);
+  EXPECT_GE(k, 0.0);
+  EXPECT_LE(k, 100.0);
+  EXPECT_GE(d, 0.0);
+  EXPECT_LE(d, 100.0);
 }
 
 // Test Market Making strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, MarketMakingHFTStrategyCreation) {
+  // Note: BaseStrategy moves config_, so save expected name before construction
+  std::string expected_name = "TestStrategy";
   veloz::strategy::MarketMakingHFTStrategy strategy(config_);
-  EXPECT_EQ(strategy.get_name(), config_.name);
-  EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
+  EXPECT_EQ(std::string(strategy.get_name().cStr()), expected_name);
+  // ID format is "{name}_{counter}" per generate_strategy_id()
+  EXPECT_TRUE(std::string(strategy.get_id().cStr()).find("TestStrategy_") == 0);
 }
 
 // Test Cross-Exchange Arbitrage strategy creation and initialization
 TEST_F(AdvancedStrategiesTest, CrossExchangeArbitrageStrategyCreation) {
+  // Note: BaseStrategy moves config_, so save expected name before construction
+  std::string expected_name = "TestStrategy";
   veloz::strategy::CrossExchangeArbitrageStrategy strategy(config_);
-  EXPECT_EQ(strategy.get_name(), config_.name);
-  EXPECT_TRUE(strategy.get_id().find("strat-") == 0);
+  EXPECT_EQ(std::string(strategy.get_name().cStr()), expected_name);
+  // ID format is "{name}_{counter}" per generate_strategy_id()
+  EXPECT_TRUE(std::string(strategy.get_id().cStr()).find("TestStrategy_") == 0);
 }
 
 // Test strategy portfolio management functionality

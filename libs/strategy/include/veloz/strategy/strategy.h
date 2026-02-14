@@ -16,10 +16,12 @@
 #include "veloz/oms/position.h"
 
 #include <cstdint>
-#include <map>
-#include <memory>
-#include <string>
-#include <vector>
+#include <kj/common.h>
+#include <kj/memory.h>
+#include <kj/string.h>
+#include <kj/vector.h>
+#include <map>    // std::map for ordered key lookup
+#include <memory> // std::shared_ptr for shared ownership (KJ uses kj::Own for unique ownership)
 
 namespace veloz::strategy {
 
@@ -46,14 +48,14 @@ enum class StrategyType {
  * risk parameters, trading parameters, and custom parameters.
  */
 struct StrategyConfig {
-  std::string name;                         ///< Strategy name
-  StrategyType type;                        ///< Strategy type
-  double risk_per_trade;                    ///< Risk per trade ratio (0-1)
-  double max_position_size;                 ///< Maximum position size
-  double stop_loss;                         ///< Stop loss ratio (0-1)
-  double take_profit;                       ///< Take profit ratio (0-1)
-  std::vector<std::string> symbols;         ///< List of trading symbols
-  std::map<std::string, double> parameters; ///< Strategy parameters
+  kj::String name;                         ///< Strategy name
+  StrategyType type;                       ///< Strategy type
+  double risk_per_trade;                   ///< Risk per trade ratio (0-1)
+  double max_position_size;                ///< Maximum position size
+  double stop_loss;                        ///< Stop loss ratio (0-1)
+  double take_profit;                      ///< Take profit ratio (0-1)
+  kj::Vector<kj::String> symbols;          ///< List of trading symbols
+  std::map<kj::String, double> parameters; ///< Strategy parameters (std::map for ordered lookup)
 };
 
 /**
@@ -63,17 +65,17 @@ struct StrategyConfig {
  * profit and loss, maximum drawdown, trading statistics, etc.
  */
 struct StrategyState {
-  std::string strategy_id;   ///< Strategy ID
-  std::string strategy_name; ///< Strategy name
-  bool is_running;           ///< Whether the strategy is running
-  double pnl;                ///< Cumulative profit and loss
-  double total_pnl;          ///< Total profit and loss
-  double max_drawdown;       ///< Maximum drawdown
-  int trade_count;           ///< Number of trades
-  int win_count;             ///< Number of winning trades
-  int lose_count;            ///< Number of losing trades
-  double win_rate;           ///< Win rate
-  double profit_factor;      ///< Profit factor
+  kj::String strategy_id;   ///< Strategy ID
+  kj::String strategy_name; ///< Strategy name
+  bool is_running;          ///< Whether the strategy is running
+  double pnl;               ///< Cumulative profit and loss
+  double total_pnl;         ///< Total profit and loss
+  double max_drawdown;      ///< Maximum drawdown
+  int trade_count;          ///< Number of trades
+  int win_count;            ///< Number of winning trades
+  int lose_count;           ///< Number of losing trades
+  double win_rate;          ///< Win rate
+  double profit_factor;     ///< Profit factor
 };
 
 /**
@@ -93,13 +95,13 @@ public:
    * @brief Get strategy ID
    * @return Strategy ID string
    */
-  virtual std::string get_id() const = 0;
+  virtual kj::StringPtr get_id() const = 0;
 
   /**
    * @brief Get strategy name
    * @return Strategy name string
    */
-  virtual std::string get_name() const = 0;
+  virtual kj::StringPtr get_name() const = 0;
 
   /**
    * @brief Get strategy type
@@ -153,7 +155,7 @@ public:
    * @brief Get trading signals
    * @return List of trading signals
    */
-  virtual std::vector<veloz::exec::PlaceOrderRequest> get_signals() = 0;
+  virtual kj::Vector<veloz::exec::PlaceOrderRequest> get_signals() = 0;
 
   /**
    * @brief Reset strategy state
@@ -185,7 +187,7 @@ public:
    * @brief Get strategy type name
    * @return Strategy type name string
    */
-  virtual std::string get_strategy_type() const = 0;
+  virtual kj::StringPtr get_strategy_type() const = 0;
 };
 
 /**
@@ -251,13 +253,13 @@ public:
    * @brief Get all strategy states
    * @return List of strategy states
    */
-  std::vector<StrategyState> get_all_strategy_states() const;
+  kj::Vector<StrategyState> get_all_strategy_states() const;
 
   /**
    * @brief Get all strategy IDs
    * @return List of strategy IDs
    */
-  std::vector<std::string> get_all_strategy_ids() const;
+  kj::Vector<kj::String> get_all_strategy_ids() const;
 
   /**
    * @brief Dispatch market event
@@ -281,9 +283,10 @@ public:
    * @brief Get all trading signals from all strategies
    * @return List of trading signals
    */
-  std::vector<veloz::exec::PlaceOrderRequest> get_all_signals();
+  kj::Vector<veloz::exec::PlaceOrderRequest> get_all_signals();
 
 private:
+  // Using std::map with std::string keys for ordered lookup and compatibility
   std::map<std::string, std::shared_ptr<IStrategy>> strategies_;       ///< Strategy instance map
   std::map<std::string, std::shared_ptr<IStrategyFactory>> factories_; ///< Strategy factory map
   std::shared_ptr<veloz::core::Logger> logger_;                        ///< Logger instance
@@ -303,13 +306,19 @@ public:
    * @param config Strategy configuration parameters
    */
   explicit BaseStrategy(const StrategyConfig& config)
-      : config_(config), strategy_id_(generate_strategy_id(config)), logger_ptr_(nullptr) {}
+      : config_(kj::mv(const_cast<StrategyConfig&>(config))),
+        strategy_id_(generate_strategy_id(config_)), logger_ptr_(nullptr) {}
+
+  /**
+   * @brief Virtual destructor
+   */
+  ~BaseStrategy() noexcept override = default;
 
   /**
    * @brief Get strategy ID
    * @return Strategy ID string
    */
-  std::string get_id() const override {
+  kj::StringPtr get_id() const override {
     return strategy_id_;
   }
 
@@ -317,7 +326,7 @@ public:
    * @brief Get strategy name
    * @return Strategy name string
    */
-  std::string get_name() const override {
+  kj::StringPtr get_name() const override {
     return config_.name;
   }
 
@@ -329,7 +338,7 @@ public:
    */
   bool initialize(const StrategyConfig& config, core::Logger& logger) override {
     logger_ptr_ = &logger;
-    logger_ptr_->info(std::format("Strategy {} initialized", config.name));
+    logger_ptr_->info(std::string(kj::str("Strategy ", config.name, " initialized").cStr()));
     initialized_ = true;
     return true;
   }
@@ -361,17 +370,18 @@ public:
    * @return Strategy state object
    */
   StrategyState get_state() const override {
-    return StrategyState{
-        .strategy_id = get_id(),
-        .strategy_name = get_name(),
-        .is_running = running_,
-        .pnl = current_pnl_,
-        .max_drawdown = max_drawdown_,
-        .trade_count = trade_count_,
-        .win_count = win_count_,
-        .lose_count = lose_count_,
-        .win_rate = trade_count_ > 0 ? static_cast<double>(win_count_) / trade_count_ : 0.0,
-        .profit_factor = total_profit_ > 0 ? total_profit_ / std::abs(total_loss_) : 0.0};
+    StrategyState state;
+    state.strategy_id = kj::str(get_id());
+    state.strategy_name = kj::str(get_name());
+    state.is_running = running_;
+    state.pnl = current_pnl_;
+    state.max_drawdown = max_drawdown_;
+    state.trade_count = trade_count_;
+    state.win_count = win_count_;
+    state.lose_count = lose_count_;
+    state.win_rate = trade_count_ > 0 ? static_cast<double>(win_count_) / trade_count_ : 0.0;
+    state.profit_factor = total_profit_ > 0 ? total_profit_ / std::abs(total_loss_) : 0.0;
+    return state;
   }
 
   /**
@@ -394,13 +404,13 @@ protected:
    * @param config Strategy configuration parameters
    * @return Strategy ID string
    */
-  static std::string generate_strategy_id(const StrategyConfig& config) {
+  static kj::String generate_strategy_id(const StrategyConfig& config) {
     static int counter = 0;
-    return config.name + "_" + std::to_string(++counter);
+    return kj::str(config.name, "_", ++counter);
   }
 
   StrategyConfig config_;          ///< Strategy configuration parameters
-  std::string strategy_id_;        ///< Strategy ID
+  kj::String strategy_id_;         ///< Strategy ID
   core::Logger* logger_ptr_;       ///< Logger pointer
   bool initialized_{false};        ///< Whether initialized
   bool running_{false};            ///< Whether running
@@ -436,7 +446,7 @@ public:
    * @brief Get strategy type name
    * @return Strategy type name string
    */
-  std::string get_strategy_type() const override {
+  kj::StringPtr get_strategy_type() const override {
     return StrategyImpl::get_strategy_type();
   }
 };

@@ -9,6 +9,7 @@ namespace veloz::strategy {
 class TrendFollowingStrategy : public BaseStrategy {
 public:
   explicit TrendFollowingStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  ~TrendFollowingStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
     return StrategyType::TrendFollowing;
@@ -30,20 +31,18 @@ public:
           // If price crosses above MA, buy; if crosses below, sell
           if (trade_data.price > ma && last_price_ <= ma) {
             // Generate buy signal
-            signals_.push_back(
-                exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
-                                        .side = exec::OrderSide::Buy,
-                                        .qty = 0.1, // Fixed quantity for example
-                                        .price = trade_data.price,
-                                        .type = exec::OrderType::Market});
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+                                                 .side = exec::OrderSide::Buy,
+                                                 .qty = 0.1, // Fixed quantity for example
+                                                 .price = trade_data.price,
+                                                 .type = exec::OrderType::Market});
           } else if (trade_data.price < ma && last_price_ >= ma) {
             // Generate sell signal
-            signals_.push_back(
-                exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
-                                        .side = exec::OrderSide::Sell,
-                                        .qty = 0.1, // Fixed quantity for example
-                                        .price = trade_data.price,
-                                        .type = exec::OrderType::Market});
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+                                                 .side = exec::OrderSide::Sell,
+                                                 .qty = 0.1, // Fixed quantity for example
+                                                 .price = trade_data.price,
+                                                 .type = exec::OrderType::Market});
           }
         }
         last_price_ = trade_data.price;
@@ -55,13 +54,13 @@ public:
     // Timer-based logic for trend following (e.g., periodic rebalancing)
   }
 
-  std::vector<exec::PlaceOrderRequest> get_signals() override {
-    std::vector<exec::PlaceOrderRequest> result = signals_;
-    signals_.clear();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override {
+    kj::Vector<exec::PlaceOrderRequest> result = kj::mv(signals_);
+    signals_ = kj::Vector<exec::PlaceOrderRequest>();
     return result;
   }
 
-  static std::string get_strategy_type() {
+  static kj::StringPtr get_strategy_type() {
     return "TrendFollowing";
   }
 
@@ -76,13 +75,14 @@ private:
 
   std::deque<double> recent_prices_;
   double last_price_ = 0.0;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  kj::Vector<exec::PlaceOrderRequest> signals_;
 };
 
 // Mean reversion strategy implementation
 class MeanReversionStrategy : public BaseStrategy {
 public:
   explicit MeanReversionStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  ~MeanReversionStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
     return StrategyType::MeanReversion;
@@ -106,19 +106,17 @@ public:
 
           // Buy when price touches lower band, sell when touches upper band
           if (trade_data.price <= lower_band) {
-            signals_.push_back(
-                exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
-                                        .side = exec::OrderSide::Buy,
-                                        .qty = 0.1,
-                                        .price = trade_data.price,
-                                        .type = exec::OrderType::Market});
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+                                                 .side = exec::OrderSide::Buy,
+                                                 .qty = 0.1,
+                                                 .price = trade_data.price,
+                                                 .type = exec::OrderType::Market});
           } else if (trade_data.price >= upper_band) {
-            signals_.push_back(
-                exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
-                                        .side = exec::OrderSide::Sell,
-                                        .qty = 0.1,
-                                        .price = trade_data.price,
-                                        .type = exec::OrderType::Market});
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+                                                 .side = exec::OrderSide::Sell,
+                                                 .qty = 0.1,
+                                                 .price = trade_data.price,
+                                                 .type = exec::OrderType::Market});
           }
         }
       }
@@ -129,13 +127,13 @@ public:
     // Timer-based logic for mean reversion
   }
 
-  std::vector<exec::PlaceOrderRequest> get_signals() override {
-    std::vector<exec::PlaceOrderRequest> result = signals_;
-    signals_.clear();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override {
+    kj::Vector<exec::PlaceOrderRequest> result = kj::mv(signals_);
+    signals_ = kj::Vector<exec::PlaceOrderRequest>();
     return result;
   }
 
-  static std::string get_strategy_type() {
+  static kj::StringPtr get_strategy_type() {
     return "MeanReversion";
   }
 
@@ -158,13 +156,14 @@ private:
   }
 
   std::deque<double> recent_prices_;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  kj::Vector<exec::PlaceOrderRequest> signals_;
 };
 
 // Momentum strategy implementation
 class MomentumStrategy : public BaseStrategy {
 public:
   explicit MomentumStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  ~MomentumStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
     return StrategyType::Momentum;
@@ -184,19 +183,17 @@ public:
           double momentum = trade_data.price - recent_prices_.front();
           // Buy if positive momentum, sell if negative momentum
           if (momentum > 0.0) {
-            signals_.push_back(
-                exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
-                                        .side = exec::OrderSide::Buy,
-                                        .qty = 0.1,
-                                        .price = trade_data.price,
-                                        .type = exec::OrderType::Market});
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+                                                 .side = exec::OrderSide::Buy,
+                                                 .qty = 0.1,
+                                                 .price = trade_data.price,
+                                                 .type = exec::OrderType::Market});
           } else if (momentum < 0.0) {
-            signals_.push_back(
-                exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
-                                        .side = exec::OrderSide::Sell,
-                                        .qty = 0.1,
-                                        .price = trade_data.price,
-                                        .type = exec::OrderType::Market});
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+                                                 .side = exec::OrderSide::Sell,
+                                                 .qty = 0.1,
+                                                 .price = trade_data.price,
+                                                 .type = exec::OrderType::Market});
           }
         }
       }
@@ -207,25 +204,26 @@ public:
     // Timer-based logic for momentum strategy
   }
 
-  std::vector<exec::PlaceOrderRequest> get_signals() override {
-    std::vector<exec::PlaceOrderRequest> result = signals_;
-    signals_.clear();
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override {
+    kj::Vector<exec::PlaceOrderRequest> result = kj::mv(signals_);
+    signals_ = kj::Vector<exec::PlaceOrderRequest>();
     return result;
   }
 
-  static std::string get_strategy_type() {
+  static kj::StringPtr get_strategy_type() {
     return "Momentum";
   }
 
 private:
   std::deque<double> recent_prices_;
-  std::vector<exec::PlaceOrderRequest> signals_;
+  kj::Vector<exec::PlaceOrderRequest> signals_;
 };
 
 // Test strategy implementation (for testing purposes)
 class TestStrategy : public BaseStrategy {
 public:
   explicit TestStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  ~TestStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
     return StrategyType::Custom;
@@ -234,40 +232,40 @@ public:
   void on_event(const market::MarketEvent& event) override {}
   void on_timer(int64_t timestamp) override {}
 
-  std::vector<exec::PlaceOrderRequest> get_signals() override {
-    return {};
+  kj::Vector<exec::PlaceOrderRequest> get_signals() override {
+    return kj::Vector<exec::PlaceOrderRequest>();
   }
 
-  static std::string get_strategy_type() {
-    return "TestStrategy";
+  static kj::StringPtr get_strategy_type() {
+    return "TestStrategy"_kj;
   }
 };
 
 // Strategy factories
 class TrendFollowingStrategyFactory : public StrategyFactory<TrendFollowingStrategy> {
 public:
-  std::string get_strategy_type() const override {
+  kj::StringPtr get_strategy_type() const override {
     return TrendFollowingStrategy::get_strategy_type();
   }
 };
 
 class MeanReversionStrategyFactory : public StrategyFactory<MeanReversionStrategy> {
 public:
-  std::string get_strategy_type() const override {
+  kj::StringPtr get_strategy_type() const override {
     return MeanReversionStrategy::get_strategy_type();
   }
 };
 
 class MomentumStrategyFactory : public StrategyFactory<MomentumStrategy> {
 public:
-  std::string get_strategy_type() const override {
+  kj::StringPtr get_strategy_type() const override {
     return MomentumStrategy::get_strategy_type();
   }
 };
 
 class TestStrategyFactory : public StrategyFactory<TestStrategy> {
 public:
-  std::string get_strategy_type() const override {
+  kj::StringPtr get_strategy_type() const override {
     return TestStrategy::get_strategy_type();
   }
 };
