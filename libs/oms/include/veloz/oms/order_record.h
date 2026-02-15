@@ -2,14 +2,15 @@
 
 #include "veloz/exec/order_api.h"
 
+// std::chrono for wall clock timestamps (KJ time is async I/O only)
 #include <chrono>
 #include <cstdint>
 #include <kj/common.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <unordered_map> // std::unordered_map for hash-based key lookup, KJ has kj::HashMap but different API
 
 namespace veloz::oms {
 
@@ -74,11 +75,9 @@ public:
   void clear();
 
 private:
-  // Internal state for OrderStore
-  // Using std::unordered_map for hash-based key lookup with std::string keys
-  // since kj::String doesn't have a standard hash function for std::unordered_map
+  // Internal state for OrderStore using KJ HashMap
   struct StoreState {
-    std::unordered_map<std::string, OrderState> orders;
+    kj::HashMap<kj::String, OrderState> orders;
   };
 
   kj::MutexGuarded<StoreState> guarded_;

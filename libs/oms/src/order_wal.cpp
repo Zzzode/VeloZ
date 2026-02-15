@@ -33,72 +33,72 @@ uint32_t crc32(kj::ArrayPtr<const kj::byte> data) {
 }
 
 // Write a length-prefixed string to buffer
-size_t write_string(kj::byte* buffer, kj::StringPtr str) {
+size_t write_string(kj::ArrayPtr<kj::byte> buffer, kj::StringPtr str) {
   uint32_t len = static_cast<uint32_t>(str.size());
-  std::memcpy(buffer, &len, sizeof(len));
-  std::memcpy(buffer + sizeof(len), str.begin(), len);
+  std::memcpy(buffer.begin(), &len, sizeof(len));
+  std::memcpy(buffer.begin() + sizeof(len), str.begin(), len);
   return sizeof(len) + len;
 }
 
 // Read a length-prefixed string from buffer
-kj::String read_string(const kj::byte* buffer, size_t& offset, size_t max_size) {
+kj::String read_string(kj::ArrayPtr<const kj::byte> buffer, size_t& offset, size_t max_size) {
   if (offset + sizeof(uint32_t) > max_size) {
     return kj::heapString("");
   }
   uint32_t len;
-  std::memcpy(&len, buffer + offset, sizeof(len));
+  std::memcpy(&len, buffer.begin() + offset, sizeof(len));
   offset += sizeof(len);
 
   if (offset + len > max_size) {
     return kj::heapString("");
   }
-  auto result = kj::heapString(reinterpret_cast<const char*>(buffer + offset), len);
+  auto result = kj::heapString(reinterpret_cast<const char*>(buffer.begin() + offset), len);
   offset += len;
   return result;
 }
 
 // Write a double to buffer
-size_t write_double(kj::byte* buffer, double value) {
-  std::memcpy(buffer, &value, sizeof(value));
+size_t write_double(kj::ArrayPtr<kj::byte> buffer, double value) {
+  std::memcpy(buffer.begin(), &value, sizeof(value));
   return sizeof(value);
 }
 
 // Read a double from buffer
-double read_double(const kj::byte* buffer, size_t& offset, size_t max_size) {
+double read_double(kj::ArrayPtr<const kj::byte> buffer, size_t& offset, size_t max_size) {
   if (offset + sizeof(double) > max_size) {
     return 0.0;
   }
   double value;
-  std::memcpy(&value, buffer + offset, sizeof(value));
+  std::memcpy(&value, buffer.begin() + offset, sizeof(value));
   offset += sizeof(value);
   return value;
 }
 
 // Write an int64 to buffer
-size_t write_int64(kj::byte* buffer, int64_t value) {
-  std::memcpy(buffer, &value, sizeof(value));
+size_t write_int64(kj::ArrayPtr<kj::byte> buffer, int64_t value) {
+  std::memcpy(buffer.begin(), &value, sizeof(value));
   return sizeof(value);
 }
 
 // Read an int64 from buffer
-int64_t read_int64(const kj::byte* buffer, size_t& offset, size_t max_size) {
+int64_t read_int64(kj::ArrayPtr<const kj::byte> buffer, size_t& offset, size_t max_size) {
   if (offset + sizeof(int64_t) > max_size) {
     return 0;
   }
   int64_t value;
-  std::memcpy(&value, buffer + offset, sizeof(value));
+  std::memcpy(&value, buffer.begin() + offset, sizeof(value));
   offset += sizeof(value);
   return value;
 }
 
 // Write a uint8 to buffer
-size_t write_uint8(kj::byte* buffer, uint8_t value) {
-  *buffer = static_cast<kj::byte>(value);
+size_t write_uint8(kj::ArrayPtr<kj::byte> buffer, uint8_t value) {
+  buffer[0] = static_cast<kj::byte>(value);
   return 1;
 }
 
 // Read a uint8 from buffer
-uint8_t read_uint8(const kj::byte* buffer, size_t& offset, size_t max_size) {
+uint8_t read_uint8(kj::ArrayPtr<const kj::byte> buffer, size_t& offset, size_t max_size) {
   if (offset >= max_size) {
     return 0;
   }
@@ -116,10 +116,10 @@ OrderWal::OrderWal(const kj::Directory& directory, WalConfig config)
   if (files.size() > 0) {
     // Parse the last file to get the highest sequence
     const auto& lastFile = files.back();
-    KJ_IF_MAYBE (seq, parse_filename(lastFile)) {
+    KJ_IF_SOME (seq, parse_filename(lastFile)) {
       auto lock = state_.lockExclusive();
-      lock->sequence = *seq;
-      lock->stats.current_sequence = *seq;
+      lock->sequence = seq;
+      lock->stats.current_sequence = seq;
     }
   }
 
@@ -141,11 +141,11 @@ void OrderWal::open_current_file() {
   auto path = kj::Path::parse(filename);
   auto maybeFile = directory_.tryOpenFile(path, kj::WriteMode::CREATE | kj::WriteMode::MODIFY);
 
-  KJ_IF_MAYBE (file, maybeFile) {
-    current_file_ = kj::mv(*file);
+  KJ_IF_SOME (file, maybeFile) {
+    current_file_ = kj::mv(file);
     // Get current file size
-    KJ_IF_MAYBE (fileRef, current_file_) {
-      auto metadata = (*fileRef)->stat();
+    KJ_IF_SOME (fileRef, current_file_) {
+      auto metadata = fileRef->stat();
       current_file_size_ = metadata.size;
     }
     current_file_start_sequence_ = lock->sequence;
@@ -156,12 +156,12 @@ void OrderWal::open_current_file() {
 }
 
 void OrderWal::close_current_file() {
-  KJ_IF_MAYBE (file, current_file_) {
+  KJ_IF_SOME (file, current_file_) {
     if (config_.sync_on_write) {
-      (*file)->sync();
+      file->sync();
     }
   }
-  current_file_ = nullptr;
+  current_file_ = kj::none;
   current_file_size_ = 0;
 }
 
@@ -181,12 +181,12 @@ kj::Maybe<uint64_t> OrderWal::parse_filename(kj::StringPtr filename) const {
   // Expected format: prefix_NNNNNNNNNNNNNNNN.wal
   auto prefix = kj::str(config_.file_prefix, "_");
   if (!filename.startsWith(prefix) || !filename.endsWith(".wal"_kj)) {
-    return nullptr;
+    return kj::none;
   }
 
   auto hexPart = filename.slice(prefix.size(), filename.size() - 4);
   if (hexPart.size() != 16) {
-    return nullptr;
+    return kj::none;
   }
 
   // Parse hex string
@@ -200,7 +200,7 @@ kj::Maybe<uint64_t> OrderWal::parse_filename(kj::StringPtr filename) const {
     } else if (c >= 'A' && c <= 'F') {
       result |= (c - 'A' + 10);
     } else {
-      return nullptr;
+      return kj::none;
     }
   }
   return result;
@@ -245,7 +245,7 @@ uint64_t OrderWal::write_entry(WalEntryType type, kj::ArrayPtr<const kj::byte> p
     lock->stats.rotations++;
   }
 
-  KJ_IF_MAYBE (file, current_file_) {
+  KJ_IF_SOME (file, current_file_) {
     // Prepare header
     WalEntryHeader header;
     header.magic = WalEntryHeader::MAGIC;
@@ -262,18 +262,18 @@ uint64_t OrderWal::write_entry(WalEntryType type, kj::ArrayPtr<const kj::byte> p
 
     // Write header
     auto fullHeaderBytes = kj::arrayPtr(reinterpret_cast<const kj::byte*>(&header), sizeof(header));
-    (*file)->write(current_file_size_, fullHeaderBytes);
+    file->write(current_file_size_, fullHeaderBytes);
     current_file_size_ += sizeof(header);
 
     // Write payload
     if (payload.size() > 0) {
-      (*file)->write(current_file_size_, payload);
+      file->write(current_file_size_, payload);
       current_file_size_ += payload.size();
     }
 
     // Sync if configured
     if (config_.sync_on_write) {
-      (*file)->sync();
+      file->sync();
     }
 
     // Update stats
@@ -306,19 +306,29 @@ OrderWal::serialize_order_request(const veloz::exec::PlaceOrderRequest& request)
   auto buffer = kj::heapArray<kj::byte>(size);
   size_t offset = 0;
 
-  offset += write_string(buffer.begin() + offset, request.client_order_id);
-  offset += write_string(buffer.begin() + offset, kj::StringPtr(request.symbol.value.c_str()));
-  offset += write_uint8(buffer.begin() + offset, static_cast<uint8_t>(request.side));
-  offset += write_uint8(buffer.begin() + offset, static_cast<uint8_t>(request.type));
-  offset += write_uint8(buffer.begin() + offset, static_cast<uint8_t>(request.tif));
-  offset += write_double(buffer.begin() + offset, request.qty);
+  auto write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, request.client_order_id);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, kj::StringPtr(request.symbol.value.c_str()));
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_uint8(write_buffer, static_cast<uint8_t>(request.side));
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_uint8(write_buffer, static_cast<uint8_t>(request.type));
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_uint8(write_buffer, static_cast<uint8_t>(request.tif));
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_double(write_buffer, request.qty);
 
-  KJ_IF_MAYBE (price, request.price) {
-    offset += write_uint8(buffer.begin() + offset, 1);
-    offset += write_double(buffer.begin() + offset, *price);
+  KJ_IF_SOME (price, request.price) {
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_uint8(write_buffer, 1);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_double(write_buffer, price);
   } else {
-    offset += write_uint8(buffer.begin() + offset, 0);
-    offset += write_double(buffer.begin() + offset, 0.0);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_uint8(write_buffer, 0);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_double(write_buffer, 0.0);
   }
 
   return buffer;
@@ -338,11 +348,16 @@ kj::Array<kj::byte> OrderWal::serialize_order_update(kj::StringPtr client_order_
   auto buffer = kj::heapArray<kj::byte>(size);
   size_t offset = 0;
 
-  offset += write_string(buffer.begin() + offset, client_order_id);
-  offset += write_string(buffer.begin() + offset, venue_order_id);
-  offset += write_string(buffer.begin() + offset, status);
-  offset += write_string(buffer.begin() + offset, reason);
-  offset += write_int64(buffer.begin() + offset, ts_ns);
+  auto write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, client_order_id);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, venue_order_id);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, status);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, reason);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_int64(write_buffer, ts_ns);
 
   return buffer;
 }
@@ -360,11 +375,16 @@ kj::Array<kj::byte> OrderWal::serialize_order_fill(kj::StringPtr client_order_id
   auto buffer = kj::heapArray<kj::byte>(size);
   size_t offset = 0;
 
-  offset += write_string(buffer.begin() + offset, client_order_id);
-  offset += write_string(buffer.begin() + offset, symbol);
-  offset += write_double(buffer.begin() + offset, qty);
-  offset += write_double(buffer.begin() + offset, price);
-  offset += write_int64(buffer.begin() + offset, ts_ns);
+  auto write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, client_order_id);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, symbol);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_double(write_buffer, qty);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_double(write_buffer, price);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_int64(write_buffer, ts_ns);
 
   return buffer;
 }
@@ -379,9 +399,12 @@ kj::Array<kj::byte> OrderWal::serialize_order_cancel(kj::StringPtr client_order_
   auto buffer = kj::heapArray<kj::byte>(size);
   size_t offset = 0;
 
-  offset += write_string(buffer.begin() + offset, client_order_id);
-  offset += write_string(buffer.begin() + offset, reason);
-  offset += write_int64(buffer.begin() + offset, ts_ns);
+  auto write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, client_order_id);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_string(write_buffer, reason);
+  write_buffer = buffer.slice(offset, buffer.size());
+  offset += write_int64(write_buffer, ts_ns);
 
   return buffer;
 }
@@ -418,33 +441,51 @@ kj::Array<kj::byte> OrderWal::serialize_checkpoint(const OrderStore& store) cons
 
   // Write each order
   for (const auto& order : orders) {
-    offset += write_string(buffer.begin() + offset, order.client_order_id);
-    offset += write_string(buffer.begin() + offset, order.symbol);
-    offset += write_string(buffer.begin() + offset, order.side);
+    auto write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_string(write_buffer, order.client_order_id);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_string(write_buffer, order.symbol);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_string(write_buffer, order.side);
 
-    KJ_IF_MAYBE (qty, order.order_qty) {
-      offset += write_uint8(buffer.begin() + offset, 1);
-      offset += write_double(buffer.begin() + offset, *qty);
+    KJ_IF_SOME (qty, order.order_qty) {
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_uint8(write_buffer, 1);
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_double(write_buffer, qty);
     } else {
-      offset += write_uint8(buffer.begin() + offset, 0);
-      offset += write_double(buffer.begin() + offset, 0.0);
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_uint8(write_buffer, 0);
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_double(write_buffer, 0.0);
     }
 
-    KJ_IF_MAYBE (price, order.limit_price) {
-      offset += write_uint8(buffer.begin() + offset, 1);
-      offset += write_double(buffer.begin() + offset, *price);
+    KJ_IF_SOME (price, order.limit_price) {
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_uint8(write_buffer, 1);
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_double(write_buffer, price);
     } else {
-      offset += write_uint8(buffer.begin() + offset, 0);
-      offset += write_double(buffer.begin() + offset, 0.0);
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_uint8(write_buffer, 0);
+      write_buffer = buffer.slice(offset, buffer.size());
+      offset += write_double(write_buffer, 0.0);
     }
 
-    offset += write_double(buffer.begin() + offset, order.executed_qty);
-    offset += write_double(buffer.begin() + offset, order.avg_price);
-    offset += write_string(buffer.begin() + offset, order.venue_order_id);
-    offset += write_string(buffer.begin() + offset, order.status);
-    offset += write_string(buffer.begin() + offset, order.reason);
-    offset += write_int64(buffer.begin() + offset, order.last_ts_ns);
-    offset += write_int64(buffer.begin() + offset, order.created_ts_ns);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_double(write_buffer, order.executed_qty);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_double(write_buffer, order.avg_price);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_string(write_buffer, order.venue_order_id);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_string(write_buffer, order.status);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_string(write_buffer, order.reason);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_int64(write_buffer, order.last_ts_ns);
+    write_buffer = buffer.slice(offset, buffer.size());
+    offset += write_int64(write_buffer, order.created_ts_ns);
   }
 
   return buffer;
@@ -455,14 +496,14 @@ void OrderWal::deserialize_order_new(kj::ArrayPtr<const kj::byte> payload,
   size_t offset = 0;
   size_t max_size = payload.size();
 
-  auto client_order_id = read_string(payload.begin(), offset, max_size);
-  auto symbol_str = read_string(payload.begin(), offset, max_size);
-  auto side = static_cast<veloz::exec::OrderSide>(read_uint8(payload.begin(), offset, max_size));
-  auto type = static_cast<veloz::exec::OrderType>(read_uint8(payload.begin(), offset, max_size));
-  auto tif = static_cast<veloz::exec::TimeInForce>(read_uint8(payload.begin(), offset, max_size));
-  auto qty = read_double(payload.begin(), offset, max_size);
-  auto has_price = read_uint8(payload.begin(), offset, max_size);
-  auto price = read_double(payload.begin(), offset, max_size);
+  auto client_order_id = read_string(payload, offset, max_size);
+  auto symbol_str = read_string(payload, offset, max_size);
+  auto side = static_cast<veloz::exec::OrderSide>(read_uint8(payload, offset, max_size));
+  auto type = static_cast<veloz::exec::OrderType>(read_uint8(payload, offset, max_size));
+  auto tif = static_cast<veloz::exec::TimeInForce>(read_uint8(payload, offset, max_size));
+  auto qty = read_double(payload, offset, max_size);
+  auto has_price = read_uint8(payload, offset, max_size);
+  auto price = read_double(payload, offset, max_size);
 
   veloz::exec::PlaceOrderRequest request;
   request.client_order_id = kj::mv(client_order_id);
@@ -483,11 +524,11 @@ void OrderWal::deserialize_order_update(kj::ArrayPtr<const kj::byte> payload,
   size_t offset = 0;
   size_t max_size = payload.size();
 
-  auto client_order_id = read_string(payload.begin(), offset, max_size);
-  auto venue_order_id = read_string(payload.begin(), offset, max_size);
-  auto status = read_string(payload.begin(), offset, max_size);
-  auto reason = read_string(payload.begin(), offset, max_size);
-  auto ts_ns = read_int64(payload.begin(), offset, max_size);
+  auto client_order_id = read_string(payload, offset, max_size);
+  auto venue_order_id = read_string(payload, offset, max_size);
+  auto status = read_string(payload, offset, max_size);
+  auto reason = read_string(payload, offset, max_size);
+  auto ts_ns = read_int64(payload, offset, max_size);
 
   store.apply_order_update(client_order_id, ""_kj, ""_kj, venue_order_id, status, reason, ts_ns);
 }
@@ -497,11 +538,11 @@ void OrderWal::deserialize_order_fill(kj::ArrayPtr<const kj::byte> payload,
   size_t offset = 0;
   size_t max_size = payload.size();
 
-  auto client_order_id = read_string(payload.begin(), offset, max_size);
-  auto symbol = read_string(payload.begin(), offset, max_size);
-  auto qty = read_double(payload.begin(), offset, max_size);
-  auto price = read_double(payload.begin(), offset, max_size);
-  auto ts_ns = read_int64(payload.begin(), offset, max_size);
+  auto client_order_id = read_string(payload, offset, max_size);
+  auto symbol = read_string(payload, offset, max_size);
+  auto qty = read_double(payload, offset, max_size);
+  auto price = read_double(payload, offset, max_size);
+  auto ts_ns = read_int64(payload, offset, max_size);
 
   store.apply_fill(client_order_id, symbol, qty, price, ts_ns);
 }
@@ -523,20 +564,20 @@ void OrderWal::deserialize_checkpoint(kj::ArrayPtr<const kj::byte> payload,
   offset += sizeof(count);
 
   for (uint32_t i = 0; i < count && offset < max_size; ++i) {
-    auto client_order_id = read_string(payload.begin(), offset, max_size);
-    auto symbol = read_string(payload.begin(), offset, max_size);
-    auto side = read_string(payload.begin(), offset, max_size);
-    auto has_order_qty = read_uint8(payload.begin(), offset, max_size);
-    auto order_qty = read_double(payload.begin(), offset, max_size);
-    auto has_limit_price = read_uint8(payload.begin(), offset, max_size);
-    auto limit_price = read_double(payload.begin(), offset, max_size);
-    auto executed_qty = read_double(payload.begin(), offset, max_size);
-    auto avg_price = read_double(payload.begin(), offset, max_size);
-    auto venue_order_id = read_string(payload.begin(), offset, max_size);
-    auto status = read_string(payload.begin(), offset, max_size);
-    auto reason = read_string(payload.begin(), offset, max_size);
-    auto last_ts_ns = read_int64(payload.begin(), offset, max_size);
-    auto created_ts_ns = read_int64(payload.begin(), offset, max_size);
+    auto client_order_id = read_string(payload, offset, max_size);
+    auto symbol = read_string(payload, offset, max_size);
+    auto side = read_string(payload, offset, max_size);
+    auto has_order_qty = read_uint8(payload, offset, max_size);
+    auto order_qty = read_double(payload, offset, max_size);
+    auto has_limit_price = read_uint8(payload, offset, max_size);
+    auto limit_price = read_double(payload, offset, max_size);
+    auto executed_qty = read_double(payload, offset, max_size);
+    auto avg_price = read_double(payload, offset, max_size);
+    auto venue_order_id = read_string(payload, offset, max_size);
+    auto status = read_string(payload, offset, max_size);
+    auto reason = read_string(payload, offset, max_size);
+    auto last_ts_ns = read_int64(payload, offset, max_size);
+    auto created_ts_ns = read_int64(payload, offset, max_size);
 
     // Create order request to populate store
     veloz::exec::PlaceOrderRequest request;
@@ -602,9 +643,9 @@ void OrderWal::replay(WalReplayCallback callback) {
     auto path = kj::Path::parse(filename);
     auto maybeFile = directory_.tryOpenFile(path);
 
-    KJ_IF_MAYBE (file, maybeFile) {
-      auto metadata = (*file)->stat();
-      auto data = (*file)->readAllBytes();
+    KJ_IF_SOME (file, maybeFile) {
+      auto metadata = file->stat();
+      auto data = file->readAllBytes();
 
       size_t offset = 0;
       while (offset + sizeof(WalEntryHeader) <= data.size()) {
@@ -692,8 +733,8 @@ void OrderWal::replay_into(OrderStore& store) {
 }
 
 void OrderWal::sync() {
-  KJ_IF_MAYBE (file, current_file_) {
-    (*file)->sync();
+  KJ_IF_SOME (file, current_file_) {
+    file->sync();
   }
 }
 

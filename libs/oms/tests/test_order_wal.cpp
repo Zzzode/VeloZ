@@ -199,10 +199,10 @@ KJ_TEST("OrderWal: Replay into store") {
 
     // Verify the order was restored
     auto maybeOrder = store.get("ORDER-001"_kj);
-    KJ_IF_MAYBE (order, maybeOrder) {
-      KJ_EXPECT(order->client_order_id == "ORDER-001"_kj);
-      KJ_EXPECT(order->symbol == "BTCUSDT"_kj);
-      KJ_EXPECT(order->executed_qty == 0.5);
+    KJ_IF_SOME (order, maybeOrder) {
+      KJ_EXPECT(order.client_order_id == "ORDER-001"_kj);
+      KJ_EXPECT(order.symbol == "BTCUSDT"_kj);
+      KJ_EXPECT(order.executed_qty == 0.5);
     } else {
       KJ_FAIL_EXPECT("Order not found after replay");
     }

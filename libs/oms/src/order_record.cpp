@@ -69,22 +69,26 @@ void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request
     return;
   }
   auto lock = guarded_.lockExclusive();
-  std::string key(request.client_order_id.cStr());
-  auto& st = lock->orders[key];
+  // Use KJ HashMap findOrCreate pattern
+  auto& st = lock->orders.findOrCreate(request.client_order_id, [&]() {
+    return kj::HashMap<kj::String, OrderState>::Entry{kj::heapString(request.client_order_id),
+                                                      OrderState{}};
+  });
   st.client_order_id = kj::heapString(request.client_order_id);
   if (!request.symbol.value.empty()) {
-    st.symbol = kj::heapString(request.symbol.value);
+    st.symbol = kj::heapString(request.symbol.value.c_str());
   }
   st.side = kj::heapString(side_to_string(request.side));
   if (request.qty > 0.0) {
     st.order_qty = request.qty;
   }
-  KJ_IF_MAYBE (price, request.price) {
-    if (*price > 0.0) {
-      st.limit_price = *price;
+  KJ_IF_SOME(price, request.price) {
+    if (price > 0.0) {
+      st.limit_price = price;
     }
   }
   // Set creation timestamp if not already set
+  // std::chrono for wall clock timestamps (KJ time is async I/O only)
   if (st.created_ts_ns == 0) {
     st.created_ts_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                            std::chrono::system_clock::now().time_since_epoch())
@@ -100,8 +104,11 @@ void OrderStore::apply_order_update(kj::StringPtr client_order_id, kj::StringPtr
     return;
   }
   auto lock = guarded_.lockExclusive();
-  std::string key(client_order_id.cStr());
-  auto& st = lock->orders[key];
+  // Use KJ HashMap findOrCreate pattern
+  auto& st = lock->orders.findOrCreate(client_order_id, [&]() {
+    return kj::HashMap<kj::String, OrderState>::Entry{kj::heapString(client_order_id),
+                                                      OrderState{}};
+  });
   st.client_order_id = kj::heapString(client_order_id);
   if (symbol.size() > 0) {
     st.symbol = kj::heapString(symbol);
@@ -129,8 +136,11 @@ void OrderStore::apply_fill(kj::StringPtr client_order_id, kj::StringPtr symbol,
     return;
   }
   auto lock = guarded_.lockExclusive();
-  std::string key(client_order_id.cStr());
-  auto& st = lock->orders[key];
+  // Use KJ HashMap findOrCreate pattern
+  auto& st = lock->orders.findOrCreate(client_order_id, [&]() {
+    return kj::HashMap<kj::String, OrderState>::Entry{kj::heapString(client_order_id),
+                                                      OrderState{}};
+  });
   st.client_order_id = kj::heapString(client_order_id);
   if (symbol.size() > 0) {
     st.symbol = kj::heapString(symbol);
@@ -142,9 +152,9 @@ void OrderStore::apply_fill(kj::StringPtr client_order_id, kj::StringPtr symbol,
   if (ts_ns > 0) {
     st.last_ts_ns = ts_ns;
   }
-  KJ_IF_MAYBE (order_qty, st.order_qty) {
-    if (*order_qty > 0.0) {
-      if (st.executed_qty + 1e-12 >= *order_qty) {
+  KJ_IF_SOME(order_qty, st.order_qty) {
+    if (order_qty > 0.0) {
+      if (st.executed_qty + 1e-12 >= order_qty) {
         if (st.status != "CANCELED"_kj && st.status != "REJECTED"_kj && st.status != "EXPIRED"_kj) {
           st.status = kj::heapString("FILLED");
         }
@@ -159,35 +169,36 @@ void OrderStore::apply_fill(kj::StringPtr client_order_id, kj::StringPtr symbol,
 
 kj::Maybe<OrderState> OrderStore::get(kj::StringPtr client_order_id) const {
   if (client_order_id.size() == 0) {
-    return nullptr;
+    return kj::none;
   }
   auto lock = guarded_.lockExclusive();
-  std::string key(client_order_id.cStr());
-  auto it = lock->orders.find(key);
-  if (it == lock->orders.end()) {
-    return nullptr;
+  // Use KJ HashMap find pattern returning kj::Maybe
+  KJ_IF_SOME(st, lock->orders.find(client_order_id)) {
+    // Copy the OrderState since we're returning by value
+    OrderState result;
+    result.client_order_id = kj::heapString(st.client_order_id);
+    result.symbol = kj::heapString(st.symbol);
+    result.side = kj::heapString(st.side);
+    result.order_qty = st.order_qty;
+    result.limit_price = st.limit_price;
+    result.executed_qty = st.executed_qty;
+    result.avg_price = st.avg_price;
+    result.venue_order_id = kj::heapString(st.venue_order_id);
+    result.status = kj::heapString(st.status);
+    result.reason = kj::heapString(st.reason);
+    result.last_ts_ns = st.last_ts_ns;
+    result.created_ts_ns = st.created_ts_ns;
+    return result;
   }
-  // Copy the OrderState since we're returning by value
-  OrderState result;
-  result.client_order_id = kj::heapString(it->second.client_order_id);
-  result.symbol = kj::heapString(it->second.symbol);
-  result.side = kj::heapString(it->second.side);
-  result.order_qty = it->second.order_qty;
-  result.limit_price = it->second.limit_price;
-  result.executed_qty = it->second.executed_qty;
-  result.avg_price = it->second.avg_price;
-  result.venue_order_id = kj::heapString(it->second.venue_order_id);
-  result.status = kj::heapString(it->second.status);
-  result.reason = kj::heapString(it->second.reason);
-  result.last_ts_ns = it->second.last_ts_ns;
-  result.created_ts_ns = it->second.created_ts_ns;
-  return result;
+  return kj::none;
 }
 
 kj::Vector<OrderState> OrderStore::list_pending() const {
   auto lock = guarded_.lockExclusive();
   kj::Vector<OrderState> out;
-  for (const auto& [_, st] : lock->orders) {
+  // KJ HashMap iteration uses Entry with .key and .value
+  for (const auto& entry : lock->orders) {
+    const auto& st = entry.value;
     if (st.status != "FILLED"_kj && st.status != "CANCELED"_kj && st.status != "REJECTED"_kj &&
         st.status != "EXPIRED"_kj) {
       OrderState copy;
@@ -212,7 +223,9 @@ kj::Vector<OrderState> OrderStore::list_pending() const {
 kj::Vector<OrderState> OrderStore::list_terminal() const {
   auto lock = guarded_.lockExclusive();
   kj::Vector<OrderState> out;
-  for (const auto& [_, st] : lock->orders) {
+  // KJ HashMap iteration uses Entry with .key and .value
+  for (const auto& entry : lock->orders) {
+    const auto& st = entry.value;
     if (st.status == "FILLED"_kj || st.status == "CANCELED"_kj || st.status == "REJECTED"_kj ||
         st.status == "EXPIRED"_kj) {
       OrderState copy;
@@ -239,10 +252,13 @@ void OrderStore::apply_execution_report(const veloz::exec::ExecutionReport& repo
     return;
   }
   auto lock = guarded_.lockExclusive();
-  std::string key(report.client_order_id.cStr());
-  auto& st = lock->orders[key];
+  // Use KJ HashMap findOrCreate pattern
+  auto& st = lock->orders.findOrCreate(report.client_order_id, [&]() {
+    return kj::HashMap<kj::String, OrderState>::Entry{kj::heapString(report.client_order_id),
+                                                      OrderState{}};
+  });
   st.client_order_id = kj::heapString(report.client_order_id);
-  st.symbol = kj::heapString(report.symbol.value);
+  st.symbol = kj::heapString(report.symbol.value.c_str());
   if (report.last_fill_qty > 0.0) {
     const double new_cum = st.executed_qty + report.last_fill_qty;
     const double notional =
@@ -264,7 +280,9 @@ size_t OrderStore::count() const {
 size_t OrderStore::count_pending() const {
   auto lock = guarded_.lockExclusive();
   size_t count = 0;
-  for (const auto& [_, st] : lock->orders) {
+  // KJ HashMap iteration uses Entry with .key and .value
+  for (const auto& entry : lock->orders) {
+    const auto& st = entry.value;
     if (st.status != "FILLED"_kj && st.status != "CANCELED"_kj && st.status != "REJECTED"_kj &&
         st.status != "EXPIRED"_kj) {
       count++;
@@ -276,7 +294,9 @@ size_t OrderStore::count_pending() const {
 size_t OrderStore::count_terminal() const {
   auto lock = guarded_.lockExclusive();
   size_t count = 0;
-  for (const auto& [_, st] : lock->orders) {
+  // KJ HashMap iteration uses Entry with .key and .value
+  for (const auto& entry : lock->orders) {
+    const auto& st = entry.value;
     if (st.status == "FILLED"_kj || st.status == "CANCELED"_kj || st.status == "REJECTED"_kj ||
         st.status == "EXPIRED"_kj) {
       count++;
@@ -293,7 +313,9 @@ void OrderStore::clear() {
 kj::Vector<OrderState> OrderStore::list() const {
   auto lock = guarded_.lockExclusive();
   kj::Vector<OrderState> out;
-  for (const auto& [_, st] : lock->orders) {
+  // KJ HashMap iteration uses Entry with .key and .value
+  for (const auto& entry : lock->orders) {
+    const auto& st = entry.value;
     OrderState copy;
     copy.client_order_id = kj::heapString(st.client_order_id);
     copy.symbol = kj::heapString(st.symbol);
