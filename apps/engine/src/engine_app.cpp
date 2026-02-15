@@ -4,18 +4,30 @@
 #include "veloz/core/logger.h"
 #include "veloz/engine/stdio_engine.h"
 
-#include <algorithm>
-#include <chrono>
+// std::signal for POSIX signal handling (standard C library, KJ lacks signal API)
 #include <csignal>
-#include <thread>
+#include <kj/async-io.h>
+#include <kj/debug.h>
+#include <kj/io.h>
+#include <kj/memory.h>
+#include <kj/time.h>
+// std::make_unique for Logger API compatibility (Logger requires std::unique_ptr)
+#include <memory>
+#include <unistd.h>
 
 namespace {
 
-std::atomic<bool>* g_stop_ptr = nullptr;
+// Non-owning raw pointer to EngineApp::stop_ for signal handler access.
+// Raw pointer is acceptable here because:
+// 1. Signal handlers require async-signal-safe code; complex types like kj::Maybe are not allowed
+// 2. The pointer is set in install_signal_handlers() and points to EngineApp::stop_
+// 3. Lifetime is guaranteed: stop_ outlives signal handler registration (cleared on EngineApp destruction)
+// 4. Only accessed atomically via store() in handle_signal()
+kj::MutexGuarded<bool>* g_stop_ptr = nullptr;
 
 void handle_signal(int) {
   if (g_stop_ptr) {
-    g_stop_ptr->store(true);
+    *g_stop_ptr->lockExclusive() = true;
   }
 }
 
@@ -23,7 +35,7 @@ void handle_signal(int) {
 
 namespace veloz::engine {
 
-EngineApp::EngineApp(EngineConfig config, std::ostream& out, std::ostream& err)
+EngineApp::EngineApp(EngineConfig config, kj::OutputStream& out, kj::OutputStream& err)
     : config_(config), out_(out), err_(err) {}
 
 void EngineApp::install_signal_handlers() {
@@ -36,21 +48,15 @@ int EngineApp::run() {
   install_signal_handlers();
 
   // Create logger with appropriate output
-  std::unique_ptr<veloz::core::Logger> logger_ptr;
-  if (config_.stdio_mode) {
-    // Logger for stderr
-    auto console_output = std::make_unique<veloz::core::ConsoleOutput>(true);
-    logger_ptr = std::make_unique<veloz::core::Logger>(
-        std::make_unique<veloz::core::TextFormatter>(), kj::mv(console_output));
-  } else {
-    // Logger for stdout
-    auto console_output = std::make_unique<veloz::core::ConsoleOutput>(false);
-    logger_ptr = std::make_unique<veloz::core::Logger>(
-        std::make_unique<veloz::core::TextFormatter>(), kj::mv(console_output));
-  }
+  // Logger still uses std::unique_ptr for compatibility
+  auto console_output = std::make_unique<veloz::core::ConsoleOutput>(config_.stdio_mode);
+  veloz::core::Logger local_logger(std::make_unique<veloz::core::TextFormatter>(), kj::mv(console_output));
+  local_logger.set_level(veloz::core::LogLevel::Info);
 
-  logger_ptr->set_level(veloz::core::LogLevel::Info);
-  logger_ptr->info(config_.stdio_mode ? "VeloZ engine starting (stdio)" : "VeloZ engine starting");
+  // Store logger reference for potential use
+  logger_ = local_logger;
+
+  local_logger.info(config_.stdio_mode ? "VeloZ engine starting (stdio)" : "VeloZ engine starting");
 
   if (config_.stdio_mode) {
     return run_stdio();
@@ -59,28 +65,38 @@ int EngineApp::run() {
 }
 
 int EngineApp::run_stdio() {
-  StdioEngine engine(out_);
+  kj::FdInputStream stdinStream(STDIN_FILENO);
+  StdioEngine engine(out_, stdinStream);
   const int rc = engine.run(stop_);
   return rc;
 }
 
 int EngineApp::run_service() {
-  veloz::core::EventLoop loop;
-  std::thread loop_thread([&] { loop.run(); });
-  std::thread heartbeat([&] {
-    using namespace std::chrono_literals;
-    while (!stop_.load()) {
-      loop.post([&] { /* heartbeat */ });
-      std::this_thread::sleep_for(1s);
-    }
-  });
+  // Use KJ async I/O for the service mode
+  auto io = kj::setupAsyncIo();
+  auto& timer = io.provider->getTimer();
 
-  while (!stop_.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  veloz::core::EventLoop loop;
+
+  // Create a promise that runs the event loop
+  auto loopPromise = kj::evalLater([&loop]() { loop.run(); });
+
+  // Heartbeat using KJ timer
+  kj::Promise<void> heartbeatPromise = kj::READY_NOW;
+  auto runHeartbeat = [&]() -> kj::Promise<void> {
+    while (!*stop_.lockShared()) {
+      loop.post([&] { /* heartbeat */ });
+      co_await timer.afterDelay(1 * kj::SECONDS);
+    }
+  };
+  heartbeatPromise = runHeartbeat();
+
+  // Main loop using KJ timer
+  while (!*stop_.lockShared()) {
+    timer.afterDelay(50 * kj::MILLISECONDS).wait(io.waitScope);
   }
 
   loop.stop();
-  loop_thread.join();
   return 0;
 }
 

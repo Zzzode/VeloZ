@@ -2,8 +2,10 @@
 
 #include "veloz/engine/engine_config.h"
 
-#include <atomic>
-#include <ostream>
+#include <kj/async-io.h>
+#include <kj/common.h>
+#include <kj/io.h>
+#include <kj/mutex.h>
 
 namespace veloz::core {
 class Logger;
@@ -13,16 +15,16 @@ namespace veloz::engine {
 
 class EngineApp final {
 public:
-  EngineApp(EngineConfig config, std::ostream& out, std::ostream& err);
+  EngineApp(EngineConfig config, kj::OutputStream& out, kj::OutputStream& err);
 
   int run();
 
 private:
   EngineConfig config_;
-  std::ostream& out_;
-  std::ostream& err_;
-  std::atomic<bool> stop_{false};
-  veloz::core::Logger* logger_{nullptr};
+  kj::OutputStream& out_;
+  kj::OutputStream& err_;
+  kj::MutexGuarded<bool> stop_{false};
+  kj::Maybe<veloz::core::Logger&> logger_;
 
   void install_signal_handlers();
   int run_stdio();

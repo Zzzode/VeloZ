@@ -2,14 +2,13 @@
 
 #include <gtest/gtest.h>
 #include <kj/common.h>
-#include <sstream>
 
 namespace veloz::engine {
 
 // Helper to check if kj::Maybe has a value
 template <typename T> bool has_value(const kj::Maybe<T>& maybe) {
   bool result = false;
-  KJ_IF_MAYBE (val, maybe) {
+  KJ_IF_SOME (val, maybe) {
     (void)val;
     result = true;
   }
@@ -19,8 +18,8 @@ template <typename T> bool has_value(const kj::Maybe<T>& maybe) {
 // Helper to extract value from kj::Maybe with a default
 template <typename T> T maybe_or(const kj::Maybe<T>& maybe, T default_value) {
   T result = default_value;
-  KJ_IF_MAYBE (val, maybe) {
-    result = *val;
+  KJ_IF_SOME (val, maybe) {
+    result = val;
   }
   return result;
 }
@@ -35,12 +34,12 @@ TEST_F(CommandParserTest, ParseOrderCommandBuy) {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order001"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.symbol.value, "BTCUSDT");
-    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Buy);
-    EXPECT_DOUBLE_EQ(order->request.qty, 0.5);
-    EXPECT_DOUBLE_EQ(maybe_or(order->request.price, 0.0), 50000.0);
-    EXPECT_EQ(order->request.client_order_id, "order001");
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.symbol.value, "BTCUSDT");
+    EXPECT_EQ(order.request.side, veloz::exec::OrderSide::Buy);
+    EXPECT_DOUBLE_EQ(order.request.qty, 0.5);
+    EXPECT_DOUBLE_EQ(maybe_or(order.request.price, 0.0), 50000.0);
+    EXPECT_EQ(order.request.client_order_id, "order001");
   }
 }
 
@@ -48,12 +47,12 @@ TEST_F(CommandParserTest, ParseOrderCommandSell) {
   auto result = parse_order_command("ORDER SELL ETHUSDT 10.0 3000.0 order002"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.symbol.value, "ETHUSDT");
-    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Sell);
-    EXPECT_DOUBLE_EQ(order->request.qty, 10.0);
-    EXPECT_DOUBLE_EQ(maybe_or(order->request.price, 0.0), 3000.0);
-    EXPECT_EQ(order->request.client_order_id, "order002");
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.symbol.value, "ETHUSDT");
+    EXPECT_EQ(order.request.side, veloz::exec::OrderSide::Sell);
+    EXPECT_DOUBLE_EQ(order.request.qty, 10.0);
+    EXPECT_DOUBLE_EQ(maybe_or(order.request.price, 0.0), 3000.0);
+    EXPECT_EQ(order.request.client_order_id, "order002");
   }
 }
 
@@ -61,9 +60,9 @@ TEST_F(CommandParserTest, ParseOrderCommandBuyShortcut) {
   auto result = parse_order_command("BUY BTCUSDT 0.5 50000.0 order003"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.symbol.value, "BTCUSDT");
-    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Buy);
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.symbol.value, "BTCUSDT");
+    EXPECT_EQ(order.request.side, veloz::exec::OrderSide::Buy);
   }
 }
 
@@ -71,9 +70,9 @@ TEST_F(CommandParserTest, ParseOrderCommandSellShortcut) {
   auto result = parse_order_command("SELL ETHUSDT 10.0 3000.0 order004"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.symbol.value, "ETHUSDT");
-    EXPECT_EQ(order->request.side, veloz::exec::OrderSide::Sell);
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.symbol.value, "ETHUSDT");
+    EXPECT_EQ(order.request.side, veloz::exec::OrderSide::Sell);
   }
 }
 
@@ -81,9 +80,9 @@ TEST_F(CommandParserTest, ParseOrderCommandWithOrderType) {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order005 MARKET GTC"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.type, veloz::exec::OrderType::Market);
-    EXPECT_EQ(order->request.tif, veloz::exec::TimeInForce::GTC);
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.type, veloz::exec::OrderType::Market);
+    EXPECT_EQ(order.request.tif, veloz::exec::TimeInForce::GTC);
   }
 }
 
@@ -91,8 +90,8 @@ TEST_F(CommandParserTest, ParseOrderCommandWithMarketType) {
   auto result = parse_order_command("BUY BTCUSDT 0.5 0.0 order006 MARKET"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.type, veloz::exec::OrderType::Market);
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.type, veloz::exec::OrderType::Market);
   }
 }
 
@@ -100,8 +99,8 @@ TEST_F(CommandParserTest, ParseOrderCommandWithIOCTif) {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order007 LIMIT IOC"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (order, result) {
-    EXPECT_EQ(order->request.tif, veloz::exec::TimeInForce::IOC);
+  KJ_IF_SOME (order, result) {
+    EXPECT_EQ(order.request.tif, veloz::exec::TimeInForce::IOC);
   }
 }
 
@@ -133,8 +132,8 @@ TEST_F(CommandParserTest, ParseCancelCommand) {
   auto result = parse_cancel_command("CANCEL order001"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (cancel, result) {
-    EXPECT_EQ(cancel->client_order_id, "order001"_kj);
+  KJ_IF_SOME (cancel, result) {
+    EXPECT_EQ(cancel.client_order_id, "order001"_kj);
   }
 }
 
@@ -142,8 +141,8 @@ TEST_F(CommandParserTest, ParseCancelCommandShortcut) {
   auto result = parse_cancel_command("C order002"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (cancel, result) {
-    EXPECT_EQ(cancel->client_order_id, "order002"_kj);
+  KJ_IF_SOME (cancel, result) {
+    EXPECT_EQ(cancel.client_order_id, "order002"_kj);
   }
 }
 
@@ -157,9 +156,9 @@ TEST_F(CommandParserTest, ParseQueryCommand) {
   auto result = parse_query_command("QUERY account"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (query, result) {
-    EXPECT_EQ(query->query_type, "account"_kj);
-    EXPECT_EQ(query->params, ""_kj);
+  KJ_IF_SOME (query, result) {
+    EXPECT_EQ(query.query_type, "account"_kj);
+    EXPECT_EQ(query.params, ""_kj);
   }
 }
 
@@ -167,9 +166,9 @@ TEST_F(CommandParserTest, ParseQueryCommandWithParams) {
   auto result = parse_query_command("QUERY order BTCUSDT"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (query, result) {
-    EXPECT_EQ(query->query_type, "order"_kj);
-    EXPECT_EQ(query->params, "BTCUSDT"_kj);
+  KJ_IF_SOME (query, result) {
+    EXPECT_EQ(query.query_type, "order"_kj);
+    EXPECT_EQ(query.params, "BTCUSDT"_kj);
   }
 }
 
@@ -177,8 +176,8 @@ TEST_F(CommandParserTest, ParseQueryCommandShortcut) {
   auto result = parse_query_command("Q balance"_kj);
 
   ASSERT_TRUE(has_value(result));
-  KJ_IF_MAYBE (query, result) {
-    EXPECT_EQ(query->query_type, "balance"_kj);
+  KJ_IF_SOME (query, result) {
+    EXPECT_EQ(query.query_type, "balance"_kj);
   }
 }
 

@@ -2,7 +2,7 @@
 
 #include "veloz/exec/order_api.h"
 
-#include <kj/common.h> // kj::Maybe is defined here
+#include <kj/common.h>
 #include <kj/string.h>
 
 namespace veloz::engine {

@@ -14,6 +14,8 @@ target_link_libraries(veloz_engine_lib
     veloz_exec
     veloz_oms
     veloz_risk
+    kj           # KJ core types (Vector, HashMap, Own, Maybe, String)
+    kj-async     # KJ async primitives (Promise, Timer)
   PRIVATE
     veloz_core
     veloz_common

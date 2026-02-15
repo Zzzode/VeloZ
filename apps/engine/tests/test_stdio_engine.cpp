@@ -1,18 +1,60 @@
 #include "veloz/engine/command_parser.h"
 #include "veloz/engine/stdio_engine.h"
 
-#include <atomic>
-#include <chrono>
 #include <gtest/gtest.h>
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/io.h>
 #include <kj/memory.h>
+#include <kj/mutex.h>
 #include <kj/string.h>
-#include <memory>
-#include <sstream>
-#include <thread>
+#include <kj/vector.h>
 
 namespace veloz::engine {
+
+// Simple in-memory output stream for testing
+class VectorOutputStream : public kj::OutputStream {
+public:
+  void write(kj::ArrayPtr<const kj::byte> buffer) override {
+    for (auto b : buffer) {
+      data_.add(static_cast<char>(b));
+    }
+  }
+
+  kj::String getString() const {
+    kj::Vector<char> copy;
+    for (auto c : data_) {
+      copy.add(c);
+    }
+    copy.add('\0');
+    return kj::String(copy.releaseAsArray());
+  }
+
+  void clear() { data_.clear(); }
+
+private:
+  kj::Vector<char> data_;
+};
+
+// Simple in-memory input stream for testing
+class VectorInputStream : public kj::InputStream {
+public:
+  explicit VectorInputStream(kj::StringPtr data) : data_(kj::str(data)), pos_(0) {}
+
+  size_t tryRead(kj::ArrayPtr<kj::byte> buffer, size_t minBytes) override {
+    size_t available = data_.size() - pos_;
+    size_t toRead = kj::min(buffer.size(), available);
+    for (size_t i = 0; i < toRead; ++i) {
+      buffer[i] = static_cast<kj::byte>(data_[pos_ + i]);
+    }
+    pos_ += toRead;
+    return toRead;
+  }
+
+private:
+  kj::String data_;
+  size_t pos_;
+};
 
 class StdioEngineTest : public ::testing::Test {
 public:
@@ -20,9 +62,9 @@ public:
 
 protected:
   void SetUp() override {
-    // Create a string stream to capture output
-    output_ = std::make_shared<std::ostringstream>();
-    engine_ = kj::heap<StdioEngine>(*output_);
+    output_ = kj::heap<VectorOutputStream>();
+    input_ = kj::heap<VectorInputStream>("");
+    engine_ = kj::heap<StdioEngine>(*output_, *input_);
 
     order_received = false;
     cancel_received = false;
@@ -31,10 +73,12 @@ protected:
 
   void TearDown() override {
     engine_ = nullptr;
-    output_.reset();
+    output_ = nullptr;
+    input_ = nullptr;
   }
 
-  std::shared_ptr<std::ostringstream> output_;
+  kj::Own<VectorOutputStream> output_;
+  kj::Own<VectorInputStream> input_;
   kj::Own<StdioEngine> engine_;
   bool order_received;
   bool cancel_received;
@@ -60,29 +104,49 @@ TEST_F(StdioEngineTest, SetQueryHandler) {
 }
 
 TEST_F(StdioEngineTest, Constructor) {
-  std::ostringstream test_output;
-  StdioEngine test_engine(test_output);
+  VectorOutputStream test_output;
+  VectorInputStream test_input("");
+  StdioEngine test_engine(test_output, test_input);
 
   EXPECT_TRUE(true); // Should not throw
 }
 
 TEST_F(StdioEngineTest, DefaultHandlersNotCalled) {
-  std::istringstream empty_input;
-  auto* original_buf = std::cin.rdbuf(empty_input.rdbuf());
-  std::atomic<bool> stop_flag{false};
+  // Create engine with empty input
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
+  kj::MutexGuarded<bool> stop_flag{false};
 
-  engine_->run(stop_flag);
-
-  std::cin.rdbuf(original_buf);
+  engine.run(stop_flag);
 
   // Output should contain startup event
-  std::string output = output_->str();
-  EXPECT_TRUE(output.find("engine_started") != std::string::npos);
+  kj::String output = out.getString();
+  // Check if "engine_started" substring exists
+  bool found = false;
+  const char* needle = "engine_started";
+  size_t needle_len = strlen(needle);
+  if (output.size() >= needle_len) {
+    for (size_t i = 0; i <= output.size() - needle_len; ++i) {
+      bool match = true;
+      for (size_t j = 0; j < needle_len; ++j) {
+        if (output[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        found = true;
+        break;
+      }
+    }
+  }
+  EXPECT_TRUE(found);
 }
 
 TEST_F(StdioEngineTest, EmitOrderEventFormat) {
   // Test that order events are properly formatted
-  std::string output = output_->str();
+  kj::String output = output_->getString();
 
   // Check for event format
   EXPECT_TRUE(true); // Placeholder for JSON format validation

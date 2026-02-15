@@ -1,12 +1,13 @@
 #include "veloz/engine/command_parser.h"
 
-#include <algorithm>
+// std::tolower, std::isspace for character classification (standard C library, KJ lacks equivalent)
 #include <cctype>
+// std::strtod for string to double conversion (standard C library, KJ lacks equivalent)
+#include <cstdlib>
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <sstream>
 
 namespace veloz::engine {
 
@@ -35,6 +36,28 @@ static kj::String trim(kj::StringPtr s) {
     --end;
   }
   return kj::str(s.slice(start, end));
+}
+
+// Helper to tokenize a string by whitespace
+static kj::Vector<kj::String> tokenize(kj::StringPtr s) {
+  kj::Vector<kj::String> tokens;
+  size_t i = 0;
+  while (i < s.size()) {
+    // Skip whitespace
+    while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) {
+      ++i;
+    }
+    if (i >= s.size()) {
+      break;
+    }
+    // Find end of token
+    size_t start = i;
+    while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) {
+      ++i;
+    }
+    tokens.add(kj::str(s.slice(start, i)));
+  }
+  return tokens;
 }
 
 // Check if string is a valid order side
@@ -99,20 +122,20 @@ ParsedCommand parse_command(kj::StringPtr line) {
     return result;
   }
 
-  // std::istringstream used for tokenizing input (no KJ equivalent for stream parsing)
-  std::istringstream iss(trimmed_line.cStr());
-  std::string verb;
-  iss >> verb;
+  auto tokens = tokenize(trimmed_line);
+  if (tokens.size() == 0) {
+    return result;
+  }
 
-  kj::String verb_lower = to_lower(kj::StringPtr(verb.c_str()));
+  kj::String verb_lower = to_lower(tokens[0]);
 
   // Check for ORDER command (supports: ORDER, BUY, SELL)
   if (verb_lower == "order"_kj || verb_lower == "buy"_kj || verb_lower == "sell"_kj ||
       verb_lower == "b"_kj || verb_lower == "s"_kj) {
     auto order = parse_order_command(trimmed_line);
-    KJ_IF_MAYBE (o, order) {
+    KJ_IF_SOME (o, order) {
       result.type = CommandType::Order;
-      result.order = kj::mv(*o);
+      result.order = kj::mv(o);
     } else {
       result.error = kj::str("Failed to parse ORDER command");
     }
@@ -120,9 +143,9 @@ ParsedCommand parse_command(kj::StringPtr line) {
   // Check for CANCEL command
   else if (verb_lower == "cancel"_kj || verb_lower == "c"_kj) {
     auto cancel = parse_cancel_command(trimmed_line);
-    KJ_IF_MAYBE (c, cancel) {
+    KJ_IF_SOME (c, cancel) {
       result.type = CommandType::Cancel;
-      result.cancel = kj::mv(*c);
+      result.cancel = kj::mv(c);
     } else {
       result.error = kj::str("Failed to parse CANCEL command");
     }
@@ -130,14 +153,14 @@ ParsedCommand parse_command(kj::StringPtr line) {
   // Check for QUERY command
   else if (verb_lower == "query"_kj || verb_lower == "q"_kj) {
     auto query = parse_query_command(trimmed_line);
-    KJ_IF_MAYBE (q, query) {
+    KJ_IF_SOME (q, query) {
       result.type = CommandType::Query;
-      result.query = kj::mv(*q);
+      result.query = kj::mv(q);
     } else {
       result.error = kj::str("Failed to parse QUERY command");
     }
   } else {
-    result.error = kj::str("Unknown command: ", verb);
+    result.error = kj::str("Unknown command: ", tokens[0]);
   }
 
   return result;
@@ -149,78 +172,88 @@ ParsedCommand parse_command(kj::StringPtr line) {
 //   BUY <SYMBOL> <QTY> <PRICE> <CLIENT_ID> [TYPE] [TIF]
 //   SELL <SYMBOL> <QTY> <PRICE> <CLIENT_ID> [TYPE] [TIF]
 kj::Maybe<ParsedOrder> parse_order_command(kj::StringPtr line) {
-  std::istringstream iss{std::string(line.cStr())};
-  std::string verb;
-  iss >> verb;
-
-  kj::String verb_lower = to_lower(kj::StringPtr(verb.c_str()));
-
-  // Handle implicit BUY/SELL commands
-  std::string side_s;
-  if (verb_lower == "buy"_kj || verb_lower == "b"_kj) {
-    side_s = "buy";
-  } else if (verb_lower == "sell"_kj || verb_lower == "s"_kj) {
-    side_s = "sell";
-  } else {
-    // Explicit ORDER command - read side next
-    iss >> side_s;
-    if (!is_valid_order_side(kj::StringPtr(side_s.c_str()))) {
-      return kj::Maybe<ParsedOrder>();
-    }
+  auto tokens = tokenize(line);
+  if (tokens.size() == 0) {
+    return kj::none;
   }
 
-  std::string symbol;
-  double qty = 0.0;
-  double price = 0.0;
-  std::string client_id;
-  std::string type_str = "limit";
-  std::string tif_str = "gtc";
+  kj::String verb_lower = to_lower(tokens[0]);
+  size_t idx = 1;
 
-  // Parse required parameters
-  iss >> symbol >> qty >> price >> client_id;
+  // Handle implicit BUY/SELL commands
+  kj::String side_s;
+  if (verb_lower == "buy"_kj || verb_lower == "b"_kj) {
+    side_s = kj::str("buy");
+  } else if (verb_lower == "sell"_kj || verb_lower == "s"_kj) {
+    side_s = kj::str("sell");
+  } else {
+    // Explicit ORDER command - read side next
+    if (idx >= tokens.size()) {
+      return kj::none;
+    }
+    side_s = kj::str(tokens[idx]);
+    if (!is_valid_order_side(side_s)) {
+      return kj::none;
+    }
+    ++idx;
+  }
 
-  // Try to parse optional parameters
-  std::string token;
-  if (iss >> token)
-    type_str = token;
-  if (iss >> token)
-    tif_str = token;
+  // Parse required parameters: symbol, qty, price, client_id
+  if (idx + 3 >= tokens.size()) {
+    return kj::none;
+  }
+
+  kj::String symbol = kj::str(tokens[idx++]);
+  double qty = std::strtod(tokens[idx++].cStr(), nullptr);
+  double price = std::strtod(tokens[idx++].cStr(), nullptr);
+  kj::String client_id = kj::str(tokens[idx++]);
+
+  // Parse optional parameters
+  kj::String type_str = kj::str("limit");
+  kj::String tif_str = kj::str("gtc");
+
+  if (idx < tokens.size()) {
+    type_str = kj::str(tokens[idx++]);
+  }
+  if (idx < tokens.size()) {
+    tif_str = kj::str(tokens[idx++]);
+  }
 
   // Validate required parameters
   // Note: price can be 0 for market orders
   bool is_market_order =
-      is_valid_order_type(kj::StringPtr(type_str.c_str())) &&
-      parse_order_type(kj::StringPtr(type_str.c_str())) == veloz::exec::OrderType::Market;
-  if (symbol.empty() || qty <= 0.0 || client_id.empty()) {
-    return kj::Maybe<ParsedOrder>();
+      is_valid_order_type(type_str) &&
+      parse_order_type(type_str) == veloz::exec::OrderType::Market;
+  if (symbol.size() == 0 || qty <= 0.0 || client_id.size() == 0) {
+    return kj::none;
   }
   // For limit orders, price must be positive
   if (!is_market_order && price <= 0.0) {
-    return kj::Maybe<ParsedOrder>();
+    return kj::none;
   }
 
   ParsedOrder out;
   out.raw_command = kj::str(line);
-  out.request.symbol.value = symbol;
-  out.request.side = parse_order_side(kj::StringPtr(side_s.c_str()));
+  out.request.symbol.value = symbol.cStr();
+  out.request.side = parse_order_side(side_s);
 
   // Parse order type
-  if (is_valid_order_type(kj::StringPtr(type_str.c_str()))) {
-    out.request.type = parse_order_type(kj::StringPtr(type_str.c_str()));
+  if (is_valid_order_type(type_str)) {
+    out.request.type = parse_order_type(type_str);
   } else {
     out.request.type = veloz::exec::OrderType::Limit;
   }
 
   // Parse TIF
-  if (is_valid_tif(kj::StringPtr(tif_str.c_str()))) {
-    out.request.tif = parse_tif(kj::StringPtr(tif_str.c_str()));
+  if (is_valid_tif(tif_str)) {
+    out.request.tif = parse_tif(tif_str);
   } else {
     out.request.tif = veloz::exec::TimeInForce::GTC;
   }
 
   out.request.qty = qty;
   out.request.price = price;
-  out.request.client_order_id = kj::str(client_id);
+  out.request.client_order_id = kj::mv(client_id);
 
   return out;
 }
@@ -230,23 +263,22 @@ kj::Maybe<ParsedOrder> parse_order_command(kj::StringPtr line) {
 //   CANCEL <CLIENT_ID>
 //   C <CLIENT_ID>
 kj::Maybe<ParsedCancel> parse_cancel_command(kj::StringPtr line) {
-  std::istringstream iss{std::string(line.cStr())};
-  std::string verb;
-  iss >> verb;
-
-  kj::String verb_lower = to_lower(kj::StringPtr(verb.c_str()));
-  if (verb_lower != "cancel"_kj && verb_lower != "c"_kj) {
-    return kj::Maybe<ParsedCancel>();
+  auto tokens = tokenize(line);
+  if (tokens.size() < 2) {
+    return kj::none;
   }
 
-  std::string client_id;
-  iss >> client_id;
-  if (client_id.empty()) {
-    return kj::Maybe<ParsedCancel>();
+  kj::String verb_lower = to_lower(tokens[0]);
+  if (verb_lower != "cancel"_kj && verb_lower != "c"_kj) {
+    return kj::none;
+  }
+
+  if (tokens[1].size() == 0) {
+    return kj::none;
   }
 
   ParsedCancel result;
-  result.client_order_id = kj::str(client_id);
+  result.client_order_id = kj::str(tokens[1]);
   result.raw_command = kj::str(line);
   return result;
 }
@@ -256,34 +288,35 @@ kj::Maybe<ParsedCancel> parse_cancel_command(kj::StringPtr line) {
 //   QUERY <TYPE> [PARAMS]
 //   Q <TYPE> [PARAMS]
 kj::Maybe<ParsedQuery> parse_query_command(kj::StringPtr line) {
-  std::istringstream iss{std::string(line.cStr())};
-  std::string verb;
-  iss >> verb;
+  auto tokens = tokenize(line);
+  if (tokens.size() < 2) {
+    return kj::none;
+  }
 
-  kj::String verb_lower = to_lower(kj::StringPtr(verb.c_str()));
+  kj::String verb_lower = to_lower(tokens[0]);
   if (verb_lower != "query"_kj && verb_lower != "q"_kj) {
-    return kj::Maybe<ParsedQuery>();
+    return kj::none;
   }
 
-  std::string query_type;
-  std::string params;
-
-  iss >> query_type;
-  if (query_type.empty()) {
-    return kj::Maybe<ParsedQuery>();
+  if (tokens[1].size() == 0) {
+    return kj::none;
   }
 
-  // Read remaining parameters
-  std::string token;
-  while (iss >> token) {
-    if (!params.empty())
-      params += " ";
-    params += token;
+  // Collect remaining parameters
+  kj::Vector<char> params_buf;
+  for (size_t i = 2; i < tokens.size(); ++i) {
+    if (params_buf.size() > 0) {
+      params_buf.add(' ');
+    }
+    for (char c : tokens[i]) {
+      params_buf.add(c);
+    }
   }
+  params_buf.add('\0');
 
   ParsedQuery result;
-  result.query_type = kj::str(query_type);
-  result.params = kj::str(params);
+  result.query_type = kj::str(tokens[1]);
+  result.params = kj::String(params_buf.releaseAsArray());
   result.raw_command = kj::str(line);
   return result;
 }

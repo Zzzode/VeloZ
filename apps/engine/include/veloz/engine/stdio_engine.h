@@ -2,23 +2,24 @@
 
 #include "veloz/engine/command_parser.h"
 
-#include <atomic>
+// std::int64_t for fixed-width integers (standard C types, KJ uses these)
 #include <cstdint>
+#include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/io.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
-#include <ostream>
 
 namespace veloz {
 namespace engine {
 
 class StdioEngine final {
 public:
-  explicit StdioEngine(std::ostream& out);
+  explicit StdioEngine(kj::OutputStream& out, kj::InputStream& in);
   ~StdioEngine() = default;
 
-  int run(std::atomic<bool>& stop_flag);
+  int run(kj::MutexGuarded<bool>& stop_flag);
 
   // Command handlers
   using OrderHandler = kj::Function<void(const ParsedOrder&)>;
@@ -36,8 +37,8 @@ public:
   }
 
 private:
-  // std::ostream used for external API compatibility with C++ standard output
-  std::ostream& out_;
+  kj::OutputStream& out_;
+  kj::InputStream& in_;
   kj::MutexGuarded<int> output_mutex_;
   kj::Maybe<OrderHandler> order_handler_;
   kj::Maybe<CancelHandler> cancel_handler_;

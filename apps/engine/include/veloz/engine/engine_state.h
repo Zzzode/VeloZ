@@ -4,14 +4,14 @@
 #include "veloz/oms/order_record.h"
 #include "veloz/risk/risk_engine.h"
 
-#include <atomic>
+// std::int64_t, std::uint64_t for fixed-width integers (standard C types, KJ uses these)
 #include <cstdint>
-#include <kj/common.h> // kj::Maybe is defined here
+#include <kj/common.h>
+#include <kj/hash.h>
+#include <kj/map.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <mutex>
-#include <unordered_map>
 
 namespace veloz::engine {
 
@@ -67,14 +67,10 @@ public:
 private:
   veloz::risk::RiskEngine risk_engine_;
   veloz::oms::OrderStore order_store_;
-  std::atomic<double> price_{42000.0};
-  // std::mutex used for thread synchronization with std::unordered_map
-  mutable std::mutex account_mu_;
-  // std::unordered_map used for O(1) lookup by string key
-  std::unordered_map<std::string, Balance> balances_;
-  mutable std::mutex orders_mu_;
-  std::unordered_map<std::string, PendingOrder> pending_;
-  std::uint64_t venue_counter_{0};
+  kj::MutexGuarded<double> price_{42000.0};
+  kj::MutexGuarded<kj::HashMap<kj::String, Balance>> balances_;
+  kj::MutexGuarded<kj::HashMap<kj::String, PendingOrder>> pending_;
+  kj::MutexGuarded<std::uint64_t> venue_counter_{0};
 
   bool has_duplicate(kj::StringPtr client_order_id) const;
   bool reserve_for_order(const veloz::exec::PlaceOrderRequest& request, std::int64_t ts_ns,
