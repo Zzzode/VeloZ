@@ -7,6 +7,8 @@ set(MARKET_SOURCES
     src/order_book.cpp
     src/subscription_manager.cpp
     src/metrics.cpp
+    src/kline_aggregator.cpp
+    src/market_quality.cpp
 )
 
 # WebSocket sources (conditionally built)
@@ -40,8 +42,10 @@ if(VELOZ_BUILD_WEBSOCKET)
         PUBLIC
             kj
             kj-async
-            kj-tls
     )
+    if(WITH_OPENSSL)
+        target_link_libraries(veloz_market PUBLIC kj-tls)
+    endif()
     target_compile_definitions(veloz_market PUBLIC VELOZ_HAS_WEBSOCKET=1)
 endif()
 
@@ -52,6 +56,7 @@ if(VELOZ_BUILD_TESTS)
         tests/test_order_book.cpp
         tests/test_subscription_manager.cpp
         tests/test_metrics.cpp
+        tests/test_market_data_advanced.cpp
         )
     target_link_libraries(veloz_market_tests
         PRIVATE
