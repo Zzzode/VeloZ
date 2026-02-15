@@ -1,5 +1,6 @@
 add_library(veloz_core
     src/event_loop.cpp
+    src/optimized_event_loop.cpp
     src/logger.cpp
     src/time.cpp
     src/config.cpp
@@ -12,6 +13,12 @@ add_library(veloz_core
     )
 
 # Build KJ library from source
+# Set VERSION variable required by KJ's CMakeLists.txt
+set(VERSION "2.0.0")
+# Create "check" target required by KJ's CMakeLists.txt for test dependencies
+if(NOT TARGET check)
+  add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
+endif()
 add_subdirectory(kj)
 
 target_include_directories(veloz_core
@@ -59,6 +66,10 @@ if(VELOZ_BUILD_TESTS)
     tests/test_logger.cpp
     tests/test_config_manager.cpp
     tests/test_json.cpp
+    tests/test_retry.cpp
+    tests/test_lockfree_queue.cpp
+    tests/test_timer_wheel.cpp
+    tests/test_optimized_event_loop.cpp
     )
   target_link_libraries(veloz_core_tests
     PRIVATE
