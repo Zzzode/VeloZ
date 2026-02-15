@@ -3,6 +3,11 @@ add_library(veloz_exec
     src/order_router.cpp
     src/client_order_id.cpp
     src/binance_adapter.cpp
+    src/okx_adapter.cpp
+    src/coinbase_adapter.cpp
+    src/bybit_adapter.cpp
+    src/resilient_adapter.cpp
+    src/hmac_wrapper.cpp
     )
 
 target_include_directories(veloz_exec
@@ -18,11 +23,16 @@ target_link_libraries(veloz_exec
     PRIVATE
         veloz_common
         veloz_core
+        veloz_risk   # For circuit breaker in resilient adapter
         kj-test
         kj-http      # KJ HTTP client for async HTTP operations
-        kj-tls       # KJ TLS for HTTPS support
         kj-async     # KJ async I/O
     )
+
+# KJ TLS for HTTPS support (requires OpenSSL)
+if(WITH_OPENSSL)
+    target_link_libraries(veloz_exec PRIVATE kj-tls)
+endif()
 
 # OpenSSL is still required for HMAC-SHA256 signature generation
 # This is needed for Binance API authentication - KJ does not provide HMAC functionality
@@ -41,13 +51,19 @@ if(VELOZ_BUILD_TESTS)
         tests/test_order_router.cpp
         tests/test_client_order_id.cpp
         tests/test_binance_adapter.cpp
+        tests/test_exchange_adapters.cpp
+        tests/test_resilient_adapter.cpp
     )
     target_link_libraries(veloz_exec_tests
         PRIVATE
             veloz_exec
             veloz_common
+            veloz_risk
             kj-test
             kj-async
         )
+    if(WITH_OPENSSL)
+        target_link_libraries(veloz_exec_tests PRIVATE kj-tls)
+    endif()
     add_test(NAME veloz_exec_tests COMMAND veloz_exec_tests)
 endif()

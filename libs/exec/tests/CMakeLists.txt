@@ -9,12 +9,14 @@ add_executable(veloz_exec_tests
     test_exchange_adapter_interface.cpp
     test_order_router.cpp
     test_binance_adapter.cpp
+    test_resilient_adapter.cpp
 )
 
 target_link_libraries(veloz_exec_tests
     PRIVATE
     veloz_exec
     veloz_common
+    veloz_core
     ${GTEST_LIBRARIES}
 )
 
