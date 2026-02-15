@@ -4,19 +4,26 @@
 
 This skill provides guidance for Claude Code (claude.ai/code) to recognize and use the KJ library from Cap'n Proto when working on the VeloZ codebase. **KJ is the DEFAULT choice over C++ standard library for all applicable use cases.**
 
-## KJ Library Overview
+## KJ Library Overview (Latest Version)
 
 KJ is a utility library from Cap'n Proto that provides:
 
-- **Memory management**: Arena, Own<T>, Maybe<T>, Array<T>, Vector<T>
-- **Thread synchronization**: Mutex, MutexGuarded<T>, Lazy<T>
-- **Async I/O**: Promises, AsyncIoContext, AsyncIoStream, Network
-- **String handling**: String, StringPtr, StringTree
+- **Memory management**: Arena, Own<T>, Maybe<T>, Array<T>, Vector<T>, Refcounted, AtomicRefcounted
+- **Thread synchronization**: Mutex, MutexGuarded<T>, Lazy<T>, OneWayLock
+- **Async I/O**: Promises, AsyncIoContext, AsyncIoStream, Network, TaskSet
+- **String handling**: String, StringPtr, ConstString, StringTree, LiteralStringConst
 - **Exceptions**: Exception, assertions, system call wrappers
 - **Functions**: Function<T> for functors/lambdas
-- **Time**: TimePoint, Duration, Timer
-- **I/O**: InputStream, OutputStream, AsyncIoStream
+- **Time**: TimePoint, Duration, Timer, Date
+- **I/O**: InputStream, OutputStream, AsyncIoStream, FdInputStream, FdOutputStream
 - **Networking**: Network, NetworkAddress, ConnectionReceiver, DatagramPort
+- **Async objects**: AsyncObject, AllowAsyncDestructorsScope, DisallowAsyncDestructorsScope
+- **Coroutines**: async coroutine support for C++20
+
+**System Requirements**:
+- C++20 or later (VeloZ uses C++23)
+- Clang 14.0+ or GCC 14.3+
+- Requires exceptions enabled
 
 ## MANDATORY: KJ-First Development Rule
 
@@ -73,10 +80,12 @@ std::string formatForExternalApi(const kj::String& kjStr);
 | `new/delete` | `kj::heap<T>()`, `kj::Own<T>` | NEVER use raw new/delete |
 | `std::unique_ptr<T>` | `kj::Own<T>` | KJ default for owned objects |
 | `std::shared_ptr<T>` | `kj::Own<T>` + manual sharing or `kj::Refcounted` | KJ prefers unique ownership |
+| `std::atomic_shared_ptr<T>` | `kj::AtomicRefcounted<T>` | Thread-safe refcounted objects |
 | `std::optional<T>` | `kj::Maybe<T>` | Use `KJ_IF_SOME` macro |
 | `std::vector<T>` | `kj::Array<T>` (fixed) or `kj::Vector<T>` (dynamic) | KJ arrays don't provide iterator semantics |
-| `std::make_shared` | `kj::atomicRefcounted<T>` | For reference-counted objects |
+| `std::make_shared` | `kj::atomicRefcounted<T>()` | For reference-counted objects |
 | `std::make_unique` | `kj::heap<T>()` | KJ allocation function |
+| `std::make_shared_for_overwrite` | `kj::refcounted<T>()` | Placement-style construction |
 
 ### Thread Synchronization
 
@@ -92,9 +101,10 @@ std::string formatForExternalApi(const kj::String& kjStr);
 
 | Std Type | KJ Equivalent | Notes |
 |----------|---------------|-------|
-| `std::string` | `kj::String` | KJ strings don't invalidate on move |
+| `std::string` | `kj::String` or `kj::ConstString` | KJ strings don't invalidate on move |
 | `std::string_view` | `kj::StringPtr` | KJ view is safer, doesn't invalidate |
 | `"literal"` | `"literal"_kj` | Use `_kj` suffix for KJ string literals |
+| `"literal"` (constexpr) | `"literal"_kjc` | For constexpr `StringPtr` or `LiteralStringConst` |
 | `std::to_string` | `kj::str()` | KJ stringification function |
 | `std::stringstream` | `kj::str()` | Concatenation in KJ |
 | `std::format` | `kj::str()` | KJ str() handles formatting |
@@ -522,6 +532,31 @@ pipe.ends[1]->sendFd(fd);
 
 ### Advanced Async Patterns
 
+#### Async Object Lifecycle Management
+
+```cpp
+// Mark async objects for debug validation
+class MyAsyncObject : public kj::AsyncObject {
+  // Derive from AsyncObject to enable debug checks for
+  // objects tied to specific event loops/threads
+};
+
+// Prevent async destruction during critical sections
+{
+  kj::DisallowAsyncDestructorsScope scope("Critical section");
+  // If any AsyncObject is destroyed here, process terminates
+}  // Scope end
+
+// Override disallow scope when needed
+{
+  kj::DisallowAsyncDestructorsScope outer("Outer");
+  {
+    kj::AllowAsyncDestructorsScope inner;
+    // Async destruction is OK in this scope
+  }
+}
+```
+
 #### evalNow, evalLater, evalLast
 
 ```cpp
@@ -556,6 +591,22 @@ paf.fulfiller->fulfill(42);
 // Wait for first of two promises to complete
 kj::Promise<T> result = promise1.exclusiveJoin(promise2);
 // The loser is automatically canceled
+```
+
+#### Coroutines (C++20)
+
+```cpp
+// KJ supports co_await via coroutines
+kj::Promise<kj::String> fetchAsync() {
+  auto addr = co_await network.parseAddress("example.com:80"_kj);
+  auto stream = co_await addr.connect();
+  auto response = co_await stream.readAllText().attach(kj::mv(stream));
+  co_return response;
+}
+
+// Use coroutine-based allocation for better performance
+kj::CoroutineAllocator allocator;
+kj::Promise<void> task = coMyTask(allocator);
 ```
 
 ## Code Patterns
@@ -721,11 +772,14 @@ kj::Promise<kj::String> fetchHttp(kj::StringPtr host, uint16_t port) {
 - `kj::Maybe<T>` - Nullable value wrapper
 - `kj::Array<T>` - Fixed-size owned array
 - `kj::Vector<T>` - Dynamic array
+- `kj::Refcounted<T>` - Reference-counted base class
+- `kj::AtomicRefcounted<T>` - Thread-safe refcounted objects
 
 ### Synchronization
-- `kj::Mutex` - Simple mutex
+- `kj::Mutex` - Simple mutex with read/write locks
 - `kj::MutexGuarded<T>` - Mutex-protected value wrapper
 - `kj::Lazy<T>` - Lazy initialization
+- `kj::OneWayLock` - Simple one-way lock
 - `.lockExclusive()` - Acquire exclusive lock
 - `.lockShared()` - Acquire shared read-only lock
 
@@ -735,12 +789,18 @@ kj::Promise<kj::String> fetchHttp(kj::StringPtr host, uint16_t port) {
 - `.wait(waitScope)` - Block until complete
 - `.attach(object)` - Keep object alive during async
 - `.eagerlyEvaluate(errorHandler)` - Force eager evaluation
+- `kj::TaskSet` - Manage multiple async tasks
+- `co_await` - Coroutine support (C++20)
+- `kj::CoroutineAllocator` - Coroutine allocation optimization
 
 ### Event Loop
 - `kj::setupAsyncIo()` - Setup full async I/O
 - `kj::EventLoop` - Simple event loop
 - `kj::WaitScope` - Synchronous wait context
 - `kj::NEVER_DONE` - Promise that never completes
+- `kj::evalNow()` - Execute immediately as async
+- `kj::evalLater()` - Execute on next turn
+- `kj::evalLast()` - Execute after all queued work
 
 ### Networking
 - `kj::Network` - Network factory
@@ -761,11 +821,15 @@ kj::Promise<kj::String> fetchHttp(kj::StringPtr host, uint16_t port) {
 - `.afterDelay(duration)` - Delay promise
 - `.atTime(time)` - Wait until time
 - `.timeoutAfter(promise, duration)` - Timeout promise
+- `kj::Date` - Calendar time type
 
 ### Strings
 - `kj::String` - Owned string
 - `kj::StringPtr` - Non-owned reference
+- `kj::ConstString` - Constant string (optimization)
 - `"_kj` suffix for string literals
+- `"_kjc` suffix for constexpr string literals
+- `kj::LiteralStringConst` - Constexpr string wrapper
 - `kj::str(...)` - String concatenation/formatting
 
 ### Functions
@@ -783,13 +847,20 @@ kj::Promise<kj::String> fetchHttp(kj::StringPtr host, uint16_t port) {
 - `kj::OutputStream` - Output stream interface
 - `kj::FdInputStream` - File descriptor input
 - `kj::FdOutputStream` - File descriptor output
+- `kj::OneWayPipe` - One-way pipe
+- `kj::TwoWayPipe` - Two-way pipe
+- `kj::CapabilityPipe` - Unix capability pipe
+
+### Async Lifecycle
+- `kj::AsyncObject` - Base class for async objects
+- `kj::DisallowAsyncDestructorsScope` - Prevent async destruction
+- `kj::AllowAsyncDestructorsScope` - Allow async destruction
 
 ## Files to Check
 
-- `/Users/bytedance/Develop/VeloZ/libs/core/kj/` - KJ library source code
+- `/Users/bytedance/Develop/VeloZ/libs/core/kj/` - KJ library source code (headers)
 - `/Users/bytedance/Develop/VeloZ/docs/kjdoc/tour.md` - KJ tour and concepts
 - `/Users/bytedance/Develop/VeloZ/docs/kjdoc/style-guide.md` - KJ coding style guide
-- `/Users/bytedance/Develop/VeloZ/docs/kj/library_usage_guide.md` - Detailed usage guide
 
 ## Notes for Claude Code
 
