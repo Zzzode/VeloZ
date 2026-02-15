@@ -493,7 +493,7 @@ public:
   bool initialize(const StrategyConfig& config, core::Logger& logger) override {
     logger_ = logger;  // kj::Maybe<T&> stores reference, doesn't copy
     KJ_IF_SOME(l, logger_) {
-      l.info(std::string(kj::str("Strategy ", config.name, " initialized").cStr()));
+      l.info(kj::str("Strategy ", config.name, " initialized").cStr());
     }
     initialized_ = true;
     return true;

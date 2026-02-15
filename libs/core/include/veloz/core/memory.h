@@ -127,12 +127,10 @@ public:
   template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     auto lock = guarded_.lockExclusive();
     if (!lock->pool.empty()) {
-      // kj::Own<T> has no release() method - use move to extract raw pointer
-      // KJ's Own::move() transfers ownership internally, then we can get pointer
-      auto own = kj::mv(lock->pool.back());
-      T* ptr = own.get();
+      // Release ownership from the pool's unique_ptr and take the raw pointer
+      T* ptr = lock->pool.back().release();
       lock->pool.pop_back();
-      // Reset object state
+      // Reset object state by destroying and reconstructing in place
       ptr->~T();
       new (ptr) T(std::forward<Args>(args)...);
       lock.release(); // Release lock before returning
