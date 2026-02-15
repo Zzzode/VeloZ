@@ -1,0 +1,66 @@
+# Build directories
+build/
+cmake-build-*/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+docs/
+
+# Test files
+tests/
+*_test.cpp
+*_tests.cpp
+
+# Development files
+.clang-format
+.clang-tidy
+.editorconfig
+CLAUDE.md
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.wal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Coverage reports
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Secrets (never include)
+.env
+.env.*
+*.secret
+*.key
+*.pem
+credentials.json
+
+# Large binary files
+*.tar.gz
+*.zip
+*.7z
+
+# Node modules (if any)
+node_modules/

@@ -1,0 +1,156 @@
+# VeloZ Docker Compose Configuration
+# Usage: docker-compose up -d
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # VeloZ Gateway (includes engine)
+  # ==========================================================================
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runtime
+    ports:
+      - "${VELOZ_PORT:-8080}:8080"
+    environment:
+      - VELOZ_HOST=0.0.0.0
+      - VELOZ_PORT=8080
+      - VELOZ_PRESET=release
+      - VELOZ_MARKET_SOURCE=${VELOZ_MARKET_SOURCE:-sim}
+      - VELOZ_MARKET_SYMBOL=${VELOZ_MARKET_SYMBOL:-BTCUSDT}
+      - VELOZ_EXECUTION_MODE=${VELOZ_EXECUTION_MODE:-sim_engine}
+      - VELOZ_BINANCE_BASE_URL=${VELOZ_BINANCE_BASE_URL:-https://api.binance.com}
+      - VELOZ_BINANCE_TRADE_BASE_URL=${VELOZ_BINANCE_TRADE_BASE_URL:-https://testnet.binance.vision}
+      - VELOZ_BINANCE_API_KEY=${VELOZ_BINANCE_API_KEY:-}
+      - VELOZ_BINANCE_API_SECRET=${VELOZ_BINANCE_API_SECRET:-}
+      - VELOZ_BINANCE_WS_BASE_URL=${VELOZ_BINANCE_WS_BASE_URL:-wss://testnet.binance.vision/ws}
+    volumes:
+      - veloz_data:/var/lib/veloz
+      - veloz_logs:/var/log/veloz
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - veloz-network
+
+  # ==========================================================================
+  # Redis (optional - for caching and rate limiting)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - full
+
+  # ==========================================================================
+  # PostgreSQL (optional - for order persistence)
+  # ==========================================================================
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=veloz
+      - POSTGRES_USER=veloz
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-veloz_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veloz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - full
+
+  # ==========================================================================
+  # Prometheus (optional - for metrics collection)
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - monitoring
+
+  # ==========================================================================
+  # Grafana (optional - for dashboards)
+  # ==========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - monitoring
+
+# ==========================================================================
+# Networks
+# ==========================================================================
+networks:
+  veloz-network:
+    driver: bridge
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
+volumes:
+  veloz_data:
+    driver: local
+  veloz_logs:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
