@@ -121,4 +121,26 @@ struct ExecutionReport final {
   std::int64_t ts_recv_ns{0};     ///< Receive timestamp (nanoseconds)
 };
 
+/**
+ * @brief Price level in an order book
+ *
+ * Represents a single price level with price and quantity.
+ * Used for order book data instead of std::pair.
+ */
+struct PriceLevel {
+  double price{0.0};  ///< Price at this level
+  double quantity{0.0}; ///< Quantity at this level
+};
+
+/**
+ * @brief Trade data
+ *
+ * Represents a single trade with price and quantity.
+ * Used for recent trades data instead of std::pair.
+ */
+struct TradeData {
+  double price{0.0};  ///< Trade price
+  double quantity{0.0}; ///< Trade quantity
+};
+
 } // namespace veloz::exec

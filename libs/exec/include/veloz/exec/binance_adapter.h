@@ -2,16 +2,16 @@
 
 #include "veloz/exec/exchange_adapter.h"
 
+#include <kj/array.h>
 #include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/compat/http.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/time.h>
-#include <map>      // std::map used for ordered key lookup
-#include <optional> // std::optional for external API compatibility
-#include <string>   // std::string required for OpenSSL external API compatibility
-#include <vector>   // std::vector required for external API compatibility
+#include <kj/vector.h>
+#include <string> // std::string required for OpenSSL external API compatibility
 
 namespace kj {
 class TlsContext;
@@ -48,24 +48,24 @@ public:
   kj::Promise<void> connect_async();
 
   // Get adapter info
-  [[nodiscard]] const char* name() const override;
-  [[nodiscard]] const char* version() const override;
+  [[nodiscard]] kj::StringPtr name() const override;
+  [[nodiscard]] kj::StringPtr version() const override;
 
   // Async REST API methods for market data and account info
   kj::Promise<kj::Maybe<double>> get_current_price_async(const veloz::common::SymbolId& symbol);
-  kj::Promise<kj::Maybe<std::map<double, double>>>
+  kj::Promise<kj::Maybe<kj::Array<PriceLevel>>>
   get_order_book_async(const veloz::common::SymbolId& symbol, int depth = 10);
-  kj::Promise<kj::Maybe<std::vector<std::pair<double, double>>>>
+  kj::Promise<kj::Maybe<kj::Array<TradeData>>>
   get_recent_trades_async(const veloz::common::SymbolId& symbol, int limit = 500);
   kj::Promise<kj::Maybe<double>> get_account_balance_async(kj::StringPtr asset);
 
   // Synchronous versions for backward compatibility (blocks on async)
-  std::optional<double> get_current_price(const veloz::common::SymbolId& symbol);
-  std::optional<std::map<double, double>> get_order_book(const veloz::common::SymbolId& symbol,
-                                                         int depth = 10);
-  std::optional<std::vector<std::pair<double, double>>>
+  kj::Maybe<double> get_current_price(const veloz::common::SymbolId& symbol);
+  kj::Maybe<kj::Array<PriceLevel>> get_order_book(const veloz::common::SymbolId& symbol,
+                                                   int depth = 10);
+  kj::Maybe<kj::Array<TradeData>>
   get_recent_trades(const veloz::common::SymbolId& symbol, int limit = 500);
-  std::optional<double> get_account_balance(const std::string& asset);
+  kj::Maybe<double> get_account_balance(kj::StringPtr asset);
 
   // Configuration
   void set_timeout(kj::Duration timeout);

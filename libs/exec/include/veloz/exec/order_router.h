@@ -4,15 +4,14 @@
 #include "veloz/exec/exchange_adapter.h"
 #include "veloz/exec/order_api.h"
 
-#include <chrono>
 #include <cstdint>
-#include <functional>
 #include <kj/common.h>
+#include <kj/hash.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
-#include <unordered_map>
-#include <vector>
+#include <kj/time.h>
 
 namespace veloz::exec {
 
@@ -40,17 +39,17 @@ public:
   kj::Maybe<ExecutionReport> cancel_order(veloz::common::Venue venue,
                                           const CancelOrderRequest& req);
 
-  // Get adapter for venue (returns non-owning pointer, valid only while map exists)
-  [[nodiscard]] ExchangeAdapter* get_adapter(veloz::common::Venue venue) const;
+  // Get adapter for venue (returns non-owning reference, valid only while map exists)
+  [[nodiscard]] kj::Maybe<ExchangeAdapter&> get_adapter(veloz::common::Venue venue) const;
 
   // Get all registered venues
   [[nodiscard]] kj::Array<veloz::common::Venue> get_registered_venues() const;
 
   // Set order timeout
-  void set_order_timeout(std::chrono::milliseconds timeout);
+  void set_order_timeout(kj::Duration timeout);
 
   // Get order timeout
-  [[nodiscard]] std::chrono::milliseconds get_order_timeout() const;
+  [[nodiscard]] kj::Duration get_order_timeout() const;
 
   // Enable/disable automatic failover
   void set_failover_enabled(bool enabled);
@@ -61,9 +60,9 @@ public:
 private:
   // Internal state structure
   struct RouterState {
-    std::unordered_map<veloz::common::Venue, kj::Own<ExchangeAdapter>> adapters;
-    kj::Maybe<veloz::common::Venue> default_venue = nullptr;
-    std::chrono::milliseconds order_timeout{std::chrono::seconds(30)};
+    kj::HashMap<veloz::common::Venue, kj::Own<ExchangeAdapter>> adapters;
+    kj::Maybe<veloz::common::Venue> default_venue = kj::none;
+    kj::Duration order_timeout{30 * kj::SECONDS};
     bool failover_enabled{true};
   };
 

@@ -4,6 +4,7 @@
 
 #include <kj/common.h>
 #include <kj/memory.h>
+#include <kj/string.h>
 
 namespace veloz::exec {
 
@@ -23,8 +24,8 @@ public:
   virtual void disconnect() = 0;
 
   // Get adapter info
-  [[nodiscard]] virtual const char* name() const = 0;
-  [[nodiscard]] virtual const char* version() const = 0;
+  [[nodiscard]] virtual kj::StringPtr name() const = 0;
+  [[nodiscard]] virtual kj::StringPtr version() const = 0;
 };
 
 } // namespace veloz::exec

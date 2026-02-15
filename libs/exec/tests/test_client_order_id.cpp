@@ -1,15 +1,15 @@
 #include "kj/test.h"
 #include "veloz/exec/client_order_id.h"
 
-#include <string>
-#include <unordered_set>
+#include <kj/hash.h>
+#include <kj/map.h>
 
 namespace {
 
 using namespace veloz::exec;
 
 KJ_TEST("ClientOrderId: Generate basic") {
-  ClientOrderIdGenerator gen("STRAT");
+  ClientOrderIdGenerator gen("STRAT"_kj);
 
   auto id = gen.generate();
 
@@ -18,35 +18,36 @@ KJ_TEST("ClientOrderId: Generate basic") {
 }
 
 KJ_TEST("ClientOrderId: Multiple unique IDs") {
-  ClientOrderIdGenerator gen("STRAT");
+  ClientOrderIdGenerator gen("STRAT"_kj);
 
-  std::unordered_set<std::string> ids;
+  // Use KJ HashSet to track unique IDs
+  kj::HashSet<kj::String> ids;
   for (int i = 0; i < 100; ++i) {
     kj::String id = gen.generate();
-    ids.insert(std::string(id.cStr()));
+    ids.upsert(kj::mv(id), [](kj::String&, kj::String&&) {});
   }
 
   KJ_EXPECT(ids.size() == 100);
 }
 
 KJ_TEST("ClientOrderId: Parse components") {
-  kj::StringPtr id = "STRAT-1700000000-123-ABCXYZ";
+  kj::StringPtr id = "STRAT-1700000000-123-ABCXYZ"_kj;
 
-  auto [strategy, timestamp, unique] = ClientOrderIdGenerator::parse(id);
+  auto result = ClientOrderIdGenerator::parse(id);
 
-  KJ_EXPECT(strategy == "STRAT");
-  KJ_EXPECT(timestamp == 1700000000);
-  KJ_EXPECT(unique == "123-ABCXYZ");
+  KJ_EXPECT(result.strategy == "STRAT");
+  KJ_EXPECT(result.timestamp == 1700000000);
+  KJ_EXPECT(result.unique == "123-ABCXYZ");
 }
 
 KJ_TEST("ClientOrderId: Parse without unique") {
-  kj::StringPtr id = "STRAT-1700000000-123";
+  kj::StringPtr id = "STRAT-1700000000-123"_kj;
 
-  auto [strategy, timestamp, unique] = ClientOrderIdGenerator::parse(id);
+  auto result = ClientOrderIdGenerator::parse(id);
 
-  KJ_EXPECT(strategy == "STRAT");
-  KJ_EXPECT(timestamp == 1700000000);
-  KJ_EXPECT(unique.size() == 0);
+  KJ_EXPECT(result.strategy == "STRAT");
+  KJ_EXPECT(result.timestamp == 1700000000);
+  KJ_EXPECT(result.unique.size() == 0);
 }
 
 } // namespace

@@ -3,9 +3,20 @@
 #include <cstdint>
 #include <kj/common.h>
 #include <kj/string.h>
-#include <tuple> // std::tuple has no KJ equivalent
 
 namespace veloz::exec {
+
+/**
+ * @brief Parsed components of a client order ID
+ *
+ * This struct replaces std::tuple for the parse() return type, providing
+ * named fields for better readability and KJ-style API design.
+ */
+struct ParsedClientOrderId {
+  kj::String strategy;     ///< Strategy identifier
+  std::int64_t timestamp;  ///< Unix timestamp in seconds
+  kj::String unique;       ///< Unique component (sequence-random or empty)
+};
 
 class ClientOrderIdGenerator final {
 public:
@@ -14,8 +25,8 @@ public:
   // Generate unique client order ID
   [[nodiscard]] kj::String generate();
 
-  // Parse components: {strategy, timestamp, unique}
-  static std::tuple<kj::String, std::int64_t, kj::String> parse(kj::StringPtr client_order_id);
+  // Parse components from client order ID string
+  [[nodiscard]] static ParsedClientOrderId parse(kj::StringPtr client_order_id);
 
 private:
   kj::String strategy_id_;

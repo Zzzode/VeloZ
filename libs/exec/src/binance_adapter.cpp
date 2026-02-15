@@ -1,6 +1,6 @@
 #include "veloz/exec/binance_adapter.h"
-
 #include "veloz/core/json.h"
+#include "veloz/exec/hmac_wrapper.h"
 
 #include <kj/async-io.h>
 #include <kj/compat/http.h>
@@ -9,7 +9,7 @@
 #include <kj/string.h>
 
 #ifndef VELOZ_NO_OPENSSL
-// OpenSSL is used for HMAC-SHA256 signature generation.
+// OpenSSL is used internally by HmacSha256 wrapper for HMAC-SHA256 signature generation.
 // This is required for Binance API authentication and KJ does not provide HMAC functionality.
 // Per CLAUDE.md guidelines, this is an acceptable use of external library for API compatibility.
 #include <openssl/evp.h>
@@ -56,30 +56,10 @@ BinanceAdapter::~BinanceAdapter() noexcept {
 }
 
 std::string BinanceAdapter::build_signature(const std::string& query_string) {
-#ifndef VELOZ_NO_OPENSSL
-  // Implement HMAC-SHA256 signature using OpenSSL
+  // Use HmacSha256 wrapper for HMAC-SHA256 signature
   // This is required for Binance API authentication - KJ does not provide HMAC functionality
-  unsigned char* digest;
-  unsigned int digest_len;
-
-  digest = HMAC(EVP_sha256(), secret_key_.c_str(), static_cast<int>(secret_key_.length()),
-                reinterpret_cast<const unsigned char*>(query_string.c_str()), query_string.length(),
-                nullptr, &digest_len);
-
-  // Convert binary digest to hex string
-  std::ostringstream oss;
-  for (unsigned int i = 0; i < digest_len; ++i) {
-    oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<unsigned int>(digest[i]);
-  }
-
-  return oss.str();
-#else
-  // Placeholder for builds without OpenSSL
-  // In production, this should be implemented with a proper crypto library
-  (void)query_string;
-  KJ_LOG(WARNING, "OpenSSL not available, using placeholder signature");
-  return "placeholder_signature";
-#endif
+  // The wrapper handles OpenSSL C API calls safely
+  return HmacSha256::sign(secret_key_, query_string);
 }
 
 int64_t BinanceAdapter::get_timestamp_ms() const {
@@ -124,9 +104,9 @@ kj::Promise<kj::String> BinanceAdapter::http_get_async(kj::StringPtr endpoint,
 
         // Build headers
         kj::HttpHeaders headers(*header_table_);
-        headers.set(kj::HttpHeaderId::HOST, base_rest_url_);
+        headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
         if (!api_key_.empty()) {
-          headers.add("X-MBX-APIKEY", kj::StringPtr(api_key_.c_str()));
+          headers.addPtrPtr("X-MBX-APIKEY"_kj, kj::StringPtr(api_key_.c_str()));
         }
 
         // Make request
@@ -159,17 +139,17 @@ kj::Promise<kj::String> BinanceAdapter::http_post_async(kj::StringPtr endpoint,
 
         // Build headers
         kj::HttpHeaders headers(*header_table_);
-        headers.set(kj::HttpHeaderId::HOST, base_rest_url_);
-        headers.set(kj::HttpHeaderId::CONTENT_TYPE, "application/x-www-form-urlencoded");
+        headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
+        headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/x-www-form-urlencoded"_kj);
         if (!api_key_.empty()) {
-          headers.add("X-MBX-APIKEY", kj::StringPtr(api_key_.c_str()));
+          headers.addPtrPtr("X-MBX-APIKEY"_kj, kj::StringPtr(api_key_.c_str()));
         }
 
         // Make request with body
         auto request = client->request(kj::HttpMethod::POST, url, headers, params.size());
 
         // Write body
-        auto writePromise = request.body->write(params.begin(), params.size());
+        auto writePromise = request.body->write(params.asBytes());
 
         // Read response with timeout
         auto& timer = io_context_.provider->getTimer();
@@ -206,9 +186,9 @@ kj::Promise<kj::String> BinanceAdapter::http_delete_async(kj::StringPtr endpoint
 
         // Build headers
         kj::HttpHeaders headers(*header_table_);
-        headers.set(kj::HttpHeaderId::HOST, base_rest_url_);
+        headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
         if (!api_key_.empty()) {
-          headers.add("X-MBX-APIKEY", kj::StringPtr(api_key_.c_str()));
+          headers.addPtrPtr("X-MBX-APIKEY"_kj, kj::StringPtr(api_key_.c_str()));
         }
 
         // Make DELETE request
@@ -232,7 +212,7 @@ kj::Promise<kj::String> BinanceAdapter::http_delete_async(kj::StringPtr endpoint
 }
 
 kj::String BinanceAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
-  kj::String formatted = kj::str(symbol.value);
+  kj::String formatted = kj::str(symbol.value.c_str());
   // Convert to uppercase
   for (char& c : formatted) {
     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -305,7 +285,7 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
                                  client_order_id = kj::mv(client_order_id), reduce_only,
                                  post_only]() mutable -> kj::Promise<kj::Maybe<ExecutionReport>> {
       if (!is_connected()) {
-        return kj::Maybe<ExecutionReport>(nullptr);
+        return kj::Maybe<ExecutionReport>(kj::none);
       }
       PlaceOrderRequest new_req;
       new_req.symbol = symbol;
@@ -331,14 +311,14 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
   auto timestamp = get_timestamp_ms();
 
   kj::String params;
-  KJ_IF_MAYBE (priceVal, req.price) {
+  KJ_IF_SOME(priceVal, req.price) {
     if (req.client_order_id.size() > 0) {
       params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&price=", *priceVal,
+                       "&quantity=", req.qty, "&price=", priceVal,
                        "&newClientOrderId=", req.client_order_id, "&timestamp=", timestamp);
     } else {
       params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&price=", *priceVal, "&timestamp=", timestamp);
+                       "&quantity=", req.qty, "&price=", priceVal, "&timestamp=", timestamp);
     }
   } else {
     if (req.client_order_id.size() > 0) {
@@ -361,7 +341,7 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
   // Add signature
   std::string query_string(params.cStr(), params.size());
   std::string signature = build_signature(query_string);
-  params = kj::str(params, "&signature=", signature);
+  params = kj::str(params, "&signature=", signature.c_str());
 
   // Copy needed fields for the lambda
   auto req_symbol = req.symbol;
@@ -371,7 +351,7 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
       .then([this, req_symbol, req_client_order_id = kj::mv(req_client_order_id)](
                 kj::String response) mutable -> kj::Maybe<ExecutionReport> {
         if (response.size() == 0) {
-          return nullptr;
+          return {};
         }
 
         try {
@@ -381,8 +361,8 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
           ExecutionReport report;
           report.symbol = req_symbol;
           report.client_order_id = kj::mv(req_client_order_id);
-          report.venue_order_id = kj::heapString(root["orderId"].get_string(""));
-          report.status = parse_order_status(kj::StringPtr(root["status"].get_string("NEW")));
+          report.venue_order_id = kj::heapString(root["orderId"].get_string("").c_str());
+          report.status = parse_order_status(root["status"].get_string("NEW").c_str());
           report.last_fill_qty = root["executedQty"].get_double(0.0);
           report.last_fill_price = root["price"].get_double(0.0);
           report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
@@ -394,7 +374,7 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
           return report;
         } catch (const std::exception& e) {
           KJ_LOG(ERROR, "Error parsing place order response", e.what());
-          return nullptr;
+          return {};
         }
       });
 }
@@ -409,7 +389,7 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
     return connect_async().then([this, symbol, client_order_id = kj::mv(client_order_id)]() mutable
                                     -> kj::Promise<kj::Maybe<ExecutionReport>> {
       if (!is_connected()) {
-        return kj::Maybe<ExecutionReport>(nullptr);
+        return kj::Maybe<ExecutionReport>(kj::none);
       }
       CancelOrderRequest new_req;
       new_req.symbol = symbol;
@@ -430,7 +410,7 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
   // Add signature
   std::string query_string(params.cStr(), params.size());
   std::string signature = build_signature(query_string);
-  params = kj::str(params, "&signature=", signature);
+  params = kj::str(params, "&signature=", signature.c_str());
 
   // Copy needed fields for the lambda
   auto req_symbol = req.symbol;
@@ -440,7 +420,7 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
       .then([this, req_symbol, req_client_order_id = kj::mv(req_client_order_id)](
                 kj::String response) mutable -> kj::Maybe<ExecutionReport> {
         if (response.size() == 0) {
-          return nullptr;
+          return {};
         }
 
         try {
@@ -450,8 +430,8 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
           ExecutionReport report;
           report.symbol = req_symbol;
           report.client_order_id = kj::mv(req_client_order_id);
-          report.venue_order_id = kj::heapString(root["orderId"].get_string(""));
-          report.status = parse_order_status(kj::StringPtr(root["status"].get_string("CANCELED")));
+          report.venue_order_id = kj::heapString(root["orderId"].get_string("").c_str());
+          report.status = parse_order_status(root["status"].get_string("CANCELED").c_str());
           report.last_fill_qty = root["executedQty"].get_double(0.0);
           report.last_fill_price = root["price"].get_double(0.0);
           report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
@@ -463,7 +443,7 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
           return report;
         } catch (const std::exception& e) {
           KJ_LOG(ERROR, "Error parsing cancel order response", e.what());
-          return nullptr;
+          return {};
         }
       });
 }
@@ -529,12 +509,12 @@ void BinanceAdapter::disconnect() {
   KJ_LOG(INFO, "Binance API disconnected");
 }
 
-const char* BinanceAdapter::name() const {
-  return "Binance";
+kj::StringPtr BinanceAdapter::name() const {
+  return "Binance"_kj;
 }
 
-const char* BinanceAdapter::version() const {
-  return "2.0.0-kj-async";
+kj::StringPtr BinanceAdapter::version() const {
+  return "2.0.0-kj-async"_kj;
 }
 
 void BinanceAdapter::set_timeout(kj::Duration timeout) {
@@ -552,7 +532,7 @@ BinanceAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) {
 
   return http_get_async(endpoint, params).then([this](kj::String response) -> kj::Maybe<double> {
     if (response.size() == 0) {
-      return nullptr;
+      return {};
     }
 
     try {
@@ -570,34 +550,35 @@ BinanceAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) {
       KJ_LOG(ERROR, "Error getting current price", e.what());
     }
 
-    return nullptr;
+    return kj::none;
   });
 }
 
-kj::Promise<kj::Maybe<std::map<double, double>>>
+kj::Promise<kj::Maybe<kj::Array<PriceLevel>>>
 BinanceAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int depth) {
   kj::StringPtr endpoint = "/api/v3/depth"_kj;
   auto params = kj::str("symbol=", format_symbol(symbol), "&limit=", depth);
 
   return http_get_async(endpoint, params)
-      .then([this](kj::String response) -> kj::Maybe<std::map<double, double>> {
+      .then([this](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> {
         if (response.size() == 0) {
-          return nullptr;
+          return kj::none;
         }
 
         try {
           auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
           auto root = doc.root();
 
-          std::map<double, double> order_book;
+          kj::Vector<PriceLevel> order_book;
 
           auto bids = root["bids"];
           if (bids.is_array()) {
             for (size_t i = 0; i < bids.size(); ++i) {
               auto bid = bids[i];
-              double price = std::stod(bid[0].get_string());
-              double qty = std::stod(bid[1].get_string());
-              order_book[price] = qty;
+              PriceLevel level;
+              level.price = std::stod(bid[0].get_string());
+              level.quantity = std::stod(bid[1].get_string());
+              order_book.add(kj::mv(level));
             }
           }
 
@@ -605,53 +586,55 @@ BinanceAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int 
           if (asks.is_array()) {
             for (size_t i = 0; i < asks.size(); ++i) {
               auto ask = asks[i];
-              double price = std::stod(ask[0].get_string());
-              double qty = std::stod(ask[1].get_string());
-              order_book[price] = qty;
+              PriceLevel level;
+              level.price = std::stod(ask[0].get_string());
+              level.quantity = std::stod(ask[1].get_string());
+              order_book.add(kj::mv(level));
             }
           }
 
           last_activity_time_ = io_context_.provider->getTimer().now();
-          return order_book;
-        } catch (const std::exception& e) {
-          KJ_LOG(ERROR, "Error getting order book", e.what());
+          return order_book.releaseAsArray();
+        } catch (const kj::Exception& e) {
+          KJ_LOG(ERROR, "Error getting order book", e.getDescription());
         }
 
-        return nullptr;
+        return kj::none;
       });
 }
 
-kj::Promise<kj::Maybe<std::vector<std::pair<double, double>>>>
+kj::Promise<kj::Maybe<kj::Array<TradeData>>>
 BinanceAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, int limit) {
   kj::StringPtr endpoint = "/api/v3/trades"_kj;
   auto params = kj::str("symbol=", format_symbol(symbol), "&limit=", limit);
 
   return http_get_async(endpoint, params)
-      .then([this](kj::String response) -> kj::Maybe<std::vector<std::pair<double, double>>> {
+      .then([this](kj::String response) -> kj::Maybe<kj::Array<TradeData>> {
         if (response.size() == 0) {
-          return nullptr;
+          return kj::none;
         }
 
         try {
           auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
           auto root = doc.root();
 
-          std::vector<std::pair<double, double>> trades;
+          kj::Vector<TradeData> trades;
 
           for (size_t i = 0; i < root.size(); ++i) {
             auto trade = root[i];
-            double price = std::stod(trade["price"].get_string());
-            double qty = std::stod(trade["qty"].get_string());
-            trades.emplace_back(price, qty);
+            TradeData data;
+            data.price = std::stod(trade["price"].get_string());
+            data.quantity = std::stod(trade["qty"].get_string());
+            trades.add(kj::mv(data));
           }
 
           last_activity_time_ = io_context_.provider->getTimer().now();
-          return trades;
-        } catch (const std::exception& e) {
-          KJ_LOG(ERROR, "Error getting recent trades", e.what());
+          return trades.releaseAsArray();
+        } catch (const kj::Exception& e) {
+          KJ_LOG(ERROR, "Error getting recent trades", e.getDescription());
         }
 
-        return nullptr;
+        return kj::none;
       });
 }
 
@@ -664,12 +647,12 @@ kj::Promise<kj::Maybe<double>> BinanceAdapter::get_account_balance_async(kj::Str
   // Add signature
   std::string query_string(params.cStr(), params.size());
   std::string signature = build_signature(query_string);
-  params = kj::str(params, "&signature=", signature);
+  params = kj::str(params, "&signature=", signature.c_str());
 
   return http_get_async(endpoint, params)
       .then([this, asset = kj::str(asset)](kj::String response) -> kj::Maybe<double> {
         if (response.size() == 0) {
-          return nullptr;
+          return {};
         }
 
         try {
@@ -680,7 +663,7 @@ kj::Promise<kj::Maybe<double>> BinanceAdapter::get_account_balance_async(kj::Str
           if (balances.is_array()) {
             for (size_t i = 0; i < balances.size(); ++i) {
               auto balance = balances[i];
-              if (kj::StringPtr(balance["asset"].get_string("")) == asset) {
+              if (kj::StringPtr(balance["asset"].get_string("").c_str()) == asset) {
                 last_activity_time_ = io_context_.provider->getTimer().now();
                 return std::stod(balance["free"].get_string());
               }
@@ -690,43 +673,43 @@ kj::Promise<kj::Maybe<double>> BinanceAdapter::get_account_balance_async(kj::Str
           KJ_LOG(ERROR, "Error getting account balance", e.what());
         }
 
-        return nullptr;
+        return {};
       });
 }
 
 // Synchronous wrappers for backward compatibility
-std::optional<double> BinanceAdapter::get_current_price(const veloz::common::SymbolId& symbol) {
+kj::Maybe<double> BinanceAdapter::get_current_price(const veloz::common::SymbolId& symbol) {
   auto result = get_current_price_async(symbol).wait(io_context_.waitScope);
-  KJ_IF_MAYBE (price, result) {
-    return *price;
+  KJ_IF_SOME(price, result) {
+    return price;
   }
-  return std::nullopt;
+  return kj::none;
 }
 
-std::optional<std::map<double, double>>
+kj::Maybe<kj::Array<PriceLevel>>
 BinanceAdapter::get_order_book(const veloz::common::SymbolId& symbol, int depth) {
   auto result = get_order_book_async(symbol, depth).wait(io_context_.waitScope);
-  KJ_IF_MAYBE (book, result) {
-    return *book;
+  KJ_IF_SOME(book, result) {
+    return kj::mv(book);
   }
-  return std::nullopt;
+  return kj::none;
 }
 
-std::optional<std::vector<std::pair<double, double>>>
+kj::Maybe<kj::Array<TradeData>>
 BinanceAdapter::get_recent_trades(const veloz::common::SymbolId& symbol, int limit) {
   auto result = get_recent_trades_async(symbol, limit).wait(io_context_.waitScope);
-  KJ_IF_MAYBE (trades, result) {
-    return *trades;
+  KJ_IF_SOME(trades, result) {
+    return kj::mv(trades);
   }
-  return std::nullopt;
+  return kj::none;
 }
 
-std::optional<double> BinanceAdapter::get_account_balance(const std::string& asset) {
-  auto result = get_account_balance_async(kj::StringPtr(asset.c_str())).wait(io_context_.waitScope);
-  KJ_IF_MAYBE (balance, result) {
-    return *balance;
+kj::Maybe<double> BinanceAdapter::get_account_balance(kj::StringPtr asset) {
+  auto result = get_account_balance_async(asset).wait(io_context_.waitScope);
+  KJ_IF_SOME(balance, result) {
+    return balance;
   }
-  return std::nullopt;
+  return kj::none;
 }
 
 } // namespace veloz::exec
