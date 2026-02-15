@@ -185,20 +185,18 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 
 **VeloZ strictly uses KJ library from Cap'n Proto as the default choice over C++ standard library.** This is a project-wide architectural decision that applies to all new code.
 
-### KJ Library (DEFAULT - ALWAYS USE FIRST)
+### KJ Skill for Detailed Reference
 
-Before writing any C++ code, check if KJ provides the needed functionality:
+**For comprehensive KJ library guidance, invoke the KJ skill at `docs/kj/skill.md`**. The skill contains:
 
-- **Memory management**: `kj::Own<T>`, `kj::Maybe<T>`, `kj::Arena`, `kj::Array<T>`, `kj::Vector<T>`
-- **Thread synchronization**: `kj::Mutex`, `kj::MutexGuarded<T>`, `kj::Lazy<T>`
-- **Async I/O**: `kj::Promise<T>`, `kj::AsyncIoContext`, `kj::AsyncIoStream`
-- **Strings**: `kj::String`, `kj::StringPtr`, `"_kj` suffix for literals
-- **Exceptions**: `kj::Exception`, `KJ_ASSERT`, `KJ_REQUIRE`, `KJ_THROW`, `KJ_DEFER`
-- **Functions**: `kj::Function<T>` for functors/lambdas
-- **Time**: `kj::TimePoint`, `kj::Duration`
-- **I/O**: `kj::InputStream`, `kj::OutputStream`, `kj::FdInputStream`
+- Complete type mappings (std → KJ)
+- Event loop and async I/O patterns
+- Network operations
+- Memory management patterns
+- Code examples and migration guides
+- System requirements (C++20+, Clang 14.0+/GCC 14.3+)
 
-### KJ vs Std Library Decision Matrix
+### Quick KJ Reference
 
 | Category | KJ (Default) | Std (Only when KJ unavailable) |
 |----------|--------------|----------------------------------|
@@ -211,81 +209,14 @@ Before writing any C++ code, check if KJ provides the needed functionality:
 | **Exceptions** | `kj::Exception`, `KJ_ASSERT`, etc. | `std::exception` only for external exception compatibility |
 | **Async patterns** | `kj::Promise<T>` with `.then()` | `std::future`, `std::promise` only if required by external API |
 
-### MANDATORY KJ Usage Rules
+### Mandatory Rule
 
-When writing C++ code for VeloZ:
+**ALWAYS check KJ first before considering std library types.** Only use std types when:
+1. KJ does not provide equivalent functionality
+2. External API compatibility requires std types
+3. Third-party library integration requires std types
 
-1. **ALWAYS check KJ first** before considering std library types
-2. **ALWAYS prefer KJ equivalents** even if std types would work
-3. **ONLY use std types** when:
-   - KJ does not provide equivalent functionality
-   - External API compatibility requires std types
-   - Third-party library integration requires std types
-4. **When using std types**, add a comment explaining why KJ was not suitable
-
-### Code Review Checklist
-
-When reviewing or writing C++ code:
-
-- [ ] Are owned pointers using `kj::Own<T>` instead of `std::unique_ptr`?
-- [ ] Are nullable values using `kj::Maybe<T>` instead of raw pointers or `std::optional`?
-- [ ] Are strings using `kj::String`/`kj::StringPtr` instead of `std::string`?
-- [ ] Is thread sync using `kj::Mutex`/`kj::MutexGuarded<T>` instead of `std::mutex`?
-- [ ] Are arrays using `kj::Array<T>` or `kj::Vector<T>` instead of `std::vector`?
-- [ ] Are functions using `kj::Function<T>` instead of `std::function`?
-- [ ] Are async patterns using `kj::Promise<T>` instead of `std::future`?
-- [ ] Are exceptions using `kj::Exception`/`KJ_ASSERT` instead of `assert` or `std::runtime_error`?
-
-### Common Include Patterns
-
-```cpp
-// Always include these first when writing C++ code
-#include <kj/common.h>   // Core utilities - ALWAYS include
-#include <kj/memory.h>   // Memory management (Own, Maybe, Arena)
-#include <kj/mutex.h>    // Thread synchronization
-#include <kj/string.h>   // String handling (String, StringPtr)
-#include <kj/exception.h> // Exception handling (KJ_ASSERT, KJ_THROW)
-#include <kj/async.h>    // Async/promises if needed
-#include <kj/io.h>       // I/O streams if needed
-#include <kj/time.h>    // Time utilities if needed
-```
-
-### Quick Reference Card
-
-```cpp
-// Memory
-kj::Own<T> ptr = kj::heap<T>(args...);  // Instead of new/delete
-kj::Maybe<T> value;                       // Instead of nullable pointers
-kj::Array<T> arr = kj::heapArray<T>(n);  // Instead of std::vector
-kj::Vector<T> vec;                        // KJ's vector type
-kj::Arena arena;                           // Fast temporary allocation
-
-// Strings
-kj::String str = "hello"_kj;               // String literal
-kj::StringPtr ptr = str;                   // Non-owned reference
-kj::String msg = kj::str("hello ", name);  // String concatenation
-
-// Thread sync
-kj::Mutex mutex;                           // Instead of std::mutex
-kj::MutexGuarded<T> guarded;               // Thread-safe value
-auto lock = guarded.lockExclusive();       // Acquire lock
-
-// Async
-kj::Promise<T> promise;                    // Instead of std::future
-promise.then(callback);                    // Chain operations
-promise.wait(waitScope);                   // Wait for completion
-
-// Exceptions
-KJ_ASSERT(condition);                      // Runtime assertion
-KJ_REQUIRE(condition);                      // Precondition check
-KJ_THROW(exception);                       // Throw KJ exception
-KJ_DEFER(cleanup_code);                    // Execute on scope exit
-
-// Functions
-kj::Function<ReturnType(Args...)> func;    // Store callable
-```
-
-**See docs/kj/library_usage_guide.md** for detailed usage patterns and **docs/kj/skill.md** for the KJ skill to invoke during development.
+When using std types, add a comment explaining why KJ was not suitable.
 
 ## Documentation conventions
 

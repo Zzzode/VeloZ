@@ -5,6 +5,7 @@ This directory contains documentation for VeloZ users and developers.
 ## Documents
 
 - [getting-started.md](getting-started.md) - Quick start guide for new users
+- [installation.md](installation.md) - Detailed installation instructions
 - [backtest.md](backtest.md) - Backtesting user guide
 - [requirements.md](requirements.md) - Product requirements and feature roadmap (with status tracking)
 - [configuration.md](configuration.md) - Configuration options and environment variables

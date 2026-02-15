@@ -17,6 +17,11 @@ option(VELOZ_BUILD_WEBSOCKET "Build WebSocket market data module (uses KJ async 
 # Find OpenSSL for TLS support (required by WebSocket module)
 find_package(OpenSSL 1.1.0 REQUIRED)
 
+# Set WITH_OPENSSL for conditional kj-tls linking in subdirectories
+if(OpenSSL_FOUND)
+    set(WITH_OPENSSL ON)
+endif()
+
 # Enable testing early so BUILD_TESTING is set for all subdirectories
 if(VELOZ_BUILD_TESTS)
     enable_testing()
