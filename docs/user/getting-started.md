@@ -32,6 +32,8 @@ VeloZ automatically fetches these dependencies via CMake FetchContent:
 - **KJ Library** (v1.3.0) - Core C++ utilities from Cap'n Proto
 - **GoogleTest** - Testing framework
 - **yyjson** - High-performance JSON parser
+- **KJ-Async** - Async I/O support for KJ
+- **KJ-TLS** - TLS support for KJ (requires OpenSSL)
 
 No manual dependency installation is required.
 

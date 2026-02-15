@@ -274,10 +274,20 @@ The engine logs to stdout/stderr. For debugging:
     ┌────────┴──────┬────────┴────────┐
     │               │                   │
 ┌───▼───┐   ┌───▼────┐   ┌───▼────────┐
-│ Market  │   │ Exec    │   │ Risk       │
-│         │   │         │   │             │
-└─────────┘   └─────────┘   └─────────────┘
+│ Market  │   │ Exec    │   │ OMS        │   ┌───▼───┐
+│         │   │         │   │             │   │ Risk   │
+└─────────┘   └─────────┘   └─────────────┘   └─────────┘
+                  │
+           ┌─────▼─────┐
+           │  Strategy  │
+           └────────────┘
+                  │
+           ┌─────▼─────┐
+           │ Backtest   │
+           └────────────┘
 ```
+
+All modules use KJ library for core functionality.
 
 ## Adding a New Feature
 
