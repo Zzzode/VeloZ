@@ -105,7 +105,7 @@ bool ConfigManager::save_to_json(const std::filesystem::path& file_path) const {
 }
 
 std::string ConfigManager::to_json() const {
-  std::function<void(const ConfigGroup*, std::string&)> append_group_json =
+  kj::Function<void(const ConfigGroup*, std::string&)> append_group_json =
       [&](const ConfigGroup* group, std::string& out) {
         out += "{";
         bool first = true;
@@ -207,12 +207,12 @@ std::vector<std::string> ConfigManager::validation_errors() const {
 
 void ConfigManager::add_hot_reload_callback(HotReloadCallback callback) {
   std::scoped_lock lock(mu_);
-  hot_reload_callbacks_.push_back(kj::mv(callback));
+  hot_reload_callbacks_.add(kj::mv(callback));
 }
 
 void ConfigManager::trigger_hot_reload() {
   std::scoped_lock lock(mu_);
-  for (const auto& callback : hot_reload_callbacks_) {
+  for (auto& callback : hot_reload_callbacks_) {
     try {
       callback();
     } catch (...) {
@@ -251,6 +251,7 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
     if (auto* existing = parent->get_group(name)) {
       return existing;
     }
+    // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
     auto new_group = std::make_unique<ConfigGroup>(std::string(name));
     auto* raw = new_group.get();
     parent->add_group(kj::mv(new_group));

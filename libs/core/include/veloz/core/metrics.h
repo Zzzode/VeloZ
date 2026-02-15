@@ -176,6 +176,7 @@ public:
   MetricsRegistry() = default;
 
   // Register metrics
+  // Uses std::make_unique for map storage (kj::Own lacks release())
   void register_counter(std::string name, std::string description) {
     auto lock = guarded_.lockExclusive();
     lock->counters[kj::mv(name)] = std::make_unique<Counter>(name, kj::mv(description));

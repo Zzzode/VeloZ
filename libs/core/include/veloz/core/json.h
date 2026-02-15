@@ -23,9 +23,7 @@
 #include <kj/function.h>
 #include <kj/memory.h>
 #include <kj/string.h>
-#include <memory>   // std::unique_ptr used for pimpl pattern (JsonBuilder::Impl)
-#include <optional> // std::optional used for nullable return values
-#include <string>   // std::string used for yyjson C API compatibility
+#include <string> // std::string used for yyjson C API compatibility
 #include <string_view>
 #include <type_traits>
 #include <vector> // std::vector used for keys() and parse_as_vector return types
@@ -37,6 +35,196 @@ struct yyjson_mut_doc;
 struct yyjson_mut_val;
 
 namespace veloz::core {
+
+// ============================================================================
+// Low-level RAII Wrappers for yyjson C API
+// ============================================================================
+
+/**
+ * @brief RAII wrapper for yyjson_doc* (immutable document)
+ *
+ * Provides move-only ownership semantics for yyjson immutable documents.
+ * Automatically calls yyjson_doc_free() on destruction.
+ */
+class YyJsonDoc {
+public:
+  YyJsonDoc() noexcept : doc_(nullptr) {}
+  explicit YyJsonDoc(yyjson_doc* doc) noexcept : doc_(doc) {}
+
+  ~YyJsonDoc() noexcept;
+
+  // Move-only semantics
+  YyJsonDoc(YyJsonDoc&& other) noexcept : doc_(other.doc_) { other.doc_ = nullptr; }
+
+  YyJsonDoc& operator=(YyJsonDoc&& other) noexcept {
+    if (this != &other) {
+      reset();
+      doc_ = other.doc_;
+      other.doc_ = nullptr;
+    }
+    return *this;
+  }
+
+  // Non-copyable
+  YyJsonDoc(const YyJsonDoc&) = delete;
+  YyJsonDoc& operator=(const YyJsonDoc&) = delete;
+
+  /**
+   * @brief Get the underlying yyjson_doc pointer
+   */
+  [[nodiscard]] yyjson_doc* get() const noexcept { return doc_; }
+
+  /**
+   * @brief Release ownership and return the pointer
+   */
+  [[nodiscard]] yyjson_doc* release() noexcept {
+    yyjson_doc* tmp = doc_;
+    doc_ = nullptr;
+    return tmp;
+  }
+
+  /**
+   * @brief Reset and optionally take ownership of a new pointer
+   */
+  void reset(yyjson_doc* doc = nullptr) noexcept;
+
+  /**
+   * @brief Check if the wrapper holds a valid document
+   */
+  [[nodiscard]] explicit operator bool() const noexcept { return doc_ != nullptr; }
+
+private:
+  yyjson_doc* doc_;
+};
+
+/**
+ * @brief RAII wrapper for yyjson_mut_doc* (mutable document)
+ *
+ * Provides move-only ownership semantics for yyjson mutable documents.
+ * Automatically calls yyjson_mut_doc_free() on destruction.
+ */
+class YyJsonMutDoc {
+public:
+  YyJsonMutDoc() noexcept : doc_(nullptr) {}
+  explicit YyJsonMutDoc(yyjson_mut_doc* doc) noexcept : doc_(doc) {}
+
+  ~YyJsonMutDoc() noexcept;
+
+  // Move-only semantics
+  YyJsonMutDoc(YyJsonMutDoc&& other) noexcept : doc_(other.doc_) { other.doc_ = nullptr; }
+
+  YyJsonMutDoc& operator=(YyJsonMutDoc&& other) noexcept {
+    if (this != &other) {
+      reset();
+      doc_ = other.doc_;
+      other.doc_ = nullptr;
+    }
+    return *this;
+  }
+
+  // Non-copyable
+  YyJsonMutDoc(const YyJsonMutDoc&) = delete;
+  YyJsonMutDoc& operator=(const YyJsonMutDoc&) = delete;
+
+  /**
+   * @brief Get the underlying yyjson_mut_doc pointer
+   */
+  [[nodiscard]] yyjson_mut_doc* get() const noexcept { return doc_; }
+
+  /**
+   * @brief Release ownership and return the pointer
+   */
+  [[nodiscard]] yyjson_mut_doc* release() noexcept {
+    yyjson_mut_doc* tmp = doc_;
+    doc_ = nullptr;
+    return tmp;
+  }
+
+  /**
+   * @brief Reset and optionally take ownership of a new pointer
+   */
+  void reset(yyjson_mut_doc* doc = nullptr) noexcept;
+
+  /**
+   * @brief Check if the wrapper holds a valid document
+   */
+  [[nodiscard]] explicit operator bool() const noexcept { return doc_ != nullptr; }
+
+private:
+  yyjson_mut_doc* doc_;
+};
+
+/**
+ * @brief Non-owning view wrapper for yyjson_val*
+ *
+ * Provides a safe, non-owning view of a yyjson value.
+ * Does not manage lifetime - the underlying document must outlive this view.
+ */
+class YyJsonValView {
+public:
+  YyJsonValView() noexcept : val_(nullptr) {}
+  explicit YyJsonValView(yyjson_val* val) noexcept : val_(val) {}
+
+  // Copyable (non-owning view)
+  YyJsonValView(const YyJsonValView&) = default;
+  YyJsonValView& operator=(const YyJsonValView&) = default;
+
+  /**
+   * @brief Get the underlying yyjson_val pointer
+   */
+  [[nodiscard]] yyjson_val* get() const noexcept { return val_; }
+
+  /**
+   * @brief Check if the view holds a valid value
+   */
+  [[nodiscard]] explicit operator bool() const noexcept { return val_ != nullptr; }
+
+  /**
+   * @brief Check if the view is valid
+   */
+  [[nodiscard]] bool is_valid() const noexcept { return val_ != nullptr; }
+
+private:
+  yyjson_val* val_;
+};
+
+/**
+ * @brief Non-owning view wrapper for yyjson_mut_val*
+ *
+ * Provides a safe, non-owning view of a mutable yyjson value.
+ * Does not manage lifetime - the underlying document must outlive this view.
+ */
+class YyJsonMutValView {
+public:
+  YyJsonMutValView() noexcept : val_(nullptr) {}
+  explicit YyJsonMutValView(yyjson_mut_val* val) noexcept : val_(val) {}
+
+  // Copyable (non-owning view)
+  YyJsonMutValView(const YyJsonMutValView&) = default;
+  YyJsonMutValView& operator=(const YyJsonMutValView&) = default;
+
+  /**
+   * @brief Get the underlying yyjson_mut_val pointer
+   */
+  [[nodiscard]] yyjson_mut_val* get() const noexcept { return val_; }
+
+  /**
+   * @brief Check if the view holds a valid value
+   */
+  [[nodiscard]] explicit operator bool() const noexcept { return val_ != nullptr; }
+
+  /**
+   * @brief Check if the view is valid
+   */
+  [[nodiscard]] bool is_valid() const noexcept { return val_ != nullptr; }
+
+private:
+  yyjson_mut_val* val_;
+};
+
+// ============================================================================
+// High-level JSON API
+// ============================================================================
 
 // Forward declaration
 class JsonValue;
@@ -96,9 +284,9 @@ public:
    *
    * @tparam T The type to parse as (bool, int, int32_t, int64_t, uint32_t, uint64_t, float, double,
    * std::string)
-   * @return The parsed value or std::nullopt if type mismatch
+   * @return The parsed value or nullptr if type mismatch
    */
-  template <typename T> std::optional<T> parse_as() const;
+  template <typename T> kj::Maybe<T> parse_as() const;
 
   /**
    * @brief Parse root as specific type with default value
@@ -204,9 +392,9 @@ public:
   /**
    * @brief Get object property by key
    * @param key Property key
-   * @return JsonValue wrapped in optional, or nullopt if not found
+   * @return JsonValue wrapped in kj::Maybe, or nullptr if not found
    */
-  std::optional<JsonValue> get(const std::string& key) const;
+  kj::Maybe<JsonValue> get(const std::string& key) const;
 
   /**
    * @brief Iterate over array elements
@@ -250,42 +438,42 @@ public:
    *
    * @tparam T The type to parse as (bool, int, int32_t, int64_t, uint32_t, uint64_t, float, double,
    * std::string)
-   * @return The parsed value or std::nullopt if type mismatch
+   * @return The parsed value or nullptr if type mismatch
    */
-  template <typename T> std::optional<T> parse_as() const {
+  template <typename T> kj::Maybe<T> parse_as() const {
     using DecayT = std::decay_t<T>;
 
     if constexpr (std::is_same_v<DecayT, bool>) {
       if (!is_bool())
-        return std::nullopt;
+        return kj::none;
       return get_bool();
     } else if constexpr (std::is_same_v<DecayT, int> || std::is_same_v<DecayT, int32_t>) {
       if (!is_int() && !is_uint())
-        return std::nullopt;
+        return kj::none;
       return static_cast<int>(get_int());
     } else if constexpr (std::is_same_v<DecayT, int64_t>) {
       if (!is_int() && !is_uint())
-        return std::nullopt;
+        return kj::none;
       return get_int();
     } else if constexpr (std::is_same_v<DecayT, uint32_t> || std::is_same_v<DecayT, unsigned int>) {
       if (!is_uint())
-        return std::nullopt;
+        return kj::none;
       return static_cast<uint32_t>(get_uint());
     } else if constexpr (std::is_same_v<DecayT, uint64_t>) {
       if (!is_uint())
-        return std::nullopt;
+        return kj::none;
       return get_uint();
     } else if constexpr (std::is_same_v<DecayT, float> || std::is_same_v<DecayT, double>) {
       if (!is_real() && !is_int() && !is_uint())
-        return std::nullopt;
+        return kj::none;
       return static_cast<DecayT>(get_double());
     } else if constexpr (std::is_same_v<DecayT, std::string>) {
       if (!is_string())
-        return std::nullopt;
+        return kj::none;
       return get_string();
     } else {
       static_assert(always_false_v<T>, "Unsupported type for parse_as<T>");
-      return std::nullopt;
+      return kj::none;
     }
   }
 
@@ -299,7 +487,10 @@ public:
    * @return The parsed value or default_val
    */
   template <typename T> T parse_as_or(T default_val) const {
-    return parse_as<T>().value_or(default_val);
+    KJ_IF_SOME(value, parse_as<T>()) {
+      return kj::mv(value);
+    }
+    return kj::mv(default_val);
   }
 
   /**
@@ -379,12 +570,12 @@ private:
   yyjson_val* val_;
 };
 
-template <typename T> std::optional<T> JsonDocument::parse_as() const {
+template <typename T> kj::Maybe<T> JsonDocument::parse_as() const {
   return root().parse_as<T>();
 }
 
 template <typename T> T JsonDocument::parse_as_or(T default_val) const {
-  return root().parse_as_or(default_val);
+  return root().parse_as_or(kj::mv(default_val));
 }
 
 /**
@@ -471,7 +662,7 @@ private:
   explicit JsonBuilder(Type type);
 
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  kj::Own<Impl> impl_;
 };
 
 /**

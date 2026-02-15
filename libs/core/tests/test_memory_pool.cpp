@@ -165,38 +165,42 @@ KJ_TEST("MemoryPool: Shrink to fit") {
 KJ_TEST("MemoryMonitor: Track allocation") {
   MemoryMonitor monitor;
 
-  monitor.track_allocation("test_site", 100, 1);
-  monitor.track_allocation("test_site", 200, 2);
+  monitor.track_allocation("test_site"_kj, 100, 1);
+  monitor.track_allocation("test_site"_kj, 200, 2);
 
   KJ_EXPECT(monitor.total_allocated_bytes() == 300);
 
-  monitor.track_deallocation("test_site", 100, 1);
+  monitor.track_deallocation("test_site"_kj, 100, 1);
   KJ_EXPECT(monitor.total_allocated_bytes() == 200);
 }
 
 KJ_TEST("MemoryMonitor: Site statistics") {
   MemoryMonitor monitor;
 
-  monitor.track_allocation("site1", 100, 1);
-  monitor.track_allocation("site2", 200, 2);
+  monitor.track_allocation("site1"_kj, 100, 1);
+  monitor.track_allocation("site2"_kj, 200, 2);
 
-  auto* stats1 = monitor.get_site_stats("site1");
-  KJ_EXPECT(stats1 != nullptr);
-  KJ_EXPECT(stats1->current_bytes == 100);
-  KJ_EXPECT(stats1->object_count == 1);
+  KJ_IF_SOME(stats1, monitor.get_site_stats("site1"_kj)) {
+    KJ_EXPECT(stats1.current_bytes == 100);
+    KJ_EXPECT(stats1.object_count == 1);
+  } else {
+    KJ_FAIL_EXPECT("site1 not found");
+  }
 
-  auto* stats2 = monitor.get_site_stats("site2");
-  KJ_EXPECT(stats2 != nullptr);
-  KJ_EXPECT(stats2->current_bytes == 200);
-  KJ_EXPECT(stats2->object_count == 2);
+  KJ_IF_SOME(stats2, monitor.get_site_stats("site2"_kj)) {
+    KJ_EXPECT(stats2.current_bytes == 200);
+    KJ_EXPECT(stats2.object_count == 2);
+  } else {
+    KJ_FAIL_EXPECT("site2 not found");
+  }
 }
 
 KJ_TEST("MemoryMonitor: Peak tracking") {
   MemoryMonitor monitor;
 
-  monitor.track_allocation("peak_test", 100);
-  monitor.track_allocation("peak_test", 200); // Peak: 300
-  monitor.track_deallocation("peak_test", 100);
+  monitor.track_allocation("peak_test"_kj, 100);
+  monitor.track_allocation("peak_test"_kj, 200); // Peak: 300
+  monitor.track_deallocation("peak_test"_kj, 100);
   KJ_EXPECT(monitor.peak_allocated_bytes() == 300);
   KJ_EXPECT(monitor.total_allocated_bytes() == 200);
 }
@@ -204,8 +208,8 @@ KJ_TEST("MemoryMonitor: Peak tracking") {
 KJ_TEST("MemoryMonitor: Generate report") {
   MemoryMonitor monitor;
 
-  monitor.track_allocation("site1", 100);
-  monitor.track_allocation("site2", 200);
+  monitor.track_allocation("site1"_kj, 100);
+  monitor.track_allocation("site2"_kj, 200);
 
   std::string report = monitor.generate_report();
   KJ_EXPECT(!report.empty());
@@ -216,7 +220,7 @@ KJ_TEST("MemoryMonitor: Generate report") {
 KJ_TEST("MemoryMonitor: Reset monitor") {
   MemoryMonitor monitor;
 
-  monitor.track_allocation("test", 100);
+  monitor.track_allocation("test"_kj, 100);
   KJ_EXPECT(monitor.total_allocated_bytes() > 0);
 
   monitor.reset();
@@ -228,25 +232,32 @@ KJ_TEST("MemoryMonitor: Alert threshold") {
   MemoryMonitor monitor;
 
   monitor.set_alert_threshold(1000);
-  monitor.track_allocation("test", 500);
+  monitor.track_allocation("test"_kj, 500);
   KJ_EXPECT(!monitor.check_alert());
 
-  monitor.track_allocation("test", 600);
+  monitor.track_allocation("test"_kj, 600);
   KJ_EXPECT(monitor.check_alert()); // 500 + 600 = 1100 > 1000
 }
 
 KJ_TEST("MemoryMonitor: All sites") {
   MemoryMonitor monitor;
 
-  monitor.track_allocation("site1", 100);
-  monitor.track_allocation("site2", 200);
-  monitor.track_allocation("site3", 300);
+  monitor.track_allocation("site1"_kj, 100);
+  monitor.track_allocation("site2"_kj, 200);
+  monitor.track_allocation("site3"_kj, 300);
 
   auto sites = monitor.get_all_sites();
   KJ_EXPECT(sites.size() == 3);
-  KJ_EXPECT(sites.find("site1") != sites.end());
-  KJ_EXPECT(sites.find("site2") != sites.end());
-  KJ_EXPECT(sites.find("site3") != sites.end());
+  // Verify sites exist by checking names
+  bool found_site1 = false, found_site2 = false, found_site3 = false;
+  for (const auto& site : sites) {
+    if (site.name == "site1"_kj) found_site1 = true;
+    if (site.name == "site2"_kj) found_site2 = true;
+    if (site.name == "site3"_kj) found_site3 = true;
+  }
+  KJ_EXPECT(found_site1);
+  KJ_EXPECT(found_site2);
+  KJ_EXPECT(found_site3);
 }
 
 // ============================================================================
@@ -285,10 +296,11 @@ KJ_TEST("MemoryPool: Concurrent monitor tracking") {
   std::vector<std::future<void>> futures;
   for (int t = 0; t < thread_count; ++t) {
     futures.push_back(std::async(std::launch::async, [&monitor, tracks_per_thread, t] {
+      auto site_name = kj::str("thread_", t);
       for (int i = 0; i < tracks_per_thread; ++i) {
-        monitor.track_allocation(std::format("thread_{}", t), 100);
+        monitor.track_allocation(site_name, 100);
         std::this_thread::sleep_for(std::chrono::microseconds(1));
-        monitor.track_deallocation(std::format("thread_{}", t), 100);
+        monitor.track_deallocation(site_name, 100);
       }
     }));
   }
@@ -309,7 +321,7 @@ KJ_TEST("MemoryPool: Concurrent monitor tracking") {
 KJ_TEST("GlobalMemoryMonitor: Access") {
   auto& monitor = global_memory_monitor();
 
-  monitor.track_allocation("global_test", 100);
+  monitor.track_allocation("global_test"_kj, 100);
   KJ_EXPECT(monitor.total_allocated_bytes() > 0);
 
   monitor.reset();

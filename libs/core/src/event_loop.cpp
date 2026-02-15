@@ -33,8 +33,7 @@ void EventLoop::TaskSetErrorHandler::taskFailed(kj::Exception&& exception) {
 
 // KjAsyncState constructor
 EventLoop::KjAsyncState::KjAsyncState(EventStats& stats)
-    : event_loop(),
-      error_handler(kj::heap<TaskSetErrorHandler>(stats)),
+    : event_loop(), error_handler(kj::heap<TaskSetErrorHandler>(stats)),
       task_set(kj::heap<kj::TaskSet>(*error_handler)),
       timer(kj::heap<kj::TimerImpl>(kj::systemPreciseMonotonicClock().now())) {}
 
@@ -76,9 +75,9 @@ void EventLoop::post_with_tags(std::function<void()> task, EventPriority priorit
   // Wake up the event loop if it's waiting
   {
     auto lock = wake_fulfiller_.lockExclusive();
-    KJ_IF_MAYBE(fulfiller, *lock) {
-      (*fulfiller)->fulfill();
-      *lock = nullptr;
+    KJ_IF_SOME(fulfiller, *lock) {
+      fulfiller->fulfill();
+      *lock = kj::none;
     }
   }
 }
@@ -109,9 +108,9 @@ void EventLoop::post_delayed(std::function<void()> task, std::chrono::millisecon
   // Wake up the event loop if it's waiting
   {
     auto lock = wake_fulfiller_.lockExclusive();
-    KJ_IF_MAYBE(fulfiller, *lock) {
-      (*fulfiller)->fulfill();
-      *lock = nullptr;
+    KJ_IF_SOME(fulfiller, *lock) {
+      fulfiller->fulfill();
+      *lock = kj::none;
     }
   }
 }
@@ -119,13 +118,17 @@ void EventLoop::post_delayed(std::function<void()> task, std::chrono::millisecon
 bool EventLoop::should_process_task(const Task& task) {
   // Check priority-based filters
   auto lock = filter_state_.lockExclusive();
-  for (const auto& [id, filter_pair] : lock->filters) {
-    if (!lock->active_filters.contains(id)) {
+  for (const auto& entry : lock->filters) {
+    uint64_t id = entry.key;
+    const auto& filter_pair = entry.value;
+    if (lock->active_filters.find(id) == kj::none) {
       continue;
     }
     const auto& [filter, priority_filter] = filter_pair;
-    if (priority_filter.has_value() && priority_filter.value() != task.priority) {
-      continue;
+    KJ_IF_SOME(pf, priority_filter) {
+      if (pf != task.priority) {
+        continue;
+      }
     }
     if (filter(task.tags)) {
       stats_.events_filtered++;
@@ -134,8 +137,10 @@ bool EventLoop::should_process_task(const Task& task) {
   }
 
   // Check tag pattern filters
-  for (const auto& [id, pattern] : lock->tag_filters) {
-    if (!lock->active_filters.contains(id)) {
+  for (const auto& entry : lock->tag_filters) {
+    uint64_t id = entry.key;
+    const auto& pattern = entry.value;
+    if (lock->active_filters.find(id) == kj::none) {
       continue;
     }
     for (const auto& tag : task.tags) {
@@ -155,8 +160,8 @@ bool EventLoop::should_process_task(const Task& task) {
 
 void EventLoop::route_task(Task& task, std::function<void()> wrapped) {
   auto lock = filter_state_.lockExclusive();
-  if (lock->router) {
-    lock->router.value()(task.tags, [&task] { task.task(); });
+  KJ_IF_SOME(router, lock->router) {
+    router(task.tags, [&task] { task.task(); });
   } else {
     wrapped();
   }
@@ -179,8 +184,8 @@ void EventLoop::execute_task(Task& task) {
   auto start = std::chrono::steady_clock::now();
   try {
     auto lock = filter_state_.lockExclusive();
-    if (lock->router) {
-      lock->router.value()(task.tags, [&task] { task.task(); });
+    KJ_IF_SOME(router, lock->router) {
+      router(task.tags, [&task] { task.task(); });
     } else {
       task.task();
     }
@@ -229,8 +234,8 @@ kj::Promise<void> EventLoop::process_next_task() {
     }
   }
 
-  KJ_IF_MAYBE(task, maybe_task) {
-    execute_task(*task);
+  KJ_IF_SOME(task, maybe_task) {
+    execute_task(task);
   }
 
   return kj::READY_NOW;
@@ -246,15 +251,14 @@ kj::Promise<void> EventLoop::schedule_delayed_tasks() {
     }
   }
 
-  KJ_IF_MAYBE(deadline, next_deadline) {
+  KJ_IF_SOME(deadline, next_deadline) {
     auto now = std::chrono::steady_clock::now();
-    if (*deadline <= now) {
+    if (deadline <= now) {
       // Deadline already passed, process immediately
       return kj::READY_NOW;
     }
 
-    auto delay_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(*deadline - now).count();
+    auto delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
     if (delay_ms > 0 && kj_state_ != nullptr) {
       auto kj_delay = delay_ms * kj::MILLISECONDS;
       return kj_state_->timer->afterDelay(kj_delay);
@@ -314,8 +318,8 @@ void EventLoop::run() {
           }
         }
 
-        KJ_IF_MAYBE(task, maybe_task) {
-          execute_task(*task);
+        KJ_IF_SOME(task, maybe_task) {
+          execute_task(task);
         }
       }
     }
@@ -344,9 +348,9 @@ void EventLoop::run() {
       *lock = kj::mv(paf.fulfiller);
     }
 
-    KJ_IF_MAYBE(delay, wait_time) {
+    KJ_IF_SOME(delay, wait_time) {
       // Wait with timeout using KJ timer
-      auto kj_delay = delay->count() * kj::MILLISECONDS;
+      auto kj_delay = delay.count() * kj::MILLISECONDS;
       auto timeout_promise = kj_state.timer->afterDelay(kj_delay);
       auto wake_promise = kj::mv(paf.promise);
 
@@ -380,7 +384,7 @@ void EventLoop::run() {
     // Clear the wake fulfiller
     {
       auto lock = wake_fulfiller_.lockExclusive();
-      *lock = nullptr;
+      *lock = kj::none;
     }
   }
 
@@ -396,9 +400,9 @@ void EventLoop::stop() {
   // Wake up the event loop if it's waiting
   {
     auto lock = wake_fulfiller_.lockExclusive();
-    KJ_IF_MAYBE(fulfiller, *lock) {
-      (*fulfiller)->fulfill();
-      *lock = nullptr;
+    KJ_IF_SOME(fulfiller, *lock) {
+      fulfiller->fulfill();
+      *lock = kj::none;
     }
   }
 }
@@ -457,36 +461,41 @@ EventLoop Statistics:
                      stats_.max_queue_wait_time_ns.load() / 1e6);
 }
 
-uint64_t EventLoop::add_filter(EventFilter filter, std::optional<EventPriority> priority) {
+uint64_t EventLoop::add_filter(EventFilter filter, kj::Maybe<EventPriority> priority) {
   auto lock = filter_state_.lockExclusive();
   uint64_t id = lock->next_filter_id++;
-  lock->filters[id] = {kj::mv(filter), priority};
+  lock->filters.insert(id, {kj::mv(filter), priority});
   lock->active_filters.insert(id);
   return id;
 }
 
 void EventLoop::remove_filter(uint64_t filter_id) {
   auto lock = filter_state_.lockExclusive();
-  lock->active_filters.erase(filter_id);
+  KJ_IF_SOME(entry, lock->active_filters.find(filter_id)) {
+    lock->active_filters.erase(entry);
+  }
   lock->filters.erase(filter_id);
 }
 
 void EventLoop::clear_filters() {
   auto lock = filter_state_.lockExclusive();
-  lock->active_filters.clear();
-  lock->filters.clear();
-  lock->tag_filters.clear();
+  // KJ containers don't have clear(), recreate empty containers
+  lock->active_filters = kj::HashSet<uint64_t>();
+  lock->filters = kj::HashMap<uint64_t, std::pair<EventFilter, kj::Maybe<EventPriority>>>();
+  lock->tag_filters = kj::HashMap<uint64_t, std::regex>();
 }
 
 uint64_t EventLoop::add_tag_filter(const std::string& tag_pattern) {
   auto lock = filter_state_.lockExclusive();
   uint64_t id = lock->next_filter_id++;
   try {
-    lock->tag_filters[id] = std::regex(tag_pattern);
+    lock->tag_filters.insert(id, std::regex(tag_pattern));
     lock->active_filters.insert(id);
   } catch (const std::regex_error& e) {
     // Remove ID if regex creation failed
-    lock->active_filters.erase(id);
+    KJ_IF_SOME(entry, lock->active_filters.find(id)) {
+      lock->active_filters.erase(entry);
+    }
     throw std::runtime_error(std::format("Invalid tag pattern '{}': {}", tag_pattern, e.what()));
   }
   return id;
@@ -494,7 +503,9 @@ uint64_t EventLoop::add_tag_filter(const std::string& tag_pattern) {
 
 void EventLoop::remove_tag_filter(uint64_t filter_id) {
   auto lock = filter_state_.lockExclusive();
-  lock->active_filters.erase(filter_id);
+  KJ_IF_SOME(entry, lock->active_filters.find(filter_id)) {
+    lock->active_filters.erase(entry);
+  }
   lock->tag_filters.erase(filter_id);
 }
 
@@ -505,7 +516,7 @@ void EventLoop::set_router(EventRouter router) {
 
 void EventLoop::clear_router() {
   auto lock = filter_state_.lockExclusive();
-  lock->router = std::nullopt;
+  lock->router = kj::none;
 }
 
 } // namespace veloz::core

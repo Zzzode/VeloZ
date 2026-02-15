@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <kj/common.h>
 #include <kj/memory.h>
+#include <kj/mutex.h>
 #include <sstream>
 
 namespace veloz::core {
@@ -49,22 +50,31 @@ std::string MetricsRegistry::to_prometheus() const {
   return oss.str();
 }
 
-// Global metrics registry instance
-static MetricsRegistry* g_metrics_registry = nullptr;
+// Thread-safe global metrics registry using KJ MutexGuarded (no bare pointers)
+struct GlobalMetricsState {
+  kj::Maybe<kj::Own<MetricsRegistry>> registry{kj::none};
+};
+static kj::MutexGuarded<GlobalMetricsState> g_metrics_registry;
 
 MetricsRegistry& global_metrics() {
-  if (g_metrics_registry == nullptr) {
-    g_metrics_registry = new MetricsRegistry();
-
-    // Register some system metrics
-    g_metrics_registry->register_counter("veloz_system_start_time", "System start time");
-    g_metrics_registry->register_gauge("veloz_system_uptime", "System uptime in seconds");
-    g_metrics_registry->register_gauge("veloz_event_loop_pending_tasks",
-                                       "Number of pending tasks in event loop");
-    g_metrics_registry->register_histogram("veloz_event_loop_task_latency",
-                                           "Event loop task execution latency in seconds");
+  auto lock = g_metrics_registry.lockExclusive();
+  KJ_IF_SOME(registry, lock->registry) {
+    return *registry;  // Dereference kj::Own<MetricsRegistry> to get MetricsRegistry reference
   }
-  return *g_metrics_registry;
+  // Create new registry and store it
+  auto newRegistry = kj::heap<MetricsRegistry>();
+
+  // Register some system metrics
+  newRegistry->register_counter("veloz_system_start_time", "System start time");
+  newRegistry->register_gauge("veloz_system_uptime", "System uptime in seconds");
+  newRegistry->register_gauge("veloz_event_loop_pending_tasks",
+                              "Number of pending tasks in event loop");
+  newRegistry->register_histogram("veloz_event_loop_task_latency",
+                                  "Event loop task execution latency in seconds");
+
+  MetricsRegistry& ref = *newRegistry;
+  lock->registry = kj::mv(newRegistry);
+  return ref;
 }
 
 } // namespace veloz::core

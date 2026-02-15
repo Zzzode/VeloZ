@@ -2,9 +2,9 @@
 
 #include <filesystem>
 #include <kj/common.h>
+#include <kj/memory.h> // kj::Maybe used for nullable config values
 #include <kj/string.h>
-#include <map>      // std::map used for ordered key iteration
-#include <optional> // std::optional used for nullable config values
+#include <map> // std::map used for ordered key iteration
 #include <stdexcept>
 #include <string> // std::string used for std::map key and std::variant compatibility
 #include <string_view>
@@ -33,10 +33,10 @@ public:
   void remove(std::string_view key);
 
   // Template access methods
-  template <typename T> [[nodiscard]] std::optional<T> get(std::string_view key) const {
+  template <typename T> [[nodiscard]] kj::Maybe<T> get(std::string_view key) const {
     auto it = config_.find(std::string(key));
     if (it == config_.end()) {
-      return std::nullopt;
+      return kj::none;
     }
     try {
       if constexpr (std::is_same_v<T, bool>) {
@@ -57,18 +57,20 @@ public:
         return std::get<std::vector<std::string>>(it->second);
       }
     } catch (const std::bad_variant_access&) {
-      return std::nullopt;
+      return kj::none;
     }
-    return std::nullopt;
+    return kj::none;
   }
 
   template <typename T> T get_or(std::string_view key, T default_value) const {
-    auto opt = get<T>(key);
-    return opt.value_or(kj::mv(default_value));
+    KJ_IF_SOME(value, get<T>(key)) {
+      return kj::mv(value);
+    }
+    return kj::mv(default_value);
   }
 
   // Nested configuration access
-  [[nodiscard]] std::optional<Config> get_section(std::string_view key) const;
+  [[nodiscard]] kj::Maybe<Config> get_section(std::string_view key) const;
   void set_section(std::string_view key, const Config& config);
 
   // Configuration merging

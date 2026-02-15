@@ -174,8 +174,10 @@ KJ_TEST("EventLoop: Post delayed with priority") {
   // Just verify both tasks executed (values 1 and 2 are present)
   bool has_1 = false, has_2 = false;
   for (size_t i = 0; i < execution_order.size(); ++i) {
-    if (execution_order[i] == 1) has_1 = true;
-    if (execution_order[i] == 2) has_2 = true;
+    if (execution_order[i] == 1)
+      has_1 = true;
+    if (execution_order[i] == 2)
+      has_2 = true;
   }
   KJ_EXPECT(has_1);
   KJ_EXPECT(has_2);
@@ -380,7 +382,7 @@ KJ_TEST("EventLoop: Set router") {
     std::lock_guard<std::mutex> lock(routes_mutex);
     kj::String tag_str = kj::str("");
     for (const auto& tag : tags) {
-      tag_str = kj::str(tag_str, tag, ",");
+      tag_str = kj::str(tag_str, tag.c_str(), ",");
     }
     routes.add(kj::mv(tag_str));
     task();

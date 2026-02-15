@@ -29,9 +29,12 @@ KJ_TEST("ConfigItem: Builder") {
 KJ_TEST("ConfigItem: Get value") {
   auto item = ConfigItem<int>::Builder("test", "Test").default_value(100).build();
 
-  auto value = item->get();
-  KJ_EXPECT(value.has_value());
-  KJ_EXPECT(value.value() == 100);
+  auto maybe_value = item->get();
+  KJ_IF_SOME(value, maybe_value) {
+    KJ_EXPECT(value == 100);
+  } else {
+    KJ_FAIL_EXPECT("value not found");
+  }
   KJ_EXPECT(item->value() == 100);
 }
 
@@ -85,12 +88,15 @@ KJ_TEST("ConfigItem: Array") {
                         .default_value(std::vector<int>{1, 2, 3})
                         .build();
 
-  auto value = array_item->get();
-  KJ_EXPECT(value.has_value());
-  KJ_EXPECT(value->size() == 3);
-  KJ_EXPECT((*value)[0] == 1);
-  KJ_EXPECT((*value)[1] == 2);
-  KJ_EXPECT((*value)[2] == 3);
+  auto maybe_value = array_item->get();
+  KJ_IF_SOME(value, maybe_value) {
+    KJ_EXPECT(value.size() == 3);
+    KJ_EXPECT(value[0] == 1);
+    KJ_EXPECT(value[1] == 2);
+    KJ_EXPECT(value[2] == 3);
+  } else {
+    KJ_FAIL_EXPECT("array value not found");
+  }
 
   std::string array_str = array_item->to_string();
   KJ_EXPECT(array_str.find("[") != std::string::npos);
@@ -150,6 +156,7 @@ KJ_TEST("ConfigGroup: Add item") {
 
 KJ_TEST("ConfigGroup: Subgroups") {
   ConfigGroup root("root", "Root group");
+  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
   auto sub1 = std::make_unique<ConfigGroup>("sub1", "Subgroup 1");
   auto sub2 = std::make_unique<ConfigGroup>("sub2", "Subgroup 2");
 
@@ -275,6 +282,7 @@ KJ_TEST("ConfigManager: Nested groups") {
   ConfigManager manager("test");
   auto* root = manager.root_group();
 
+  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
   auto db_group = std::make_unique<ConfigGroup>("database", "Database config");
   db_group->add_item(
       ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
@@ -349,6 +357,7 @@ KJ_TEST("ConfigManager: Full config cycle") {
   auto* root = manager.root_group();
 
   // Create database config group
+  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
   auto db_group = std::make_unique<ConfigGroup>("database", "Database settings");
   db_group->add_item(
       ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());

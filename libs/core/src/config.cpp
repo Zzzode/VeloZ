@@ -5,6 +5,7 @@
 #include <fstream>
 #include <kj/common.h>
 #include <kj/memory.h>
+#include <kj/mutex.h>
 
 namespace veloz::core {
 
@@ -199,8 +200,8 @@ void Config::remove(std::string_view key) {
   config_.erase(std::string(key));
 }
 
-std::optional<Config> Config::get_section(std::string_view /* key */) const {
-  return std::nullopt;
+kj::Maybe<Config> Config::get_section(std::string_view /* key */) const {
+  return kj::none;
 }
 
 void Config::set_section(std::string_view /* key */, const Config& /* config */) {
@@ -222,14 +223,22 @@ std::vector<std::string> Config::keys() const {
   return result;
 }
 
-// Global configuration instance
-static Config* g_global_config = nullptr;
+// Thread-safe global configuration using KJ MutexGuarded (no bare pointers)
+struct GlobalConfigState {
+  kj::Maybe<kj::Own<Config>> config{kj::none};
+};
+static kj::MutexGuarded<GlobalConfigState> g_global_config;
 
 Config& global_config() {
-  if (g_global_config == nullptr) {
-    g_global_config = new Config();
+  auto lock = g_global_config.lockExclusive();
+  KJ_IF_SOME(config, lock->config) {
+    return *config;  // Dereference kj::Own<Config> to get Config reference
   }
-  return *g_global_config;
+  // Create new config and store it
+  auto newConfig = kj::heap<Config>();
+  Config& ref = *newConfig;
+  lock->config = kj::mv(newConfig);
+  return ref;
 }
 
 bool load_global_config(const std::filesystem::path& file_path) {

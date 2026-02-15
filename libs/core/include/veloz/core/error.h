@@ -88,6 +88,51 @@ public:
       : VeloZException(message, location) {}
 };
 
+class CircuitBreakerException : public VeloZException {
+public:
+  explicit CircuitBreakerException(
+      std::string_view message, std::string_view service_name = "",
+      const std::source_location& location = std::source_location::current())
+      : VeloZException(message, location), service_name_(service_name) {}
+
+  [[nodiscard]] const std::string& service_name() const noexcept {
+    return service_name_;
+  }
+
+private:
+  std::string service_name_;
+};
+
+class RateLimitException : public VeloZException {
+public:
+  explicit RateLimitException(
+      std::string_view message, int64_t retry_after_ms = 0,
+      const std::source_location& location = std::source_location::current())
+      : VeloZException(message, location), retry_after_ms_(retry_after_ms) {}
+
+  [[nodiscard]] int64_t retry_after_ms() const noexcept {
+    return retry_after_ms_;
+  }
+
+private:
+  int64_t retry_after_ms_;
+};
+
+class RetryExhaustedException : public VeloZException {
+public:
+  explicit RetryExhaustedException(
+      std::string_view message, int attempts = 0,
+      const std::source_location& location = std::source_location::current())
+      : VeloZException(message, location), attempts_(attempts) {}
+
+  [[nodiscard]] int attempts() const noexcept {
+    return attempts_;
+  }
+
+private:
+  int attempts_;
+};
+
 class ProtocolException : public VeloZException {
 public:
   explicit ProtocolException(std::string_view message, int protocol_version = 0,
@@ -116,6 +161,9 @@ enum class ErrorCode : int {
   PermissionError = 9,
   ConfigurationError = 10,
   StateError = 11,
+  CircuitBreakerError = 12,
+  RateLimitError = 13,
+  RetryExhaustedError = 14,
 };
 
 [[nodiscard]] std::string to_string(ErrorCode code);

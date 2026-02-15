@@ -1,9 +1,8 @@
 #pragma once
 
-#include <kj/common.h>
-
 #include <cstdint>
-#include <string>
+#include <kj/common.h>
+#include <string> // std::string used for STL container compatibility (std::map keys, comparison)
 
 namespace veloz::common {
 

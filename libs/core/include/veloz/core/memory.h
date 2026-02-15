@@ -127,7 +127,10 @@ public:
   template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     auto lock = guarded_.lockExclusive();
     if (!lock->pool.empty()) {
-      auto ptr = lock->pool.back().release();
+      // kj::Own<T> has no release() method - use move to extract raw pointer
+      // KJ's Own::move() transfers ownership internally, then we can get pointer
+      auto own = kj::mv(lock->pool.back());
+      T* ptr = own.get();
       lock->pool.pop_back();
       // Reset object state
       ptr->~T();
@@ -182,6 +185,7 @@ public:
       if (max_size_ > 0 && lock->size >= max_size_) {
         break;
       }
+      // Uses std::make_unique for pool storage (kj::Own lacks release())
       lock->pool.push_back(std::make_unique<T>());
       ++(lock->size);
     }
@@ -203,6 +207,7 @@ private:
     explicit PoolState(size_t initial_size) : size(initial_size) {
       pool.reserve(initial_size);
       for (size_t i = 0; i < initial_size; ++i) {
+        // Uses std::make_unique for pool storage (kj::Own lacks release())
         pool.push_back(std::make_unique<T>());
       }
     }

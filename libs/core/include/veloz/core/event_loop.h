@@ -7,16 +7,16 @@
 #include <kj/async.h>
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/map.h>
+#include <kj/memory.h> // kj::Maybe used for priority filter
 #include <kj/mutex.h>
 #include <kj/string.h>
+#include <kj/table.h>
 #include <kj/timer.h>
 #include <kj/vector.h>
-#include <optional> // std::optional used for priority filter
 #include <queue>
 #include <regex>
 #include <string> // std::string used for EventTag
-#include <unordered_map>
-#include <unordered_set>
 #include <vector> // std::vector used for EventTag containers
 
 namespace veloz::core {
@@ -148,7 +148,7 @@ public:
    * @return Filter ID for removal
    */
   [[nodiscard]] uint64_t add_filter(EventFilter filter,
-                                    std::optional<EventPriority> priority = std::nullopt);
+                                    kj::Maybe<EventPriority> priority = kj::none);
   void remove_filter(uint64_t filter_id);
   void clear_filters();
 
@@ -220,11 +220,11 @@ private:
 
   // Filter state (protected by KJ mutex)
   struct FilterState {
-    std::unordered_set<uint64_t> active_filters;
+    kj::HashSet<uint64_t> active_filters;
     uint64_t next_filter_id = 0;
-    std::unordered_map<uint64_t, std::pair<EventFilter, std::optional<EventPriority>>> filters;
-    std::unordered_map<uint64_t, std::regex> tag_filters;
-    std::optional<EventRouter> router;
+    kj::HashMap<uint64_t, std::pair<EventFilter, kj::Maybe<EventPriority>>> filters;
+    kj::HashMap<uint64_t, std::regex> tag_filters;
+    kj::Maybe<EventRouter> router;
   };
 
   std::atomic<bool> running_{false};
@@ -243,7 +243,7 @@ private:
 
     explicit KjAsyncState(EventStats& stats);
   };
-  KjAsyncState* kj_state_ = nullptr;  // Non-owning pointer to stack-allocated state
+  KjAsyncState* kj_state_ = nullptr; // Non-owning pointer to stack-allocated state
 
   // Cross-thread wake-up using KJ's cross-thread fulfiller
   kj::MutexGuarded<kj::Maybe<kj::Own<kj::CrossThreadPromiseFulfiller<void>>>> wake_fulfiller_;

@@ -442,6 +442,7 @@ void Logger::set_formatter(std::unique_ptr<LogFormatter> formatter) {
 
 void Logger::set_output(std::unique_ptr<LogOutput> output) {
   auto lock = guarded_.lockExclusive();
+  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
   lock->multi_output = std::make_unique<MultiOutput>();
   lock->multi_output->add_output(kj::mv(output));
 }
@@ -512,14 +513,24 @@ void Logger::flush() {
 // Global Logger
 // ============================================================================
 
-static Logger* g_global_logger = nullptr;
+// Thread-safe global logger using KJ MutexGuarded (no bare pointers)
+struct GlobalLoggerState {
+  kj::Maybe<kj::Own<Logger>> logger{kj::none};
+};
+static kj::MutexGuarded<GlobalLoggerState> g_global_logger;
 
 Logger& global_logger() {
-  if (g_global_logger == nullptr) {
-    g_global_logger = new Logger(std::make_unique<TextFormatter>(false, false),
-                                 std::make_unique<ConsoleOutput>());
+  auto lock = g_global_logger.lockExclusive();
+  KJ_IF_SOME(logger, lock->logger) {
+    return *logger;  // Dereference kj::Own<Logger> to get Logger reference
   }
-  return *g_global_logger;
+  // Create new logger and store it
+  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
+  auto newLogger = kj::heap<Logger>(std::make_unique<TextFormatter>(false, false),
+                                    std::make_unique<ConsoleOutput>());
+  Logger& ref = *newLogger;
+  lock->logger = kj::mv(newLogger);
+  return ref;
 }
 
 } // namespace veloz::core

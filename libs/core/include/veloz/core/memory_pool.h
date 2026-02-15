@@ -28,6 +28,7 @@
 #include <kj/arena.h>
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
@@ -35,9 +36,8 @@
 #include <new>
 #include <sstream>
 #include <stdexcept>
-#include <string> // std::string used for std::unordered_map key compatibility
+#include <string> // std::string used for MemoryAllocationSite::name and report generation
 #include <thread>
-#include <unordered_map>
 #include <vector> // std::vector used for internal block management
 
 namespace veloz::core {
@@ -284,7 +284,7 @@ private:
       return;
     }
 
-    size_t to_allocate = std::min(count, max_blocks_ > 0 ? max_blocks_ - current_blocks : count);
+    size_t to_allocate = kj::min(count, max_blocks_ > 0 ? max_blocks_ - current_blocks : count);
     for (size_t i = 0; i < to_allocate; ++i) {
       allocate_block_unlocked(*lock);
     }
@@ -383,12 +383,16 @@ bool operator!=(const PoolAllocator<T, Pool>& a, const PoolAllocator<U, OtherPoo
  * @brief Memory usage statistics for a specific allocation site
  */
 struct MemoryAllocationSite {
-  std::string name;
+  kj::String name;
   size_t current_bytes{0};
   size_t peak_bytes{0};
   size_t allocation_count{0};
   size_t deallocation_count{0};
   size_t object_count{0};
+
+  MemoryAllocationSite() : name(kj::str("")) {}
+  explicit MemoryAllocationSite(kj::StringPtr site_name)
+      : name(kj::str(site_name)) {}
 };
 
 /**
@@ -412,17 +416,19 @@ public:
    * @param size Size in bytes
    * @param count Number of objects allocated
    */
-  void track_allocation(const std::string& site_name, size_t size, size_t count = 1) {
+  void track_allocation(kj::StringPtr site_name, size_t size, size_t count = 1) {
     auto lock = guarded_.lockExclusive();
-    auto& site = lock->sites[site_name];
-    site.name = site_name;
+    auto& site = lock->sites.findOrCreate(site_name, [&]() {
+      return kj::HashMap<kj::String, MemoryAllocationSite>::Entry{kj::str(site_name),
+                                                                   MemoryAllocationSite(site_name)};
+    });
     site.current_bytes += size;
-    site.peak_bytes = std::max(site.peak_bytes, site.current_bytes);
+    site.peak_bytes = kj::max(site.peak_bytes, site.current_bytes);
     site.allocation_count++;
     site.object_count += count;
 
     lock->total_allocated_bytes += size;
-    lock->peak_allocated_bytes = std::max(lock->peak_allocated_bytes, lock->total_allocated_bytes);
+    lock->peak_allocated_bytes = kj::max(lock->peak_allocated_bytes, lock->total_allocated_bytes);
     lock->total_allocation_count++;
   }
 
@@ -432,11 +438,9 @@ public:
    * @param size Size in bytes
    * @param count Number of objects deallocated
    */
-  void track_deallocation(const std::string& site_name, size_t size, size_t count = 1) {
+  void track_deallocation(kj::StringPtr site_name, size_t size, size_t count = 1) {
     auto lock = guarded_.lockExclusive();
-    auto it = lock->sites.find(site_name);
-    if (it != lock->sites.end()) {
-      auto& site = it->second;
+    KJ_IF_SOME(site, lock->sites.find(site_name)) {
       site.current_bytes = size >= site.current_bytes ? 0 : site.current_bytes - size;
       site.deallocation_count++;
       site.object_count = count >= site.object_count ? 0 : site.object_count - count;
@@ -451,21 +455,31 @@ public:
   /**
    * @brief Get statistics for a specific site
    * @param site_name Name of allocation site
-   * @return Statistics or nullptr if not found
+   * @return Statistics wrapped in kj::Maybe, kj::none if not found
    */
-  [[nodiscard]] const MemoryAllocationSite* get_site_stats(const std::string& site_name) const {
+  [[nodiscard]] kj::Maybe<const MemoryAllocationSite&> get_site_stats(kj::StringPtr site_name) const {
     auto lock = guarded_.lockExclusive();
-    auto it = lock->sites.find(site_name);
-    return it != lock->sites.end() ? &it->second : nullptr;
+    return lock->sites.find(site_name);
   }
 
   /**
    * @brief Get all allocation site statistics
-   * @return Map of site names to statistics
+   * @return Vector of site statistics (name is included in MemoryAllocationSite)
    */
-  [[nodiscard]] std::unordered_map<std::string, MemoryAllocationSite> get_all_sites() const {
+  [[nodiscard]] kj::Vector<MemoryAllocationSite> get_all_sites() const {
     auto lock = guarded_.lockExclusive();
-    return lock->sites;
+    kj::Vector<MemoryAllocationSite> result;
+    result.reserve(lock->sites.size());
+    for (const auto& entry : lock->sites) {
+      MemoryAllocationSite site(entry.key.asPtr());
+      site.current_bytes = entry.value.current_bytes;
+      site.peak_bytes = entry.value.peak_bytes;
+      site.allocation_count = entry.value.allocation_count;
+      site.deallocation_count = entry.value.deallocation_count;
+      site.object_count = entry.value.object_count;
+      result.add(kj::mv(site));
+    }
+    return result;
   }
 
   /**
@@ -516,7 +530,7 @@ public:
     const size_t peak_allocated_bytes = lock->peak_allocated_bytes;
     const uint64_t total_allocation_count = lock->total_allocation_count;
     const uint64_t total_deallocation_count = lock->total_deallocation_count;
-    const size_t active_sites = lock->sites.size();
+    const size_t active_sites_count = lock->sites.size();
 
     std::ostringstream oss;
     oss << "Memory Usage Report\n";
@@ -527,26 +541,31 @@ public:
                        peak_allocated_bytes / 1024.0 / 1024.0);
     oss << std::format("Total Allocations: {}\n", total_allocation_count);
     oss << std::format("Total Deallocations: {}\n", total_deallocation_count);
-    oss << std::format("Active Sites: {}\n\n", active_sites);
+    oss << std::format("Active Sites: {}\n\n", active_sites_count);
 
     oss << "Top Sites by Peak Usage:\n";
 
-    // Collect site stats while lock is held
-    std::vector<std::pair<std::string, size_t>> sorted_sites;
-    std::vector<MemoryAllocationSite> site_stats;
-    for (const auto& [name, stats] : lock->sites) {
-      sorted_sites.emplace_back(name, stats.peak_bytes);
-      site_stats.push_back(stats);
+    // Collect site stats while lock is held - kj::HashMap iteration
+    struct SiteInfo {
+      std::string name;
+      size_t peak_bytes;
+      size_t allocation_count;
+      size_t object_count;
+    };
+    std::vector<SiteInfo> site_infos;
+    for (const auto& entry : lock->sites) {
+      site_infos.push_back(SiteInfo{
+          std::string(entry.key.cStr()), entry.value.peak_bytes, entry.value.allocation_count,
+          entry.value.object_count});
     }
-    std::sort(sorted_sites.begin(), sorted_sites.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::sort(site_infos.begin(), site_infos.end(),
+              [](const auto& a, const auto& b) { return a.peak_bytes > b.peak_bytes; });
 
-    const size_t count = std::min(sorted_sites.size(), size_t(10));
+    const size_t count = kj::min(site_infos.size(), size_t(10));
     for (size_t i = 0; i < count; ++i) {
-      const auto& [name, bytes] = sorted_sites[i];
-      const auto& stats = site_stats[i];
-      oss << std::format("  {:<30} {:>12} bytes ({:>6} allocs, {:>6} objects)\n", name, bytes,
-                         stats.allocation_count, stats.object_count);
+      const auto& info = site_infos[i];
+      oss << std::format("  {:<30} {:>12} bytes ({:>6} allocs, {:>6} objects)\n", info.name,
+                         info.peak_bytes, info.allocation_count, info.object_count);
     }
 
     return oss.str();
@@ -567,7 +586,7 @@ public:
 private:
   // Internal state for MemoryMonitor
   struct MonitorState {
-    std::unordered_map<std::string, MemoryAllocationSite> sites;
+    kj::HashMap<kj::String, MemoryAllocationSite> sites;
     size_t total_allocated_bytes{0};
     size_t peak_allocated_bytes{0};
     uint64_t total_allocation_count{0};
@@ -588,8 +607,8 @@ private:
  */
 template <typename T> class MemoryTracker {
 public:
-  explicit MemoryTracker(const std::string& site_name)
-      : site_name_(site_name), monitor_(&global_memory_monitor()) {}
+  explicit MemoryTracker(kj::StringPtr site_name)
+      : site_name_(kj::str(site_name)), monitor_(&global_memory_monitor()) {}
 
   T* track_allocation(T* ptr, size_t count = 1) {
     if (ptr != nullptr) {
@@ -605,7 +624,7 @@ public:
   }
 
 private:
-  std::string site_name_;
+  kj::String site_name_;
   MemoryMonitor* monitor_;
 };
 

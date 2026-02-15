@@ -322,6 +322,7 @@ public:
    * @brief Constructor
    * @param formatter Log formatter to use
    * @param output Log output destination
+   * Note: Uses std::make_unique for polymorphic ownership (kj::Own lacks release())
    */
   Logger(std::unique_ptr<LogFormatter> formatter = std::make_unique<TextFormatter>(),
          std::unique_ptr<LogOutput> output = std::make_unique<ConsoleOutput>());
@@ -520,6 +521,7 @@ private:
     LogLevel level;
 
     LoggerState(std::unique_ptr<LogFormatter> fmt, std::unique_ptr<LogOutput> out)
+        // Uses std::make_unique for polymorphic ownership (kj::Own lacks release())
         : formatter(kj::mv(fmt)), multi_output(std::make_unique<MultiOutput>()),
           level(LogLevel::Info) {
       multi_output->add_output(kj::mv(out));

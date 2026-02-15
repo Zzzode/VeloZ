@@ -31,6 +31,12 @@ std::string to_string(ErrorCode code) {
     return "Configuration Error";
   case ErrorCode::StateError:
     return "State Error";
+  case ErrorCode::CircuitBreakerError:
+    return "Circuit Breaker Error";
+  case ErrorCode::RateLimitError:
+    return "Rate Limit Error";
+  case ErrorCode::RetryExhaustedError:
+    return "Retry Exhausted Error";
   default:
     return "Invalid Error Code";
   }
@@ -61,6 +67,12 @@ ErrorCode to_error_code(const std::string& str) {
     return ErrorCode::ConfigurationError;
   } else if (str == "State Error" || str == "state") {
     return ErrorCode::StateError;
+  } else if (str == "Circuit Breaker Error" || str == "circuit_breaker") {
+    return ErrorCode::CircuitBreakerError;
+  } else if (str == "Rate Limit Error" || str == "rate_limit") {
+    return ErrorCode::RateLimitError;
+  } else if (str == "Retry Exhausted Error" || str == "retry_exhausted") {
+    return ErrorCode::RetryExhaustedError;
   } else {
     return ErrorCode::UnknownError;
   }

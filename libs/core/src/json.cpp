@@ -18,6 +18,40 @@ namespace veloz {
 namespace core {
 
 // ============================================================================
+// YyJsonDoc Implementation
+// ============================================================================
+
+YyJsonDoc::~YyJsonDoc() noexcept {
+  if (doc_) {
+    yyjson_doc_free(doc_);
+  }
+}
+
+void YyJsonDoc::reset(yyjson_doc* doc) noexcept {
+  if (doc_) {
+    yyjson_doc_free(doc_);
+  }
+  doc_ = doc;
+}
+
+// ============================================================================
+// YyJsonMutDoc Implementation
+// ============================================================================
+
+YyJsonMutDoc::~YyJsonMutDoc() noexcept {
+  if (doc_) {
+    yyjson_mut_doc_free(doc_);
+  }
+}
+
+void YyJsonMutDoc::reset(yyjson_mut_doc* doc) noexcept {
+  if (doc_) {
+    yyjson_mut_doc_free(doc_);
+  }
+  doc_ = doc;
+}
+
+// ============================================================================
 // JsonDocument Implementation
 // ============================================================================
 
@@ -230,13 +264,13 @@ JsonValue JsonValue::operator[](const char* key) const {
   return JsonValue(yyjson_obj_get(val_, key));
 }
 
-std::optional<JsonValue> JsonValue::get(const std::string& key) const {
+kj::Maybe<JsonValue> JsonValue::get(const std::string& key) const {
   if (!is_object()) {
-    return std::nullopt;
+    return kj::none;
   }
   yyjson_val* child = yyjson_obj_get(val_, key.c_str());
   if (!child) {
-    return std::nullopt;
+    return kj::none;
   }
   return JsonValue(child);
 }
@@ -286,25 +320,21 @@ std::vector<std::string> JsonValue::keys() const {
 // ============================================================================
 
 struct JsonBuilder::Impl {
-  yyjson_mut_doc* doc;
-  yyjson_mut_val* current;
+  YyJsonMutDoc doc;           // RAII wrapper for yyjson_mut_doc*
+  YyJsonMutValView current;   // Non-owning view of current value
   Type type;
   bool is_object; // true for object, false for array
-  bool owns_doc;
 
-  ~Impl() {
-    if (owns_doc && doc) {
-      yyjson_mut_doc_free(doc);
-    }
-  }
+  // Default destructor is sufficient - YyJsonMutDoc handles cleanup
+  ~Impl() = default;
 };
 
-JsonBuilder::JsonBuilder(Type type) : impl_(std::make_unique<Impl>()) {
+JsonBuilder::JsonBuilder(Type type) : impl_(kj::heap<Impl>()) {
   impl_->type = type;
   impl_->is_object = (type == Type::Object);
-  impl_->owns_doc = true;
-  impl_->doc = yyjson_mut_doc_new(nullptr);
-  impl_->current = impl_->is_object ? yyjson_mut_obj(impl_->doc) : yyjson_mut_arr(impl_->doc);
+  impl_->doc.reset(yyjson_mut_doc_new(nullptr));
+  impl_->current = YyJsonMutValView(impl_->is_object ? yyjson_mut_obj(impl_->doc.get())
+                                                     : yyjson_mut_arr(impl_->doc.get()));
 }
 
 JsonBuilder::~JsonBuilder() = default;
@@ -328,7 +358,7 @@ JsonBuilder JsonBuilder::array() {
 
 JsonBuilder& JsonBuilder::put(const std::string& key, const char* value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strcpy(impl_->doc, impl_->current, key.c_str(), value);
+    yyjson_mut_obj_add_strcpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
   }
   return *this;
 }
@@ -339,71 +369,71 @@ JsonBuilder& JsonBuilder::put(const std::string& key, const std::string& value) 
 
 JsonBuilder& JsonBuilder::put(const std::string& key, std::string_view value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strncpy(impl_->doc, impl_->current, key.c_str(), value.data(), value.size());
+    yyjson_mut_obj_add_strncpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value.data(), value.size());
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, bool value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_bool(impl_->doc, impl_->current, key.c_str(), value);
+    yyjson_mut_obj_add_bool(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, int value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_int(impl_->doc, impl_->current, key.c_str(), value);
+    yyjson_mut_obj_add_int(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, int64_t value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_sint(impl_->doc, impl_->current, key.c_str(), value);
+    yyjson_mut_obj_add_sint(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, uint64_t value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_uint(impl_->doc, impl_->current, key.c_str(), value);
+    yyjson_mut_obj_add_uint(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, double value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_real(impl_->doc, impl_->current, key.c_str(), value);
+    yyjson_mut_obj_add_real(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, std::nullptr_t) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_null(impl_->doc, impl_->current, key.c_str());
+    yyjson_mut_obj_add_null(impl_->doc.get(), impl_->current.get(), key.c_str());
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<int>& value) {
   if (impl_->is_object) {
-    yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc);
+    yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
     for (int v : value) {
-      yyjson_mut_arr_add_int(impl_->doc, arr, v);
+      yyjson_mut_arr_add_int(impl_->doc.get(), arr, v);
     }
-    yyjson_mut_obj_add_val(impl_->doc, impl_->current, key.c_str(), arr);
+    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), arr);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<std::string>& value) {
   if (impl_->is_object) {
-    yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc);
+    yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
     for (const std::string& v : value) {
-      yyjson_mut_arr_add_strcpy(impl_->doc, arr, v.c_str());
+      yyjson_mut_arr_add_strcpy(impl_->doc.get(), arr, v.c_str());
     }
-    yyjson_mut_obj_add_val(impl_->doc, impl_->current, key.c_str(), arr);
+    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), arr);
   }
   return *this;
 }
@@ -411,18 +441,18 @@ JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<std::str
 JsonBuilder& JsonBuilder::put_object(const std::string& key,
                                      std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
-    yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc);
+    yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc.get());
     // Save current state
-    yyjson_mut_val* saved_current = impl_->current;
+    YyJsonMutValView saved_current = impl_->current;
     bool saved_is_object = impl_->is_object;
     // Temporarily switch to nested object
-    impl_->current = nested;
+    impl_->current = YyJsonMutValView(nested);
     impl_->is_object = true;
     builder(*this);
     // Restore state and add nested object to parent
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_obj_add_val(impl_->doc, impl_->current, key.c_str(), nested);
+    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), nested);
   }
   return *this;
 }
@@ -430,25 +460,25 @@ JsonBuilder& JsonBuilder::put_object(const std::string& key,
 JsonBuilder& JsonBuilder::put_array(const std::string& key,
                                     std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
-    yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc);
+    yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc.get());
     // Save current state
-    yyjson_mut_val* saved_current = impl_->current;
+    YyJsonMutValView saved_current = impl_->current;
     bool saved_is_object = impl_->is_object;
     // Temporarily switch to nested array
-    impl_->current = nested;
+    impl_->current = YyJsonMutValView(nested);
     impl_->is_object = false;
     builder(*this);
     // Restore state and add nested array to parent
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_obj_add_val(impl_->doc, impl_->current, key.c_str(), nested);
+    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), nested);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(const char* value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_strcpy(impl_->doc, impl_->current, value);
+    yyjson_mut_arr_add_strcpy(impl_->doc.get(), impl_->current.get(), value);
   }
   return *this;
 }
@@ -459,102 +489,102 @@ JsonBuilder& JsonBuilder::add(const std::string& value) {
 
 JsonBuilder& JsonBuilder::add(std::string_view value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_strncpy(impl_->doc, impl_->current, value.data(), value.size());
+    yyjson_mut_arr_add_strncpy(impl_->doc.get(), impl_->current.get(), value.data(), value.size());
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(bool value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_bool(impl_->doc, impl_->current, value);
+    yyjson_mut_arr_add_bool(impl_->doc.get(), impl_->current.get(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(int value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_int(impl_->doc, impl_->current, value);
+    yyjson_mut_arr_add_int(impl_->doc.get(), impl_->current.get(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(int64_t value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_sint(impl_->doc, impl_->current, value);
+    yyjson_mut_arr_add_sint(impl_->doc.get(), impl_->current.get(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(uint64_t value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_uint(impl_->doc, impl_->current, value);
+    yyjson_mut_arr_add_uint(impl_->doc.get(), impl_->current.get(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(double value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_real(impl_->doc, impl_->current, value);
+    yyjson_mut_arr_add_real(impl_->doc.get(), impl_->current.get(), value);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add(std::nullptr_t) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_null(impl_->doc, impl_->current);
+    yyjson_mut_arr_add_null(impl_->doc.get(), impl_->current.get());
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add_object(std::function<void(JsonBuilder&)> builder) {
   if (!impl_->is_object) {
-    yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc);
+    yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc.get());
     // Save current state
-    yyjson_mut_val* saved_current = impl_->current;
+    YyJsonMutValView saved_current = impl_->current;
     bool saved_is_object = impl_->is_object;
     // Temporarily switch to nested object
-    impl_->current = nested;
+    impl_->current = YyJsonMutValView(nested);
     impl_->is_object = true;
     builder(*this);
     // Restore state and add nested object to parent array
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_arr_add_val(impl_->current, nested);
+    yyjson_mut_arr_add_val(impl_->current.get(), nested);
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::add_array(std::function<void(JsonBuilder&)> builder) {
   if (!impl_->is_object) {
-    yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc);
+    yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc.get());
     // Save current state
-    yyjson_mut_val* saved_current = impl_->current;
+    YyJsonMutValView saved_current = impl_->current;
     bool saved_is_object = impl_->is_object;
     // Temporarily switch to nested array
-    impl_->current = nested;
+    impl_->current = YyJsonMutValView(nested);
     impl_->is_object = false;
     builder(*this);
     // Restore state and add nested array to parent array
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_arr_add_val(impl_->current, nested);
+    yyjson_mut_arr_add_val(impl_->current.get(), nested);
   }
   return *this;
 }
 
 std::string JsonBuilder::build(bool pretty) const {
-  if (impl_->doc == nullptr) {
+  if (!impl_->doc) {
     return "";
   }
-  if (impl_->current == nullptr) {
+  if (!impl_->current) {
     return "";
   }
   // Set the current value as the document root before writing
-  yyjson_mut_doc_set_root(impl_->doc, impl_->current);
+  yyjson_mut_doc_set_root(impl_->doc.get(), impl_->current.get());
   size_t len = 0;
   yyjson_write_flag flags = pretty ? YYJSON_WRITE_PRETTY : 0;
   yyjson_write_err err;
-  char* json = yyjson_mut_write_opts(impl_->doc, flags, nullptr, &len, &err);
+  char* json = yyjson_mut_write_opts(impl_->doc.get(), flags, nullptr, &len, &err);
   if (json == nullptr) {
     return "";
   }

@@ -17,21 +17,19 @@
 #include "veloz/core/json.h"
 
 #include <atomic>
-#include <filesystem>
-#include <functional> // std::function used for ConfigValidator, ConfigChangeCallback, HotReloadCallback
+#include <filesystem>  // std::filesystem::path for file paths
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/string.h>
+#include <kj/vector.h>
 #include <memory>   // std::unique_ptr used for polymorphic ownership (ConfigItemBase)
-#include <mutex>    // std::mutex used for condition_variable compatibility
-#include <optional> // std::optional used for nullable config values
-#include <shared_mutex>
+#include <mutex>    // std::mutex kept for simple synchronization (not guarding specific values)
 #include <stdexcept>
-#include <string> // std::string used for std::unordered_map key compatibility
-#include <unordered_map>
+#include <string>
 #include <variant>
-#include <vector> // std::vector used for validation_errors() return type
+#include <vector> // std::vector kept for ConfigValue and external API compatibility
 
 namespace veloz::core {
 
@@ -73,7 +71,7 @@ using ConfigValue =
  *
  * Used to validate configuration values before they are set.
  */
-template <typename T> using ConfigValidator = std::function<bool(const T&)>;
+template <typename T> using ConfigValidator = kj::Function<bool(const T&)>;
 
 /**
  * @brief Change callback function signature
@@ -81,7 +79,7 @@ template <typename T> using ConfigValidator = std::function<bool(const T&)>;
  * Called when a configuration value changes.
  */
 template <typename T>
-using ConfigChangeCallback = std::function<void(const T& old_value, const T& new_value)>;
+using ConfigChangeCallback = kj::Function<void(const T& old_value, const T& new_value)>;
 
 /**
  * @brief Base configuration item interface
@@ -153,6 +151,8 @@ public:
  */
 template <typename T> class ConfigItem : public ConfigItemBase {
 public:
+  ~ConfigItem() noexcept override = default;
+
   /**
    * @brief Builder for ConfigItem
    */
@@ -182,7 +182,7 @@ public:
      * @brief Set a validator function
      */
     Builder& validator(ConfigValidator<T> validator) {
-      validator_ = kj::mv(validator);
+      validator_ = kj::Maybe<ConfigValidator<T>>(kj::mv(validator));
       return *this;
     }
 
@@ -190,12 +190,14 @@ public:
      * @brief Add a change callback
      */
     Builder& on_change(ConfigChangeCallback<T> callback) {
-      on_change_callbacks_.push_back(kj::mv(callback));
+      on_change_callbacks_.add(kj::mv(callback));
       return *this;
     }
 
     /**
      * @brief Build the ConfigItem
+     * Note: Uses std::make_unique because ConfigItemBase requires std::unique_ptr for
+     * polymorphic ownership (kj::Own does not support release() for this pattern)
      */
     std::unique_ptr<ConfigItem<T>> build() {
       auto item = std::make_unique<ConfigItem<T>>(kj::mv(key_), kj::mv(description_), required_,
@@ -218,8 +220,8 @@ public:
     T default_{};
     bool has_default_{false};
     bool required_{false};
-    ConfigValidator<T> validator_;
-    std::vector<ConfigChangeCallback<T>> on_change_callbacks_;
+    kj::Maybe<ConfigValidator<T>> validator_;
+    kj::Vector<ConfigChangeCallback<T>> on_change_callbacks_;
   };
 
   /**
@@ -251,11 +253,11 @@ public:
 
   /**
    * @brief Get the current value
-   * @return Optional value, nullopt if not set
+   * @return kj::Maybe value, kj::none if not set
    */
-  [[nodiscard]] std::optional<T> get() const {
+  [[nodiscard]] kj::Maybe<T> get() const {
     std::lock_guard<std::mutex> lock(mu_);
-    return is_set_ ? std::optional<T>(value_) : std::nullopt;
+    return is_set_ ? kj::Maybe<T>(value_) : kj::none;
   }
 
   /**
@@ -281,9 +283,9 @@ public:
   /**
    * @brief Get the default value
    */
-  [[nodiscard]] std::optional<T> default_value() const {
+  [[nodiscard]] kj::Maybe<T> default_value() const {
     std::lock_guard<std::mutex> lock(mu_);
-    return has_default_ ? std::optional<T>(default_value_) : std::nullopt;
+    return has_default_ ? kj::Maybe<T>(default_value_) : kj::none;
   }
 
   /**
@@ -411,7 +413,7 @@ public:
    */
   void add_callback(ConfigChangeCallback<T> callback) {
     std::scoped_lock lock(mu_);
-    on_change_callbacks_.push_back(kj::mv(callback));
+    on_change_callbacks_.add(kj::mv(callback));
   }
 
   /**
@@ -475,8 +477,10 @@ public:
 
 private:
   template <typename U> bool set_locked(U&& value) {
-    if (validator_ && !validator_(value)) {
-      return false;
+    KJ_IF_SOME (v, validator_) {
+      if (!v(value)) {
+        return false;
+      }
     }
 
     T old_value = is_set_ ? value_ : T{};
@@ -486,7 +490,7 @@ private:
 
     // Notify callbacks if value changed or was previously unset
     if (!was_set || old_value != value_) {
-      for (const auto& callback : on_change_callbacks_) {
+      for (auto& callback : on_change_callbacks_) {
         callback(old_value, value_);
       }
     }
@@ -527,9 +531,9 @@ private:
   bool required_;
   bool has_default_;
   std::atomic<bool> is_set_{false};
-  ConfigValidator<T> validator_;
-  std::vector<ConfigChangeCallback<T>> on_change_callbacks_;
-  mutable std::mutex mu_;
+  kj::Maybe<ConfigValidator<T>> validator_;
+  kj::Vector<ConfigChangeCallback<T>> on_change_callbacks_;
+  mutable std::mutex mu_;  // std::mutex for compatibility with std::scoped_lock
 };
 
 /**
@@ -598,8 +602,11 @@ public:
    */
   void add_item(std::unique_ptr<ConfigItemBase> item) {
     std::scoped_lock lock(mu_);
-    std::string key_str = std::string(item->key());
-    items_[key_str] = kj::mv(item);
+    auto key_view = item->key();
+    kj::String key_str = kj::str(kj::StringPtr(key_view.data(), key_view.size()));
+    items_.upsert(kj::mv(key_str), kj::mv(item), [](auto& existing, auto&& newVal) {
+      existing = kj::mv(newVal);
+    });
   }
 
   /**
@@ -608,7 +615,10 @@ public:
    */
   void add_group(std::unique_ptr<ConfigGroup> group) {
     std::scoped_lock lock(mu_);
-    groups_[group->name_] = kj::mv(group);
+    kj::String name_str = kj::str(group->name_.c_str());
+    groups_.upsert(kj::mv(name_str), kj::mv(group), [](auto& existing, auto&& newVal) {
+      existing = kj::mv(newVal);
+    });
   }
 
   /**
@@ -618,16 +628,12 @@ public:
    */
   template <typename T> [[nodiscard]] ConfigItem<T>* get_item(std::string_view key) {
     std::scoped_lock lock(mu_);
-    auto it = items_.find(std::string(key));
-    if (it == items_.end()) {
-      return nullptr;
+    KJ_IF_SOME(item, items_.find(kj::StringPtr(key.data(), key.size()))) {
+      // Check type using type traits
+      if (item->type() == ConfigTypeTraits<T>::type) {
+        return static_cast<ConfigItem<T>*>(item.get());
+      }
     }
-
-    // Check type using type traits
-    if (it->second->type() == ConfigTypeTraits<T>::type) {
-      return static_cast<ConfigItem<T>*>(it->second.get());
-    }
-
     return nullptr;
   }
 
@@ -636,8 +642,10 @@ public:
    */
   [[nodiscard]] ConfigGroup* get_group(std::string_view name) {
     std::scoped_lock lock(mu_);
-    auto it = groups_.find(std::string(name));
-    return it != groups_.end() ? it->second.get() : nullptr;
+    KJ_IF_SOME(group, groups_.find(kj::StringPtr(name.data(), name.size()))) {
+      return group.get();
+    }
+    return nullptr;
   }
 
   /**
@@ -647,8 +655,8 @@ public:
     std::scoped_lock lock(mu_);
     std::vector<ConfigItemBase*> result;
     result.reserve(items_.size());
-    for (auto& [key, item] : items_) {
-      result.push_back(item.get());
+    for (const auto& entry : items_) {
+      result.push_back(entry.value.get());
     }
     return result;
   }
@@ -660,8 +668,8 @@ public:
     std::scoped_lock lock(mu_);
     std::vector<ConfigGroup*> result;
     result.reserve(groups_.size());
-    for (auto& [name, group] : groups_) {
-      result.push_back(group.get());
+    for (const auto& entry : groups_) {
+      result.push_back(entry.value.get());
     }
     return result;
   }
@@ -672,8 +680,8 @@ public:
    */
   [[nodiscard]] bool validate() const {
     std::scoped_lock lock(mu_);
-    for (const auto& [key, item] : items_) {
-      if (item->is_required() && !item->is_set()) {
+    for (const auto& entry : items_) {
+      if (entry.value->is_required() && !entry.value->is_set()) {
         return false;
       }
     }
@@ -686,9 +694,9 @@ public:
   [[nodiscard]] std::vector<std::string> validation_errors() const {
     std::scoped_lock lock(mu_);
     std::vector<std::string> errors;
-    for (const auto& [key, item] : items_) {
-      if (item->is_required() && !item->is_set()) {
-        errors.push_back("Required config item '" + std::string(item->key()) + "' is not set");
+    for (const auto& entry : items_) {
+      if (entry.value->is_required() && !entry.value->is_set()) {
+        errors.push_back("Required config item '" + std::string(entry.value->key()) + "' is not set");
       }
     }
     return errors;
@@ -704,15 +712,15 @@ public:
 private:
   std::string name_;
   std::string description_;
-  std::unordered_map<std::string, std::unique_ptr<ConfigItemBase>> items_;
-  std::unordered_map<std::string, std::unique_ptr<ConfigGroup>> groups_;
-  mutable std::mutex mu_;
+  kj::HashMap<kj::String, std::unique_ptr<ConfigItemBase>> items_;
+  kj::HashMap<kj::String, std::unique_ptr<ConfigGroup>> groups_;
+  mutable std::mutex mu_;  // std::mutex for compatibility with std::scoped_lock
 };
 
 /**
  * @brief Hot reload callback type
  */
-using HotReloadCallback = std::function<void()>;
+using HotReloadCallback = kj::Function<void()>;
 
 /**
  * @brief Configuration manager
@@ -723,6 +731,7 @@ using HotReloadCallback = std::function<void()>;
 class ConfigManager final {
 public:
   explicit ConfigManager(std::string name = "default") : name_(kj::mv(name)) {
+    // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
     root_group_ = std::make_unique<ConfigGroup>("root", "Root configuration group");
   }
 
@@ -839,7 +848,7 @@ private:
   std::unique_ptr<ConfigGroup> root_group_;
   std::filesystem::path config_file_;
   std::atomic<bool> hot_reload_enabled_{false};
-  std::vector<HotReloadCallback> hot_reload_callbacks_;
+  kj::Vector<HotReloadCallback> hot_reload_callbacks_;
   mutable std::mutex mu_;
 };
 

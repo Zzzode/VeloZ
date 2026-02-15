@@ -23,9 +23,21 @@ KJ_TEST("JSON: Parse simple object") {
   KJ_EXPECT(root.is_valid());
   KJ_EXPECT(root.is_object());
 
-  KJ_EXPECT(root.get("name").value().get_string() == "test");
-  KJ_EXPECT(root.get("value").value().get_int() == 42);
-  KJ_EXPECT(root.get("flag").value().get_bool());
+  KJ_IF_SOME(name, root.get("name")) {
+    KJ_EXPECT(name.get_string() == "test");
+  } else {
+    KJ_FAIL_EXPECT("name not found");
+  }
+  KJ_IF_SOME(value, root.get("value")) {
+    KJ_EXPECT(value.get_int() == 42);
+  } else {
+    KJ_FAIL_EXPECT("value not found");
+  }
+  KJ_IF_SOME(flag, root.get("flag")) {
+    KJ_EXPECT(flag.get_bool());
+  } else {
+    KJ_FAIL_EXPECT("flag not found");
+  }
 }
 
 // Test JSON array parsing
@@ -56,7 +68,11 @@ KJ_TEST("JSON: Parse nested object") {
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  KJ_EXPECT(root.get("user").value().is_object());
+  KJ_IF_SOME(user, root.get("user")) {
+    KJ_EXPECT(user.is_object());
+  } else {
+    KJ_FAIL_EXPECT("user not found");
+  }
   KJ_EXPECT(root["user"]["name"].get_string() == "Alice");
   KJ_EXPECT(root["user"]["age"].get_int() == 30);
   KJ_EXPECT(root["user"]["address"]["city"].get_string() == "NYC");
@@ -269,10 +285,16 @@ KJ_TEST("JSON: Value equality") {
   auto val1_opt = root.get("value");
   auto val2_opt = root.get("value");
 
-  KJ_EXPECT(val1_opt.has_value());
-  KJ_EXPECT(val2_opt.has_value());
-  KJ_EXPECT(val1_opt->get_int() == 42);
-  KJ_EXPECT(val2_opt->get_int() == 42);
+  KJ_IF_SOME(val1, val1_opt) {
+    KJ_EXPECT(val1.get_int() == 42);
+  } else {
+    KJ_FAIL_EXPECT("val1 not found");
+  }
+  KJ_IF_SOME(val2, val2_opt) {
+    KJ_EXPECT(val2.get_int() == 42);
+  } else {
+    KJ_FAIL_EXPECT("val2 not found");
+  }
 }
 
 // Test JSON empty handling
