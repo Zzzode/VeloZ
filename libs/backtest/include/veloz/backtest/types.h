@@ -1,11 +1,12 @@
 #pragma once
 
 #include <cstdint>
+#include <map>    // std::map - external API compatibility with strategy parameters
+#include <string> // std::string - external API compatibility with strategy parameters
+
 #include <kj/common.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <map>
-#include <string>
 
 namespace veloz::backtest {
 

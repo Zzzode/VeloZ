@@ -1,6 +1,7 @@
 #include "veloz/backtest/analyzer.h"
 
 #include <gtest/gtest.h>
+#include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/vector.h>
 
@@ -10,16 +11,16 @@ public:
 
 protected:
   void SetUp() override {
-    analyzer_ = std::make_unique<veloz::backtest::BacktestAnalyzer>();
+    analyzer_ = kj::heap<veloz::backtest::BacktestAnalyzer>();
     trades_ = create_sample_trades();
   }
 
   void TearDown() override {
-    analyzer_.reset();
+    analyzer_ = nullptr;
     trades_ = kj::Vector<veloz::backtest::TradeRecord>();
   }
 
-  std::unique_ptr<veloz::backtest::BacktestAnalyzer> analyzer_;
+  kj::Own<veloz::backtest::BacktestAnalyzer> analyzer_;
   kj::Vector<veloz::backtest::TradeRecord> trades_;
 
 protected:

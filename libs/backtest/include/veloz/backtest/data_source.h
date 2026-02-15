@@ -1,10 +1,11 @@
 #pragma once
 
+// KJ library includes
 #include <kj/common.h>
 #include <kj/memory.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <memory>
 
 // Include necessary headers
 #include "veloz/backtest/backtest_engine.h"
@@ -37,7 +38,7 @@ protected:
 class CSVDataSource : public BaseDataSource {
 public:
   CSVDataSource();
-  ~CSVDataSource() override;
+  ~CSVDataSource() noexcept override;
 
   kj::Vector<veloz::market::MarketEvent> get_data(kj::StringPtr symbol, std::int64_t start_time,
                                                   std::int64_t end_time, kj::StringPtr data_type,
@@ -57,7 +58,7 @@ private:
 class BinanceDataSource : public BaseDataSource {
 public:
   BinanceDataSource();
-  ~BinanceDataSource() override;
+  ~BinanceDataSource() noexcept override;
 
   kj::Vector<veloz::market::MarketEvent> get_data(kj::StringPtr symbol, std::int64_t start_time,
                                                   std::int64_t end_time, kj::StringPtr data_type,
@@ -93,8 +94,9 @@ private:
 // Data source factory
 class DataSourceFactory {
 public:
-  // std::shared_ptr used for external API compatibility with IDataSource interface
-  static std::shared_ptr<IDataSource> create_data_source(kj::StringPtr type);
+  // kj::Rc returned to match strategy module's factory pattern (kj::Rc<IStrategy>)
+  // and allow reference-counted ownership across multiple backtest engines and optimizers
+  static kj::Rc<IDataSource> create_data_source(kj::StringPtr type);
 };
 
 } // namespace veloz::backtest

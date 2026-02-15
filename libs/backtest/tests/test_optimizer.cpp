@@ -3,10 +3,14 @@
 #include "veloz/strategy/strategy.h"
 
 #include <gtest/gtest.h>
+#include <kj/map.h>
+#include <kj/refcount.h>
 
 // Mock data source that generates synthetic market data for testing
 class MockDataSource : public veloz::backtest::IDataSource {
 public:
+  ~MockDataSource() noexcept(false) override = default;
+
   bool connect() override {
     return true;
   }
@@ -15,8 +19,8 @@ public:
   }
 
   kj::Vector<veloz::market::MarketEvent> get_data(kj::StringPtr symbol, std::int64_t start_time,
-                                                   std::int64_t end_time, kj::StringPtr data_type,
-                                                   kj::StringPtr time_frame) override {
+                                                  std::int64_t end_time, kj::StringPtr data_type,
+                                                  kj::StringPtr time_frame) override {
     kj::Vector<veloz::market::MarketEvent> events;
 
     // Generate synthetic kline data
@@ -58,7 +62,8 @@ public:
 class TestStrategy : public veloz::strategy::IStrategy {
 public:
   TestStrategy()
-      : id_("test_strategy"), name_("TestStrategy"), type_(veloz::strategy::StrategyType::Custom) {}
+      : id_(kj::str("test_strategy")), name_(kj::str("TestStrategy")), type_(veloz::strategy::StrategyType::Custom) {}
+  ~TestStrategy() noexcept(false) override = default;
 
   kj::StringPtr get_id() const override {
     return id_;
@@ -103,16 +108,19 @@ public:
   void reset() override {}
 
 private:
-  std::string id_;
-  std::string name_;
+  kj::String id_;
+  kj::String name_;
   veloz::strategy::StrategyType type_;
 };
 
 class ParameterOptimizerTest : public ::testing::Test {
+public:
+  ~ParameterOptimizerTest() noexcept override = default;
+
 protected:
   void SetUp() override {
-    strategy_ = std::make_shared<TestStrategy>();
-    data_source_ = std::make_shared<MockDataSource>();
+    strategy_ = kj::rc<TestStrategy>();
+    data_source_ = kj::rc<MockDataSource>();
 
     config_.strategy_name = kj::str("TestStrategy");
     config_.symbol = kj::str("BTCUSDT");
@@ -125,22 +133,24 @@ protected:
     config_.data_type = kj::str("kline");
     config_.time_frame = kj::str("1h");
 
-    parameter_ranges_ = {{"lookback_period", {10, 30}},
-                         {"stop_loss", {0.01, 0.05}},
-                         {"take_profit", {0.02, 0.10}},
-                         {"position_size", {0.05, 0.20}}};
+    // kj::TreeMap uses insert() instead of initializer list
+    parameter_ranges_.insert(kj::str("lookback_period"), {10, 30});
+    parameter_ranges_.insert(kj::str("stop_loss"), {0.01, 0.05});
+    parameter_ranges_.insert(kj::str("take_profit"), {0.02, 0.10});
+    parameter_ranges_.insert(kj::str("position_size"), {0.05, 0.20});
   }
 
   void TearDown() override {
-    strategy_.reset();
-    data_source_.reset();
+    strategy_ = nullptr;
+    data_source_ = nullptr;
     parameter_ranges_.clear();
   }
 
-  std::shared_ptr<TestStrategy> strategy_;
-  std::shared_ptr<MockDataSource> data_source_;
+  kj::Rc<TestStrategy> strategy_;
+  kj::Rc<MockDataSource> data_source_;
   veloz::backtest::BacktestConfig config_;
-  std::map<std::string, std::pair<double, double>> parameter_ranges_;
+  // kj::TreeMap for ordered parameter ranges
+  kj::TreeMap<kj::String, std::pair<double, double>> parameter_ranges_;
 };
 
 TEST_F(ParameterOptimizerTest, GridSearchInitialize) {
@@ -173,28 +183,28 @@ TEST_F(ParameterOptimizerTest, GridSearchOptimize) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
   optimizer.set_parameter_ranges(parameter_ranges_);
-  optimizer.set_data_source(data_source_);
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  optimizer.set_data_source(data_source_.addRef());
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 }
 
 TEST_F(ParameterOptimizerTest, GridSearchGetResults) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
   optimizer.set_parameter_ranges(parameter_ranges_);
-  optimizer.set_data_source(data_source_);
-  optimizer.optimize(strategy_);
+  optimizer.set_data_source(data_source_.addRef());
+  optimizer.optimize(strategy_.addRef());
   auto results = optimizer.get_results();
-  EXPECT_FALSE(results.empty());
+  EXPECT_GT(results.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GridSearchGetBestParameters) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
   optimizer.set_parameter_ranges(parameter_ranges_);
-  optimizer.set_data_source(data_source_);
-  optimizer.optimize(strategy_);
-  auto best_params = optimizer.get_best_parameters();
-  EXPECT_FALSE(best_params.empty());
+  optimizer.set_data_source(data_source_.addRef());
+  optimizer.optimize(strategy_.addRef());
+  const auto& best_params = optimizer.get_best_parameters();
+  EXPECT_GT(best_params.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GeneticAlgorithmInitialize) {
@@ -206,44 +216,44 @@ TEST_F(ParameterOptimizerTest, GeneticAlgorithmOptimize) {
   veloz::backtest::GeneticAlgorithmOptimizer optimizer;
   optimizer.initialize(config_);
   optimizer.set_parameter_ranges(parameter_ranges_);
-  optimizer.set_data_source(data_source_);
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  optimizer.set_data_source(data_source_.addRef());
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 }
 
 TEST_F(ParameterOptimizerTest, GeneticAlgorithmGetResults) {
   veloz::backtest::GeneticAlgorithmOptimizer optimizer;
   optimizer.initialize(config_);
   optimizer.set_parameter_ranges(parameter_ranges_);
-  optimizer.set_data_source(data_source_);
-  optimizer.optimize(strategy_);
+  optimizer.set_data_source(data_source_.addRef());
+  optimizer.optimize(strategy_.addRef());
   auto results = optimizer.get_results();
-  EXPECT_FALSE(results.empty());
+  EXPECT_GT(results.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GeneticAlgorithmGetBestParameters) {
   veloz::backtest::GeneticAlgorithmOptimizer optimizer;
   optimizer.initialize(config_);
   optimizer.set_parameter_ranges(parameter_ranges_);
-  optimizer.set_data_source(data_source_);
-  optimizer.optimize(strategy_);
-  auto best_params = optimizer.get_best_parameters();
-  EXPECT_FALSE(best_params.empty());
+  optimizer.set_data_source(data_source_.addRef());
+  optimizer.optimize(strategy_.addRef());
+  const auto& best_params = optimizer.get_best_parameters();
+  EXPECT_GT(best_params.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GridSearchWithSingleParameter) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  // Set up single parameter range
-  std::map<std::string, std::pair<double, double>> single_range;
-  single_range["lookback_period"] = {5.0, 15.0};
+  // Set up single parameter range using kj::TreeMap
+  kj::TreeMap<kj::String, std::pair<double, double>> single_range;
+  single_range.insert(kj::str("lookback_period"), {5.0, 15.0});
   optimizer.set_parameter_ranges(single_range);
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 
   auto results = optimizer.get_results();
-  EXPECT_FALSE(results.empty());
+  EXPECT_GT(results.size(), 0);
 
   // Should have multiple combinations (10 steps by default)
   EXPECT_GT(results.size(), 1);
@@ -253,17 +263,17 @@ TEST_F(ParameterOptimizerTest, GridSearchWithMultipleParameters) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  // Set up multiple parameter ranges
-  std::map<std::string, std::pair<double, double>> multi_range;
-  multi_range["lookback_period"] = {10.0, 20.0};
-  multi_range["stop_loss"] = {0.01, 0.03};
+  // Set up multiple parameter ranges using kj::TreeMap
+  kj::TreeMap<kj::String, std::pair<double, double>> multi_range;
+  multi_range.insert(kj::str("lookback_period"), {10.0, 20.0});
+  multi_range.insert(kj::str("stop_loss"), {0.01, 0.03});
   optimizer.set_parameter_ranges(multi_range);
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 
   auto results = optimizer.get_results();
-  EXPECT_FALSE(results.empty());
+  EXPECT_GT(results.size(), 0);
 
   // Should have 10*10 = 100 combinations
   EXPECT_LE(results.size(), 100);
@@ -273,17 +283,17 @@ TEST_F(ParameterOptimizerTest, GridSearchMaxIterationsLimit) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  // Set up parameter range that would produce many combinations
-  std::map<std::string, std::pair<double, double>> wide_range;
-  wide_range["param1"] = {1.0, 100.0};
-  wide_range["param2"] = {1.0, 100.0};
+  // Set up parameter range that would produce many combinations using kj::TreeMap
+  kj::TreeMap<kj::String, std::pair<double, double>> wide_range;
+  wide_range.insert(kj::str("param1"), {1.0, 100.0});
+  wide_range.insert(kj::str("param2"), {1.0, 100.0});
   optimizer.set_parameter_ranges(wide_range);
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
   // Limit iterations
   optimizer.set_max_iterations(50);
 
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 
   auto results = optimizer.get_results();
   // Should be limited to 50 iterations
@@ -294,66 +304,70 @@ TEST_F(ParameterOptimizerTest, GridSearchOptimizationTargetSharpe) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  std::map<std::string, std::pair<double, double>> ranges;
-  ranges["lookback_period"] = {10.0, 30.0};
+  // kj::TreeMap for parameter ranges
+  kj::TreeMap<kj::String, std::pair<double, double>> ranges;
+  ranges.insert(kj::str("lookback_period"), {10.0, 30.0});
   optimizer.set_parameter_ranges(ranges);
   optimizer.set_optimization_target("sharpe");
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 
-  auto best_params = optimizer.get_best_parameters();
-  EXPECT_FALSE(best_params.empty());
+  const auto& best_params = optimizer.get_best_parameters();
+  EXPECT_GT(best_params.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GridSearchOptimizationTargetReturn) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  std::map<std::string, std::pair<double, double>> ranges;
-  ranges["lookback_period"] = {10.0, 30.0};
+  // kj::TreeMap for parameter ranges
+  kj::TreeMap<kj::String, std::pair<double, double>> ranges;
+  ranges.insert(kj::str("lookback_period"), {10.0, 30.0});
   optimizer.set_parameter_ranges(ranges);
   optimizer.set_optimization_target("return");
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 
-  auto best_params = optimizer.get_best_parameters();
-  EXPECT_FALSE(best_params.empty());
+  const auto& best_params = optimizer.get_best_parameters();
+  EXPECT_GT(best_params.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GridSearchOptimizationTargetWinRate) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  std::map<std::string, std::pair<double, double>> ranges;
-  ranges["lookback_period"] = {10.0, 30.0};
+  // kj::TreeMap for parameter ranges
+  kj::TreeMap<kj::String, std::pair<double, double>> ranges;
+  ranges.insert(kj::str("lookback_period"), {10.0, 30.0});
   optimizer.set_parameter_ranges(ranges);
   optimizer.set_optimization_target("win_rate");
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
 
-  auto best_params = optimizer.get_best_parameters();
-  EXPECT_FALSE(best_params.empty());
+  const auto& best_params = optimizer.get_best_parameters();
+  EXPECT_GT(best_params.size(), 0);
 }
 
 TEST_F(ParameterOptimizerTest, GridSearchClearsPreviousResults) {
   veloz::backtest::GridSearchOptimizer optimizer;
   optimizer.initialize(config_);
 
-  std::map<std::string, std::pair<double, double>> ranges;
-  ranges["lookback_period"] = {10.0, 20.0};
+  // kj::TreeMap for parameter ranges
+  kj::TreeMap<kj::String, std::pair<double, double>> ranges;
+  ranges.insert(kj::str("lookback_period"), {10.0, 20.0});
   optimizer.set_parameter_ranges(ranges);
-  optimizer.set_data_source(data_source_);
+  optimizer.set_data_source(data_source_.addRef());
 
   // Run first optimization
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
   auto first_results = optimizer.get_results();
   size_t first_count = first_results.size();
 
   // Run second optimization
-  EXPECT_TRUE(optimizer.optimize(strategy_));
+  EXPECT_TRUE(optimizer.optimize(strategy_.addRef()));
   auto second_results = optimizer.get_results();
   size_t second_count = second_results.size();
 

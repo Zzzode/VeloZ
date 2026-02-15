@@ -1,6 +1,9 @@
 #include "veloz/backtest/analyzer.h"
 
-#include <cmath>
+// std library includes with justifications
+#include <cmath> // std::abs, std::sqrt - standard C++ math functions (no KJ equivalent)
+
+// KJ library includes
 #include <kj/common.h>
 #include <kj/memory.h>
 #include <kj/vector.h>

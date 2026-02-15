@@ -3,20 +3,23 @@
 #include "veloz/core/json.h"
 #include "veloz/core/logger.h"
 
-#include <algorithm>
-#include <chrono>
-#include <filesystem>
-#include <format>
-#include <fstream>
-#include <iostream>
+// std library includes with justifications
+#include <algorithm>  // std::transform, std::remove_if - standard algorithms (no KJ equivalent)
+#include <chrono>     // std::chrono - wall clock time (KJ time is async I/O only)
+#include <filesystem> // std::filesystem - file operations (no KJ equivalent)
+#include <format>     // std::format - C++20 formatting (no KJ equivalent)
+#include <fstream>    // std::ifstream, std::ofstream - file I/O (no KJ equivalent)
+#include <iostream>   // std::cerr - error output (no KJ equivalent)
+#include <mutex>      // std::mutex - rate limiting with static state (no KJ equivalent for static)
+#include <random>     // std::random_device, std::mt19937 - KJ has no RNG
+#include <sstream>    // std::ostringstream, std::istringstream - string parsing (no KJ equivalent)
+#include <thread>     // std::this_thread::sleep_for - thread sleep (no KJ equivalent)
+
+// KJ library includes
 #include <kj/common.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <mutex>
-#include <random>
-#include <sstream>
-#include <thread>
 
 #ifndef VELOZ_NO_CURL
 #include <curl/curl.h>
@@ -26,34 +29,81 @@ namespace {
 
 using namespace veloz::core;
 
+// RAII wrapper for CURL handle - ensures proper cleanup
+class CurlHandle {
+public:
+  CurlHandle() : handle_(curl_easy_init()) {
+    if (!handle_) {
+      std::cerr << "Failed to initialize CURL handle" << std::endl;
+    }
+  }
+
+  // Disable copy - CURL handles cannot be copied
+  CurlHandle(const CurlHandle&) = delete;
+  CurlHandle& operator=(const CurlHandle&) = delete;
+
+  // Enable move
+  CurlHandle(CurlHandle&& other) noexcept : handle_(other.handle_) {
+    other.handle_ = nullptr;
+  }
+
+  CurlHandle& operator=(CurlHandle&& other) noexcept {
+    if (this != &other) {
+      cleanup();
+      handle_ = other.handle_;
+      other.handle_ = nullptr;
+    }
+    return *this;
+  }
+
+  ~CurlHandle() {
+    cleanup();
+  }
+
+  CURL* get() const { return handle_; }
+  explicit operator bool() const { return handle_ != nullptr; }
+
+private:
+  void cleanup() {
+    if (handle_) {
+      curl_easy_cleanup(handle_);
+      handle_ = nullptr;
+    }
+  }
+
+  CURL* handle_;
+};
+
 // HTTP helper functions for Binance API
 #ifndef VELOZ_NO_CURL
-// Static helper for CURL write callback
+// Static helper for CURL write callback - uses kj::ArrayPtr<char> instead of void*/char*
 size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
-  ((std::string*)userp)->append((char*)contents, size * nmemb);
+  auto str_ptr = static_cast<std::string*>(userp);
+  auto data_ptr = kj::ArrayPtr<char>(static_cast<char*>(contents), size * nmemb);
+  str_ptr->append(data_ptr.begin(), data_ptr.end());
   return size * nmemb;
 }
 
 std::string http_get(kj::StringPtr url) {
-  CURL* curl = curl_easy_init();
+  CurlHandle curl;
   if (!curl) {
     return "";
   }
 
   std::string response_string;
 
-  curl_easy_setopt(curl, CURLOPT_URL, url.cStr());
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+  curl_easy_setopt(curl.get(), CURLOPT_URL, url.cStr());
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
+  curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response_string);
+  curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 30L);
 
-  CURLcode res = curl_easy_perform(curl);
+  CURLcode res = curl_easy_perform(curl.get());
   if (res != CURLE_OK) {
     std::cerr << "HTTP GET failed: " << curl_easy_strerror(res) << std::endl;
   }
 
-  curl_easy_cleanup(curl);
+  // RAII cleanup happens automatically via CurlHandle destructor
 
   return response_string;
 }
@@ -134,7 +184,7 @@ bool BaseDataSource::disconnect() {
 // CSVDataSource implementation
 CSVDataSource::CSVDataSource() : data_directory_(kj::str(".")) {}
 
-CSVDataSource::~CSVDataSource() {}
+CSVDataSource::~CSVDataSource() noexcept {}
 
 kj::Vector<veloz::market::MarketEvent>
 CSVDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::int64_t end_time,
@@ -271,7 +321,7 @@ CSVDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::int6
         // Create JSON payload for backward compatibility
         event.payload = kj::str(std::format(
             R"({{"type":"trade","symbol":"{}","timestamp":{},"price":{},"quantity":{},"side":"{}"}})",
-            tokens[1], timestamp_ms, trade_data.price, trade_data.qty, tokens[2]));
+            tokens[1], timestamp_ms, trade_data.price, trade_data.qty, tokens[2]).c_str());
 
         // Apply time filters
         if (start_time > 0 && event.ts_exchange_ns < start_time * 1'000'000) {
@@ -465,7 +515,7 @@ BinanceDataSource::BinanceDataSource()
 #endif
 }
 
-BinanceDataSource::~BinanceDataSource() {
+BinanceDataSource::~BinanceDataSource() noexcept {
 #ifndef VELOZ_NO_CURL
   curl_global_cleanup();
 #endif
@@ -1122,13 +1172,13 @@ void BinanceDataSource::set_api_secret(kj::StringPtr api_secret) {
 }
 
 // DataSourceFactory implementation
-std::shared_ptr<IDataSource> DataSourceFactory::create_data_source(kj::StringPtr type) {
+kj::Rc<IDataSource> DataSourceFactory::create_data_source(kj::StringPtr type) {
   veloz::core::Logger logger;
 
   if (type == "csv"_kj) {
-    return std::make_shared<CSVDataSource>();
+    return kj::rc<CSVDataSource>();
   } else if (type == "binance"_kj) {
-    return std::make_shared<BinanceDataSource>();
+    return kj::rc<BinanceDataSource>();
   }
 
   logger.error(std::format("Unknown data source type: {}", type.cStr()));

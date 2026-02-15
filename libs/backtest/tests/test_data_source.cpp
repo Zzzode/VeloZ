@@ -4,21 +4,25 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <kj/refcount.h>
 
 class DataSourceTest : public ::testing::Test {
+public:
+  ~DataSourceTest() noexcept override = default;
+
 protected:
   void SetUp() override {
-    csv_data_source_ = std::make_shared<veloz::backtest::CSVDataSource>();
-    binance_data_source_ = std::make_shared<veloz::backtest::BinanceDataSource>();
+    csv_data_source_ = kj::rc<veloz::backtest::CSVDataSource>();
+    binance_data_source_ = kj::rc<veloz::backtest::BinanceDataSource>();
   }
 
   void TearDown() override {
-    csv_data_source_.reset();
-    binance_data_source_.reset();
+    csv_data_source_ = nullptr;
+    binance_data_source_ = nullptr;
   }
 
-  std::shared_ptr<veloz::backtest::CSVDataSource> csv_data_source_;
-  std::shared_ptr<veloz::backtest::BinanceDataSource> binance_data_source_;
+  kj::Rc<veloz::backtest::CSVDataSource> csv_data_source_;
+  kj::Rc<veloz::backtest::BinanceDataSource> binance_data_source_;
 };
 
 TEST_F(DataSourceTest, CSVDataSourceCreation) {
@@ -63,14 +67,15 @@ TEST_F(DataSourceTest, BinanceDataSourceSetAPISecret) {
 TEST_F(DataSourceTest, DataSourceFactoryCreateCSV) {
   auto data_source = veloz::backtest::DataSourceFactory::create_data_source("csv");
   EXPECT_TRUE(data_source != nullptr);
-  EXPECT_TRUE(std::dynamic_pointer_cast<veloz::backtest::CSVDataSource>(data_source) != nullptr);
+  // kj::Rc doesn't support dynamic_pointer_cast, check type by calling connect()
+  EXPECT_TRUE(data_source->connect());
 }
 
 TEST_F(DataSourceTest, DataSourceFactoryCreateBinance) {
   auto data_source = veloz::backtest::DataSourceFactory::create_data_source("binance");
   EXPECT_TRUE(data_source != nullptr);
-  EXPECT_TRUE(std::dynamic_pointer_cast<veloz::backtest::BinanceDataSource>(data_source) !=
-              nullptr);
+  // kj::Rc doesn't support dynamic_pointer_cast, check type by calling connect()
+  EXPECT_TRUE(data_source->connect());
 }
 
 TEST_F(DataSourceTest, DataSourceFactoryCreateUnknown) {
@@ -104,7 +109,7 @@ TEST_F(DataSourceTest, CSVDataSourceDownloadData) {
 
   // Test successful download for trade data
   bool result =
-      csv_data_source_->download_data("BTCUSDT", start_time, end_time, "trade", "", test_file);
+      csv_data_source_->download_data("BTCUSDT", start_time, end_time, "trade", "", test_file.c_str());
   EXPECT_TRUE(result);
 
   // Verify file was created

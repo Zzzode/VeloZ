@@ -5,38 +5,42 @@
 #include "veloz/market/market_event.h"
 #include "veloz/oms/position.h"
 
-#include <cmath>
-#include <format>
+#include <cmath>   // std::abs, std::min - standard C++ math functions (no KJ equivalent)
+#include <format>  // std::format - C++20 formatting (no KJ equivalent)
 #include <kj/common.h>
 #include <kj/debug.h>
+#include <kj/hash.h>
+#include <kj/map.h>
 #include <kj/memory.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
-#include <unordered_map>
 
 namespace veloz::backtest {
 
 namespace {
 
 // Helper function to get current price from market event
+// Uses kj::OneOf API: .is<T>() and .get<T>() instead of std::holds_alternative/std::get
 kj::Maybe<double> get_price_from_event(const veloz::market::MarketEvent& event) {
   switch (event.type) {
   case veloz::market::MarketEventType::Trade: {
-    if (std::holds_alternative<veloz::market::TradeData>(event.data)) {
-      return std::get<veloz::market::TradeData>(event.data).price;
+    if (event.data.is<veloz::market::TradeData>()) {
+      return event.data.get<veloz::market::TradeData>().price;
     }
     break;
   }
   case veloz::market::MarketEventType::Kline: {
-    if (std::holds_alternative<veloz::market::KlineData>(event.data)) {
-      return std::get<veloz::market::KlineData>(event.data).close;
+    if (event.data.is<veloz::market::KlineData>()) {
+      return event.data.get<veloz::market::KlineData>().close;
     }
     break;
   }
   case veloz::market::MarketEventType::BookTop: {
-    if (std::holds_alternative<veloz::market::BookData>(event.data)) {
-      const auto& book = std::get<veloz::market::BookData>(event.data);
+    if (event.data.is<veloz::market::BookData>()) {
+      const auto& book = event.data.get<veloz::market::BookData>();
       // Return mid price (average of best bid and best ask)
-      if (!book.bids.empty() && !book.asks.empty()) {
+      // kj::Vector has no empty() method, use size() == 0
+      if (book.bids.size() > 0 && book.asks.size() > 0) {
         return (book.bids[0].price + book.asks[0].price) / 2.0;
       }
     }
@@ -45,7 +49,7 @@ kj::Maybe<double> get_price_from_event(const veloz::market::MarketEvent& event) 
   default:
     break;
   }
-  return kj::Maybe<double>();
+  return kj::none;
 }
 
 // Helper function to convert OrderSide to string
@@ -65,27 +69,33 @@ double calculate_fill_price(double base_price, veloz::exec::OrderSide side, doub
 
 } // anonymous namespace
 
+// Hash function for kj::String to use with kj::HashMap
+struct StringHash {
+  inline size_t operator()(const kj::String& s) const { return kj::hashCode(s.asPtr()); }
+};
+
 struct BacktestEngine::Impl {
   BacktestConfig config;
-  std::shared_ptr<veloz::strategy::IStrategy> strategy;
-  std::shared_ptr<IDataSource> data_source;
+  // kj::Rc for reference-counted strategy (matches strategy module's kj::Rc<IStrategy>)
+  kj::Rc<veloz::strategy::IStrategy> strategy;
+  // kj::Rc for reference-counted data source
+  kj::Rc<IDataSource> data_source;
   BacktestResult result;
   bool is_running;
   bool is_initialized;
   kj::Maybe<kj::Function<void(double)>> progress_callback;
-  std::shared_ptr<veloz::core::Logger> logger;
+  // kj::Own used for unique ownership of internal logger instance
+  kj::Own<veloz::core::Logger> logger;
 
-  // Order simulation state
-  std::unordered_map<std::string, veloz::oms::Position> positions;
+  // Order simulation state - using kj::HashMap with kj::String keys
+  kj::HashMap<kj::String, veloz::oms::Position> positions;
   double current_equity;
   double slippage_rate;
   double fee_rate;
 
   Impl()
       : is_running(false), is_initialized(false), current_equity(0.0), slippage_rate(0.001),
-        fee_rate(0.001) {
-    logger = std::make_shared<veloz::core::Logger>();
-  }
+        fee_rate(0.001), logger(kj::heap<veloz::core::Logger>()) {}
 };
 
 BacktestEngine::BacktestEngine() : impl_(kj::heap<Impl>()) {}
@@ -131,12 +141,12 @@ bool BacktestEngine::run() {
     return false;
   }
 
-  if (!impl_->strategy) {
+  if (impl_->strategy == nullptr) {
     impl_->logger->error(std::format("No strategy set"));
     return false;
   }
 
-  if (!impl_->data_source) {
+  if (impl_->data_source == nullptr) {
     impl_->logger->error(std::format("No data source set"));
     return false;
   }
@@ -164,9 +174,9 @@ bool BacktestEngine::run() {
     strategy_config.risk_per_trade = impl_->config.risk_per_trade;
     strategy_config.max_position_size = impl_->config.max_position_size;
     strategy_config.symbols.add(kj::str(impl_->config.symbol));
-    // Convert std::map<std::string, double> to std::map<kj::String, double>
+    // Convert std::map<std::string, double> to kj::TreeMap<kj::String, double>
     for (const auto& [key, value] : impl_->config.strategy_parameters) {
-      strategy_config.parameters[kj::str(key)] = value;
+      strategy_config.parameters.insert(kj::str(key.c_str()), value);
     }
 
     if (!impl_->strategy->initialize(strategy_config, *impl_->logger)) {
@@ -192,8 +202,7 @@ bool BacktestEngine::run() {
       auto signals = impl_->strategy->get_signals();
 
       // Get current price from market event for order simulation
-      KJ_IF_MAYBE (current_price_ptr, get_price_from_event(event)) {
-        double current_price = *current_price_ptr;
+      KJ_IF_SOME (current_price, get_price_from_event(event)) {
         // Process each signal (order request)
         for (const auto& signal : signals) {
           const std::string& symbol = signal.symbol.value;
@@ -204,11 +213,18 @@ bool BacktestEngine::run() {
             continue;
           }
 
-          // Get or create position for this symbol
-          if (impl_->positions.find(symbol) == impl_->positions.end()) {
-            impl_->positions[symbol] = veloz::oms::Position{veloz::common::SymbolId(symbol)};
+          // Get or create position for this symbol using kj::HashMap
+          kj::String symbol_key = kj::str(symbol.c_str());
+          veloz::oms::Position* position_ptr = nullptr;
+          KJ_IF_SOME(existing, impl_->positions.find(symbol_key)) {
+            position_ptr = &existing;
+          } else {
+            // insert() returns Entry& which has .key and .value members
+            auto& entry = impl_->positions.insert(kj::str(symbol_key),
+                veloz::oms::Position{veloz::common::SymbolId(symbol)});
+            position_ptr = &entry.value;
           }
-          auto& position = impl_->positions[symbol];
+          auto& position = *position_ptr;
 
           // Check position size constraints
           double new_size = position.size();
@@ -248,7 +264,7 @@ bool BacktestEngine::run() {
           // Create trade record
           TradeRecord trade_record;
           trade_record.timestamp = event.ts_exchange_ns / 1'000'000; // Convert to milliseconds
-          trade_record.symbol = kj::str(symbol);
+          trade_record.symbol = kj::str(symbol.c_str());
           trade_record.side = order_side_to_string(signal.side);
           trade_record.price = fill_price;
           trade_record.quantity = qty;
@@ -269,8 +285,8 @@ bool BacktestEngine::run() {
 
       // Update progress
       progress += progress_step;
-      KJ_IF_MAYBE (callback, impl_->progress_callback) {
-        (*callback)(std::min(progress, 1.0));
+      KJ_IF_SOME (callback, impl_->progress_callback) {
+        callback(std::min(progress, 1.0));
       }
     }
 
@@ -282,11 +298,11 @@ bool BacktestEngine::run() {
 
     // Calculate final equity by adding unrealized PnL from remaining positions
     double total_unrealized_pnl = 0.0;
-    for (const auto& [symbol, position] : impl_->positions) {
+    for (const auto& entry : impl_->positions) {
       // Use last known price from the last market event for unrealized PnL
       if (market_events.size() > 0) {
-        KJ_IF_MAYBE (last_price, get_price_from_event(market_events.back())) {
-          total_unrealized_pnl += position.unrealized_pnl(*last_price);
+        KJ_IF_SOME (last_price, get_price_from_event(market_events.back())) {
+          total_unrealized_pnl += entry.value.unrealized_pnl(last_price);
         }
       }
     }
@@ -312,7 +328,7 @@ bool BacktestEngine::run() {
     impl_->logger->error(std::format("Backtest failed: {}", e.what()));
     impl_->is_running = false;
 
-    if (impl_->data_source) {
+    if (impl_->data_source != nullptr) {
       impl_->data_source->disconnect();
     }
 
@@ -334,8 +350,8 @@ bool BacktestEngine::stop() {
 bool BacktestEngine::reset() {
   impl_->logger->info(std::format("Resetting backtest engine"));
   impl_->config = BacktestConfig();
-  impl_->strategy.reset();
-  impl_->data_source.reset();
+  impl_->strategy = nullptr;
+  impl_->data_source = nullptr;
   impl_->result = BacktestResult();
   impl_->is_running = false;
   impl_->is_initialized = false;
@@ -393,12 +409,12 @@ BacktestResult BacktestEngine::get_result() const {
   return result;
 }
 
-void BacktestEngine::set_strategy(const std::shared_ptr<veloz::strategy::IStrategy>& strategy) {
-  impl_->strategy = strategy;
+void BacktestEngine::set_strategy(kj::Rc<veloz::strategy::IStrategy> strategy) {
+  impl_->strategy = kj::mv(strategy);
 }
 
-void BacktestEngine::set_data_source(const std::shared_ptr<IDataSource>& data_source) {
-  impl_->data_source = data_source;
+void BacktestEngine::set_data_source(kj::Rc<IDataSource> data_source) {
+  impl_->data_source = kj::mv(data_source);
 }
 
 void BacktestEngine::on_progress(kj::Function<void(double progress)> callback) {

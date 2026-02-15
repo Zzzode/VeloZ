@@ -3,11 +3,14 @@
 #include "veloz/strategy/strategy.h"
 
 #include <gtest/gtest.h>
+#include <kj/memory.h>
+#include <kj/refcount.h>
 
 class TestStrategy : public veloz::strategy::IStrategy {
 public:
   TestStrategy()
-      : id_("test_strategy"), name_("TestStrategy"), type_(veloz::strategy::StrategyType::Custom) {}
+      : id_(kj::str("test_strategy")), name_(kj::str("TestStrategy")), type_(veloz::strategy::StrategyType::Custom) {}
+  ~TestStrategy() noexcept(false) override = default;
 
   kj::StringPtr get_id() const override {
     return id_;
@@ -52,16 +55,19 @@ public:
   void reset() override {}
 
 private:
-  std::string id_;
-  std::string name_;
+  kj::String id_;
+  kj::String name_;
   veloz::strategy::StrategyType type_;
 };
 
 class BacktestEngineTest : public ::testing::Test {
+public:
+  ~BacktestEngineTest() noexcept override = default;
+
 protected:
   void SetUp() override {
-    engine_ = std::make_unique<veloz::backtest::BacktestEngine>();
-    strategy_ = std::make_shared<TestStrategy>();
+    engine_ = kj::heap<veloz::backtest::BacktestEngine>();
+    strategy_ = kj::rc<TestStrategy>();
     data_source_ = veloz::backtest::DataSourceFactory::create_data_source("csv");
 
     config_.strategy_name = kj::str("TestStrategy");
@@ -77,14 +83,14 @@ protected:
   }
 
   void TearDown() override {
-    engine_.reset();
-    strategy_.reset();
-    data_source_.reset();
+    engine_ = nullptr;
+    strategy_ = nullptr;
+    data_source_ = nullptr;
   }
 
-  std::unique_ptr<veloz::backtest::BacktestEngine> engine_;
-  std::shared_ptr<TestStrategy> strategy_;
-  std::shared_ptr<veloz::backtest::IDataSource> data_source_;
+  kj::Own<veloz::backtest::BacktestEngine> engine_;
+  kj::Rc<TestStrategy> strategy_;
+  kj::Rc<veloz::backtest::IDataSource> data_source_;
   veloz::backtest::BacktestConfig config_;
 };
 
@@ -94,25 +100,25 @@ TEST_F(BacktestEngineTest, Initialize) {
 
 TEST_F(BacktestEngineTest, SetStrategy) {
   engine_->initialize(config_);
-  engine_->set_strategy(strategy_);
+  engine_->set_strategy(strategy_.addRef());
   EXPECT_TRUE(true); // Should not throw
 }
 
 TEST_F(BacktestEngineTest, SetDataSource) {
   engine_->initialize(config_);
-  engine_->set_data_source(data_source_);
+  engine_->set_data_source(data_source_.addRef());
   EXPECT_TRUE(true); // Should not throw
 }
 
 TEST_F(BacktestEngineTest, RunWithoutStrategy) {
   engine_->initialize(config_);
-  engine_->set_data_source(data_source_);
+  engine_->set_data_source(data_source_.addRef());
   EXPECT_FALSE(engine_->run());
 }
 
 TEST_F(BacktestEngineTest, RunWithoutDataSource) {
   engine_->initialize(config_);
-  engine_->set_strategy(strategy_);
+  engine_->set_strategy(strategy_.addRef());
   EXPECT_FALSE(engine_->run());
 }
 

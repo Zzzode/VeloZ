@@ -2,20 +2,22 @@
 
 #include "veloz/core/logger.h"
 
-#include <fstream>
+// std library includes with justifications
+#include <fstream>  // std::ofstream - file I/O (no KJ equivalent)
+#include <sstream>  // std::stringstream - string building (no KJ equivalent)
+
+// KJ library includes
 #include <kj/common.h>
 #include <kj/memory.h>
 #include <kj/string.h>
-#include <sstream>
 
 namespace veloz::backtest {
 
 struct BacktestReporter::Impl {
-  std::shared_ptr<veloz::core::Logger> logger;
+  // kj::Own used for unique ownership of internal logger instance
+  kj::Own<veloz::core::Logger> logger;
 
-  Impl() {
-    logger = std::make_shared<veloz::core::Logger>();
-  }
+  Impl() : logger(kj::heap<veloz::core::Logger>()) {}
 };
 
 BacktestReporter::BacktestReporter() : impl_(kj::heap<Impl>()) {}
@@ -842,7 +844,7 @@ kj::String BacktestReporter::generate_html_report(const BacktestResult& result) 
         </html>
     )";
 
-  return kj::str(html.str());
+  return kj::str(html.str().c_str());
 }
 
 kj::String BacktestReporter::generate_json_report(const BacktestResult& result) {
@@ -914,7 +916,7 @@ kj::String BacktestReporter::generate_json_report(const BacktestResult& result) 
         ]
     })";
 
-  return kj::str(json.str());
+  return kj::str(json.str().c_str());
 }
 
 } // namespace veloz::backtest

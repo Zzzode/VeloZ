@@ -18,10 +18,13 @@ target_include_directories(veloz_backtest
 target_compile_features(veloz_backtest PUBLIC cxx_std_23)
 
 # Dependencies
+# KJ library is used directly for kj::Vector, kj::HashMap, kj::Own, kj::Maybe etc.
 target_link_libraries(veloz_backtest
     PUBLIC
         veloz_strategy
         veloz_market
+        kj           # KJ core types (Vector, HashMap, Own, Maybe, String)
+        kj-async     # KJ async primitives (Promise, Timer)
     PRIVATE
         veloz_core
         veloz_oms

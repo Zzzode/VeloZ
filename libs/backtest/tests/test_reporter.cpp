@@ -1,6 +1,7 @@
 #include "veloz/backtest/reporter.h"
 
 #include <gtest/gtest.h>
+#include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/vector.h>
 #include <string>
@@ -16,15 +17,15 @@ public:
 
 protected:
   void SetUp() override {
-    reporter_ = std::make_unique<veloz::backtest::BacktestReporter>();
+    reporter_ = kj::heap<veloz::backtest::BacktestReporter>();
     result_ = create_sample_result();
   }
 
   void TearDown() override {
-    reporter_.reset();
+    reporter_ = nullptr;
   }
 
-  std::unique_ptr<veloz::backtest::BacktestReporter> reporter_;
+  kj::Own<veloz::backtest::BacktestReporter> reporter_;
   veloz::backtest::BacktestResult result_;
 
 protected:

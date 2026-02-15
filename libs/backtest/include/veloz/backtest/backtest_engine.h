@@ -4,12 +4,13 @@
 #include "veloz/market/market_event.h"
 #include "veloz/strategy/strategy.h"
 
+// KJ library includes
 #include <kj/common.h>
 #include <kj/function.h>
 #include <kj/memory.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <memory>
 
 namespace veloz::backtest {
 
@@ -17,10 +18,15 @@ namespace veloz::backtest {
 class IDataSource;
 class IBacktestEngine;
 
-// Data source interface
-class IDataSource {
+/**
+ * @brief Data source interface
+ *
+ * Inherits from kj::Refcounted to support kj::Rc<IDataSource> reference counting.
+ * Note: kj::Rc is single-threaded; use kj::Arc for thread-safe sharing.
+ */
+class IDataSource : public kj::Refcounted {
 public:
-  virtual ~IDataSource() = default;
+  ~IDataSource() noexcept(false) override = default;
 
   virtual bool connect() = 0;
   virtual bool disconnect() = 0;
@@ -45,10 +51,10 @@ public:
   virtual bool reset() = 0;
 
   virtual BacktestResult get_result() const = 0;
-  // std::shared_ptr used for external API compatibility with strategy interface
-  virtual void set_strategy(const std::shared_ptr<veloz::strategy::IStrategy>& strategy) = 0;
-  // std::shared_ptr used for external API compatibility with data source interface
-  virtual void set_data_source(const std::shared_ptr<IDataSource>& data_source) = 0;
+  // kj::Rc: matches strategy module's API (IStrategyFactory returns kj::Rc)
+  virtual void set_strategy(kj::Rc<veloz::strategy::IStrategy> strategy) = 0;
+  // kj::Rc: matches DataSourceFactory return type for reference-counted ownership
+  virtual void set_data_source(kj::Rc<IDataSource> data_source) = 0;
 
   virtual void on_progress(kj::Function<void(double progress)> callback) = 0;
 };
@@ -65,8 +71,8 @@ public:
   bool reset() override;
 
   BacktestResult get_result() const override;
-  void set_strategy(const std::shared_ptr<veloz::strategy::IStrategy>& strategy) override;
-  void set_data_source(const std::shared_ptr<IDataSource>& data_source) override;
+  void set_strategy(kj::Rc<veloz::strategy::IStrategy> strategy) override;
+  void set_data_source(kj::Rc<IDataSource> data_source) override;
 
   void on_progress(kj::Function<void(double progress)> callback) override;
 

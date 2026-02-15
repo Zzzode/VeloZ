@@ -3,55 +3,63 @@
 #include "veloz/backtest/backtest_engine.h"
 #include "veloz/core/logger.h"
 
-#include <algorithm>
-#include <cmath>
-#include <format>
-#include <functional>
-#include <iomanip>
+// std library includes with justifications
+#include <algorithm>  // std::sort, std::accumulate - standard algorithms (no KJ equivalent)
+#include <cmath>      // std::abs, std::sqrt, std::min, std::max - standard C++ math (no KJ equivalent)
+#include <format>     // std::format - C++20 formatting (no KJ equivalent)
+#include <functional> // std::function - for recursive lambda
+#include <iomanip>    // std::fixed, std::setprecision - formatting (no KJ equivalent)
+#include <limits>     // std::numeric_limits - numeric limits (no KJ equivalent)
+#include <numeric>    // std::accumulate - standard algorithm (no KJ equivalent)
+#include <random>     // std::random_device, std::mt19937 - KJ has no RNG
+#include <sstream>    // std::ostringstream - string building (no KJ equivalent)
+#include <vector>     // std::vector - used with std::sort (KJ Vector lacks iterator compatibility)
+
+// KJ library includes
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/map.h>
 #include <kj/memory.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <limits>
-#include <map>
-#include <numeric>
-#include <random>
-#include <sstream>
-#include <string>
-#include <vector>
 
 namespace veloz::backtest {
 
-// Helper function to format parameters for logging
-static kj::String format_parameters(const std::map<std::string, double>& params) {
+// Helper function to format parameters for logging (kj::TreeMap version)
+static kj::String format_parameters(const kj::TreeMap<kj::String, double>& params) {
   std::ostringstream oss;
   oss << "{";
   bool first = true;
-  for (const auto& [name, value] : params) {
+  // kj::TreeMap iteration uses entry with .key and .value
+  for (const auto& entry : params) {
     if (!first)
       oss << ", ";
-    oss << name << "=" << std::fixed << std::setprecision(4) << value;
+    oss << entry.key.cStr() << "=" << std::fixed << std::setprecision(4) << entry.value;
     first = false;
   }
   oss << "}";
-  return kj::str(oss.str());
+  return kj::str(oss.str().c_str());
 }
 
 // GridSearchOptimizer implementation
 struct GridSearchOptimizer::Impl {
   BacktestConfig config;
-  std::map<std::string, std::pair<double, double>> parameter_ranges;
+  // kj::TreeMap for ordered parameter ranges (min, max pairs)
+  kj::TreeMap<kj::String, std::pair<double, double>> parameter_ranges;
   kj::String optimization_target;
   int max_iterations;
   kj::Vector<BacktestResult> results;
-  std::map<std::string, double> best_parameters;
-  std::shared_ptr<veloz::core::Logger> logger;
-  std::shared_ptr<IDataSource> data_source;
+  // kj::TreeMap for ordered best parameters storage
+  kj::TreeMap<kj::String, double> best_parameters;
+  // kj::Own used for unique ownership of internal logger instance
+  kj::Own<veloz::core::Logger> logger;
+  // kj::Rc for reference-counted data source
+  kj::Rc<IDataSource> data_source;
 
-  Impl() : optimization_target(kj::str("sharpe")), max_iterations(100) {
-    logger = std::make_shared<veloz::core::Logger>();
-  }
+  Impl()
+      : optimization_target(kj::str("sharpe")), max_iterations(100),
+        logger(kj::heap<veloz::core::Logger>()) {}
 };
 
 GridSearchOptimizer::GridSearchOptimizer() : impl_(kj::heap<Impl>()) {}
@@ -76,8 +84,8 @@ bool GridSearchOptimizer::initialize(const BacktestConfig& config) {
   return true;
 }
 
-bool GridSearchOptimizer::optimize(const std::shared_ptr<veloz::strategy::IStrategy>& strategy) {
-  if (impl_->parameter_ranges.empty()) {
+bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) {
+  if (impl_->parameter_ranges.size() == 0) {
     impl_->logger->error(std::format("No parameter ranges defined"));
     return false;
   }
@@ -88,25 +96,27 @@ bool GridSearchOptimizer::optimize(const std::shared_ptr<veloz::strategy::IStrat
   impl_->best_parameters.clear();
 
   // Calculate total combinations (default step size of 0.01 or 1.0 for integers)
-  std::map<std::string, std::vector<double>> parameter_values;
+  // kj::TreeMap for parameter values storage
+  kj::TreeMap<kj::String, kj::Vector<double>> parameter_values;
 
-  for (const auto& [name, range] : impl_->parameter_ranges) {
-    auto [min_val, max_val] = range;
+  // kj::TreeMap iteration uses entry with .key and .value
+  for (const auto& entry : impl_->parameter_ranges) {
+    auto [min_val, max_val] = entry.value;
     double step = (max_val - min_val) / 10.0; // Default 10 steps
     if (step < 0.001)
       step = 0.001;
 
-    std::vector<double> values;
+    kj::Vector<double> values;
     for (double val = min_val; val <= max_val; val += step) {
-      values.push_back(val);
+      values.add(val);
     }
-    parameter_values[name] = values;
+    parameter_values.insert(kj::str(entry.key), kj::mv(values));
   }
 
   // Calculate total combinations
   size_t total_combinations = 1;
-  for (const auto& [name, values] : parameter_values) {
-    total_combinations *= values.size();
+  for (const auto& entry : parameter_values) {
+    total_combinations *= entry.value.size();
   }
 
   impl_->logger->info(std::format("Total parameter combinations to test: {}", total_combinations));
@@ -118,34 +128,41 @@ bool GridSearchOptimizer::optimize(const std::shared_ptr<veloz::strategy::IStrat
   }
 
   // Generate all parameter combinations using recursive iteration
-  std::vector<std::map<std::string, double>> all_combinations;
-  std::vector<std::string> param_names;
-  for (const auto& [name, _] : parameter_values) {
-    param_names.push_back(name);
+  // Using kj::TreeMap for parameter combinations
+  kj::Vector<kj::TreeMap<kj::String, double>> all_combinations;
+  kj::Vector<kj::String> param_names;
+  for (const auto& entry : parameter_values) {
+    param_names.add(kj::str(entry.key));
   }
 
-  std::function<void(size_t, std::map<std::string, double>)> generate_combinations;
-  generate_combinations = [&](size_t index, std::map<std::string, double> current) {
+  std::function<void(size_t, kj::TreeMap<kj::String, double>&)> generate_combinations;
+  generate_combinations = [&](size_t index, kj::TreeMap<kj::String, double>& current) {
     if (index >= param_names.size()) {
-      all_combinations.push_back(current);
+      // Deep copy current to all_combinations
+      kj::TreeMap<kj::String, double> copy;
+      for (const auto& e : current) {
+        copy.insert(kj::str(e.key), e.value);
+      }
+      all_combinations.add(kj::mv(copy));
       return;
     }
 
-    const std::string& param_name = param_names[index];
-    const auto& values = parameter_values[param_name];
+    kj::StringPtr param_name = param_names[index];
+    KJ_IF_SOME(values_ref, parameter_values.find(param_name)) {
+      for (size_t i = 0; i < values_ref.size(); ++i) {
+        double val = values_ref[i];
+        current.upsert(kj::str(param_name), val);
+        generate_combinations(index + 1, current);
 
-    for (double val : values) {
-      auto next_params = current;
-      next_params[param_name] = val;
-      generate_combinations(index + 1, next_params);
-
-      if (all_combinations.size() >= static_cast<size_t>(impl_->max_iterations)) {
-        return;
+        if (all_combinations.size() >= static_cast<size_t>(impl_->max_iterations)) {
+          return;
+        }
       }
     }
   };
 
-  generate_combinations(0, {});
+  kj::TreeMap<kj::String, double> initial_params;
+  generate_combinations(0, initial_params);
 
   impl_->logger->info(std::format("Generated {} parameter combinations", all_combinations.size()));
 
@@ -153,7 +170,8 @@ bool GridSearchOptimizer::optimize(const std::shared_ptr<veloz::strategy::IStrat
   BacktestEngine engine;
   int completed = 0;
 
-  for (const auto& parameters : all_combinations) {
+  for (size_t combo_idx = 0; combo_idx < all_combinations.size(); ++combo_idx) {
+    const auto& parameters = all_combinations[combo_idx];
     BacktestConfig test_config;
     test_config.strategy_name = kj::str(impl_->config.strategy_name);
     test_config.symbol = kj::str(impl_->config.symbol);
@@ -165,15 +183,18 @@ bool GridSearchOptimizer::optimize(const std::shared_ptr<veloz::strategy::IStrat
     test_config.data_source = kj::str(impl_->config.data_source);
     test_config.data_type = kj::str(impl_->config.data_type);
     test_config.time_frame = kj::str(impl_->config.time_frame);
-    test_config.strategy_parameters = parameters;
+    // Convert kj::TreeMap to std::map for BacktestConfig compatibility
+    for (const auto& entry : parameters) {
+      test_config.strategy_parameters[std::string(entry.key.cStr())] = entry.value;
+    }
 
     impl_->logger->info(
         std::format("Running backtest with parameters: {}", format_parameters(parameters).cStr()));
 
     if (engine.initialize(test_config)) {
-      engine.set_strategy(strategy);
-      if (impl_->data_source) {
-        engine.set_data_source(impl_->data_source);
+      engine.set_strategy(strategy.addRef());
+      if (impl_->data_source.get() != nullptr) {
+        engine.set_data_source(impl_->data_source.addRef());
       }
 
       if (engine.run()) {
@@ -219,7 +240,11 @@ bool GridSearchOptimizer::optimize(const std::shared_ptr<veloz::strategy::IStrat
       }
     }
 
-    impl_->best_parameters = all_combinations[best_index];
+    // Copy best parameters from all_combinations to impl_->best_parameters
+    impl_->best_parameters.clear();
+    for (const auto& entry : all_combinations[best_index]) {
+      impl_->best_parameters.insert(kj::str(entry.key), entry.value);
+    }
 
     impl_->logger->info(std::format("Best parameters found: {} with {}: {:.4f}",
                                     format_parameters(impl_->best_parameters).cStr(),
@@ -256,13 +281,17 @@ kj::Vector<BacktestResult> GridSearchOptimizer::get_results() const {
   return results;
 }
 
-std::map<std::string, double> GridSearchOptimizer::get_best_parameters() const {
+const kj::TreeMap<kj::String, double>& GridSearchOptimizer::get_best_parameters() const {
   return impl_->best_parameters;
 }
 
 void GridSearchOptimizer::set_parameter_ranges(
-    const std::map<std::string, std::pair<double, double>>& ranges) {
-  impl_->parameter_ranges = ranges;
+    const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) {
+  impl_->parameter_ranges.clear();
+  // Copy ranges to impl_->parameter_ranges
+  for (const auto& entry : ranges) {
+    impl_->parameter_ranges.insert(kj::str(entry.key), entry.value);
+  }
 }
 
 void GridSearchOptimizer::set_optimization_target(kj::StringPtr target) {
@@ -273,22 +302,27 @@ void GridSearchOptimizer::set_max_iterations(int iterations) {
   impl_->max_iterations = iterations;
 }
 
-void GridSearchOptimizer::set_data_source(const std::shared_ptr<IDataSource>& data_source) {
-  impl_->data_source = data_source;
+void GridSearchOptimizer::set_data_source(kj::Rc<IDataSource> data_source) {
+  impl_->data_source = kj::mv(data_source);
 }
 
 // GeneticAlgorithmOptimizer implementation
 
 // Individual in the population
 struct Individual {
-  std::map<std::string, double> parameters;
+  // kj::TreeMap for ordered parameter storage
+  kj::TreeMap<kj::String, double> parameters;
   double fitness;
   BacktestResult result;
 
   Individual() : fitness(-std::numeric_limits<double>::infinity()) {}
 
-  // Copy constructor - needed because BacktestResult contains kj::String
-  Individual(const Individual& other) : parameters(other.parameters), fitness(other.fitness) {
+  // Copy constructor - needed because BacktestResult and kj::TreeMap contain kj::String
+  Individual(const Individual& other) : fitness(other.fitness) {
+    // Deep copy parameters
+    for (const auto& entry : other.parameters) {
+      parameters.insert(kj::str(entry.key), entry.value);
+    }
     result.strategy_name = kj::str(other.result.strategy_name);
     result.symbol = kj::str(other.result.symbol);
     result.start_time = other.result.start_time;
@@ -310,7 +344,11 @@ struct Individual {
   // Copy assignment operator
   Individual& operator=(const Individual& other) {
     if (this != &other) {
-      parameters = other.parameters;
+      // Deep copy parameters
+      parameters.clear();
+      for (const auto& entry : other.parameters) {
+        parameters.insert(kj::str(entry.key), entry.value);
+      }
       fitness = other.fitness;
       result.strategy_name = kj::str(other.result.strategy_name);
       result.symbol = kj::str(other.result.symbol);
@@ -341,7 +379,8 @@ struct Individual {
 
 struct GeneticAlgorithmOptimizer::Impl {
   BacktestConfig config;
-  std::map<std::string, std::pair<double, double>> parameter_ranges;
+  // kj::TreeMap for ordered parameter ranges (min, max pairs)
+  kj::TreeMap<kj::String, std::pair<double, double>> parameter_ranges;
   kj::String optimization_target;
   int max_iterations;           // Number of generations
   int population_size;          // Size of population
@@ -353,9 +392,12 @@ struct GeneticAlgorithmOptimizer::Impl {
   int convergence_generations;  // Number of generations to check for convergence
 
   kj::Vector<BacktestResult> results;
-  std::map<std::string, double> best_parameters;
-  std::shared_ptr<veloz::core::Logger> logger;
-  std::shared_ptr<IDataSource> data_source;
+  // kj::TreeMap for ordered best parameters storage
+  kj::TreeMap<kj::String, double> best_parameters;
+  // kj::Own used for unique ownership of internal logger instance
+  kj::Own<veloz::core::Logger> logger;
+  // kj::Rc for reference-counted data source
+  kj::Rc<IDataSource> data_source;
 
   // Random number generation
   std::mt19937 rng;
@@ -363,8 +405,8 @@ struct GeneticAlgorithmOptimizer::Impl {
   Impl()
       : optimization_target(kj::str("sharpe")), max_iterations(50), population_size(20),
         mutation_rate(0.1), crossover_rate(0.8), elite_count(2), tournament_size(3),
-        convergence_threshold(0.001), convergence_generations(5) {
-    logger = std::make_shared<veloz::core::Logger>();
+        convergence_threshold(0.001), convergence_generations(5),
+        logger(kj::heap<veloz::core::Logger>()) {
     // Seed random number generator
     std::random_device rd;
     rng.seed(rd());
@@ -375,17 +417,18 @@ struct GeneticAlgorithmOptimizer::Impl {
     Individual ind;
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    for (const auto& [name, range] : parameter_ranges) {
-      double min_val = range.first;
-      double max_val = range.second;
-      ind.parameters[name] = min_val + dist(rng) * (max_val - min_val);
+    // kj::TreeMap iteration uses entry with .key and .value
+    for (const auto& entry : parameter_ranges) {
+      double min_val = entry.value.first;
+      double max_val = entry.value.second;
+      ind.parameters.insert(kj::str(entry.key), min_val + dist(rng) * (max_val - min_val));
     }
     return ind;
   }
 
   // Evaluate fitness of an individual using backtest
   double evaluate_fitness(Individual& ind, BacktestEngine& engine,
-                          const std::shared_ptr<veloz::strategy::IStrategy>& strategy) {
+                          kj::Rc<veloz::strategy::IStrategy>& strategy) {
     BacktestConfig test_config;
     test_config.strategy_name = kj::str(config.strategy_name);
     test_config.symbol = kj::str(config.symbol);
@@ -397,16 +440,19 @@ struct GeneticAlgorithmOptimizer::Impl {
     test_config.data_source = kj::str(config.data_source);
     test_config.data_type = kj::str(config.data_type);
     test_config.time_frame = kj::str(config.time_frame);
-    test_config.strategy_parameters = ind.parameters;
+    // Convert kj::TreeMap to std::map for BacktestConfig compatibility
+    for (const auto& entry : ind.parameters) {
+      test_config.strategy_parameters[std::string(entry.key.cStr())] = entry.value;
+    }
 
     if (!engine.initialize(test_config)) {
       ind.fitness = -std::numeric_limits<double>::infinity();
       return ind.fitness;
     }
 
-    engine.set_strategy(strategy);
-    if (data_source) {
-      engine.set_data_source(data_source);
+    engine.set_strategy(strategy.addRef());
+    if (data_source.get() != nullptr) {
+      engine.set_data_source(data_source.addRef());
     }
 
     if (!engine.run()) {
@@ -464,11 +510,17 @@ struct GeneticAlgorithmOptimizer::Impl {
     Individual child;
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    for (const auto& [name, range] : parameter_ranges) {
+    // kj::TreeMap iteration uses entry with .key and .value
+    for (const auto& entry : parameter_ranges) {
+      kj::StringPtr name = entry.key;
       if (dist(rng) < 0.5) {
-        child.parameters[name] = parent1.parameters.at(name);
+        KJ_IF_SOME(val, parent1.parameters.find(name)) {
+          child.parameters.insert(kj::str(name), val);
+        }
       } else {
-        child.parameters[name] = parent2.parameters.at(name);
+        KJ_IF_SOME(val, parent2.parameters.find(name)) {
+          child.parameters.insert(kj::str(name), val);
+        }
       }
     }
 
@@ -481,9 +533,17 @@ struct GeneticAlgorithmOptimizer::Impl {
     Individual child;
     std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-    for (const auto& [name, range] : parameter_ranges) {
-      double p1 = parent1.parameters.at(name);
-      double p2 = parent2.parameters.at(name);
+    // kj::TreeMap iteration uses entry with .key and .value
+    for (const auto& entry : parameter_ranges) {
+      kj::StringPtr name = entry.key;
+      const auto& range = entry.value;
+      double p1 = 0.0, p2 = 0.0;
+      KJ_IF_SOME(val1, parent1.parameters.find(name)) {
+        p1 = val1;
+      }
+      KJ_IF_SOME(val2, parent2.parameters.find(name)) {
+        p2 = val2;
+      }
       double min_p = std::min(p1, p2);
       double max_p = std::max(p1, p2);
       double d = max_p - min_p;
@@ -495,7 +555,7 @@ struct GeneticAlgorithmOptimizer::Impl {
       low = std::max(low, range.first);
       high = std::min(high, range.second);
 
-      child.parameters[name] = low + dist(rng) * (high - low);
+      child.parameters.insert(kj::str(name), low + dist(rng) * (high - low));
     }
 
     return child;
@@ -506,7 +566,10 @@ struct GeneticAlgorithmOptimizer::Impl {
     std::uniform_real_distribution<double> dist(0.0, 1.0);
     std::normal_distribution<double> gaussian(0.0, 0.1);
 
-    for (const auto& [name, range] : parameter_ranges) {
+    // kj::TreeMap iteration uses entry with .key and .value
+    for (const auto& entry : parameter_ranges) {
+      kj::StringPtr name = entry.key;
+      const auto& range = entry.value;
       if (dist(rng) < mutation_rate) {
         double min_val = range.first;
         double max_val = range.second;
@@ -514,10 +577,12 @@ struct GeneticAlgorithmOptimizer::Impl {
 
         // Gaussian mutation
         double delta = gaussian(rng) * range_size;
-        ind.parameters[name] += delta;
-
-        // Clamp to valid range
-        ind.parameters[name] = std::max(min_val, std::min(max_val, ind.parameters[name]));
+        KJ_IF_SOME(current_val, ind.parameters.find(name)) {
+          double new_val = current_val + delta;
+          // Clamp to valid range
+          new_val = std::max(min_val, std::min(max_val, new_val));
+          ind.parameters.upsert(kj::str(name), new_val);
+        }
       }
     }
   }
@@ -545,9 +610,8 @@ bool GeneticAlgorithmOptimizer::initialize(const BacktestConfig& config) {
   return true;
 }
 
-bool GeneticAlgorithmOptimizer::optimize(
-    const std::shared_ptr<veloz::strategy::IStrategy>& strategy) {
-  if (impl_->parameter_ranges.empty()) {
+bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) {
+  if (impl_->parameter_ranges.size() == 0) {
     impl_->logger->error(std::format("No parameter ranges defined"));
     return false;
   }
@@ -663,8 +727,11 @@ bool GeneticAlgorithmOptimizer::optimize(
     best_overall.result.strategy_name = kj::str(impl_->config.strategy_name);
   }
 
-  // Store best parameters and result
-  impl_->best_parameters = best_overall.parameters;
+  // Store best parameters and result - deep copy kj::TreeMap
+  impl_->best_parameters.clear();
+  for (const auto& entry : best_overall.parameters) {
+    impl_->best_parameters.insert(kj::str(entry.key), entry.value);
+  }
 
   // Store all results from final population
   for (const auto& ind : population) {
@@ -723,13 +790,17 @@ kj::Vector<BacktestResult> GeneticAlgorithmOptimizer::get_results() const {
   return results;
 }
 
-std::map<std::string, double> GeneticAlgorithmOptimizer::get_best_parameters() const {
+const kj::TreeMap<kj::String, double>& GeneticAlgorithmOptimizer::get_best_parameters() const {
   return impl_->best_parameters;
 }
 
 void GeneticAlgorithmOptimizer::set_parameter_ranges(
-    const std::map<std::string, std::pair<double, double>>& ranges) {
-  impl_->parameter_ranges = ranges;
+    const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) {
+  impl_->parameter_ranges.clear();
+  // Copy ranges to impl_->parameter_ranges
+  for (const auto& entry : ranges) {
+    impl_->parameter_ranges.insert(kj::str(entry.key), entry.value);
+  }
 }
 
 void GeneticAlgorithmOptimizer::set_optimization_target(kj::StringPtr target) {
@@ -765,8 +836,8 @@ void GeneticAlgorithmOptimizer::set_convergence_params(double threshold, int gen
   impl_->convergence_generations = std::max(1, generations);
 }
 
-void GeneticAlgorithmOptimizer::set_data_source(const std::shared_ptr<IDataSource>& data_source) {
-  impl_->data_source = data_source;
+void GeneticAlgorithmOptimizer::set_data_source(kj::Rc<IDataSource> data_source) {
+  impl_->data_source = kj::mv(data_source);
 }
 
 } // namespace veloz::backtest
