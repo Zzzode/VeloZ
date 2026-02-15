@@ -15,13 +15,20 @@
 #include "veloz/market/market_event.h"
 #include "veloz/oms/position.h"
 
+// std includes with justifications
+#include <atomic>  // std::atomic for lightweight counters (KJ MutexGuarded has overhead)
 #include <cstdint>
+
+// KJ library includes
+#include <kj/async.h>
 #include <kj/common.h>
+#include <kj/function.h>
+#include <kj/map.h>
 #include <kj/memory.h>
+#include <kj/mutex.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <map>    // std::map for ordered key lookup
-#include <memory> // std::shared_ptr for shared ownership (KJ uses kj::Own for unique ownership)
 
 namespace veloz::strategy {
 
@@ -55,7 +62,7 @@ struct StrategyConfig {
   double stop_loss;                        ///< Stop loss ratio (0-1)
   double take_profit;                      ///< Take profit ratio (0-1)
   kj::Vector<kj::String> symbols;          ///< List of trading symbols
-  std::map<kj::String, double> parameters; ///< Strategy parameters (std::map for ordered lookup)
+  kj::TreeMap<kj::String, double> parameters; ///< Strategy parameters (ordered by key)
 };
 
 /**
@@ -79,17 +86,57 @@ struct StrategyState {
 };
 
 /**
+ * @brief Strategy performance metrics
+ *
+ * Contains performance metrics for strategy execution monitoring.
+ */
+struct StrategyMetrics {
+  std::atomic<uint64_t> events_processed{0};      ///< Total events processed
+  std::atomic<uint64_t> signals_generated{0};     ///< Total signals generated
+  std::atomic<uint64_t> execution_time_ns{0};     ///< Total execution time (nanoseconds)
+  std::atomic<uint64_t> max_execution_time_ns{0}; ///< Max single execution time (nanoseconds)
+  std::atomic<uint64_t> last_event_time_ns{0};    ///< Timestamp of last event processed
+  std::atomic<uint64_t> errors{0};                ///< Total errors encountered
+
+  void reset() {
+    events_processed.store(0);
+    signals_generated.store(0);
+    execution_time_ns.store(0);
+    max_execution_time_ns.store(0);
+    last_event_time_ns.store(0);
+    errors.store(0);
+  }
+
+  double avg_execution_time_us() const {
+    uint64_t count = events_processed.load();
+    if (count == 0)
+      return 0.0;
+    return static_cast<double>(execution_time_ns.load()) / count / 1000.0;
+  }
+
+  double signals_per_second() const {
+    uint64_t time_ns = execution_time_ns.load();
+    if (time_ns == 0)
+      return 0.0;
+    return static_cast<double>(signals_generated.load()) * 1e9 / time_ns;
+  }
+};
+
+/**
  * @brief Strategy interface
  *
  * Interface that all strategy classes must implement, containing methods for strategy
  * lifecycle management, event handling, state management, and signal generation.
+ *
+ * Inherits from kj::Refcounted to support kj::Rc<IStrategy> reference counting.
+ * Note: kj::Rc is single-threaded; use kj::Arc for thread-safe sharing.
  */
-class IStrategy {
+class IStrategy : public kj::Refcounted {
 public:
   /**
    * @brief Virtual destructor
    */
-  virtual ~IStrategy() = default;
+  ~IStrategy() noexcept(false) override = default;
 
   /**
    * @brief Get strategy ID
@@ -161,6 +208,34 @@ public:
    * @brief Reset strategy state
    */
   virtual void reset() = 0;
+
+  // Runtime integration methods (optional - default implementations provided)
+
+  /**
+   * @brief Update strategy parameters at runtime (hot-reload)
+   * @param parameters New parameter values
+   * @return Whether update was successful
+   */
+  virtual bool update_parameters(const kj::TreeMap<kj::String, double>& parameters) {
+    (void)parameters;
+    return false; // Default: not supported
+  }
+
+  /**
+   * @brief Check if strategy supports hot-reload of parameters
+   * @return Whether hot-reload is supported
+   */
+  virtual bool supports_hot_reload() const {
+    return false;
+  }
+
+  /**
+   * @brief Get strategy performance metrics
+   * @return Maybe to metrics (none if not tracked)
+   */
+  virtual kj::Maybe<const StrategyMetrics&> get_metrics() const {
+    return kj::none;
+  }
 };
 
 /**
@@ -168,20 +243,22 @@ public:
  *
  * Strategy factory is used to create strategy instances, implementing strategy decoupling and
  * dynamic creation.
+ *
+ * Inherits from kj::Refcounted to support kj::Rc<IStrategyFactory> reference counting.
  */
-class IStrategyFactory {
+class IStrategyFactory : public kj::Refcounted {
 public:
   /**
    * @brief Virtual destructor
    */
-  virtual ~IStrategyFactory() = default;
+  ~IStrategyFactory() noexcept(false) override = default;
 
   /**
    * @brief Create strategy instance
    * @param config Strategy configuration parameters
-   * @return Shared pointer to strategy instance
+   * @return kj::Rc reference to strategy instance
    */
-  virtual std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config) = 0;
+  virtual kj::Rc<IStrategy> create_strategy(const StrategyConfig& config) = 0;
 
   /**
    * @brief Get strategy type name
@@ -210,44 +287,44 @@ public:
 
   /**
    * @brief Register strategy factory
-   * @param factory Shared pointer to strategy factory
+   * @param factory kj::Rc reference to strategy factory
    */
-  void register_strategy_factory(const std::shared_ptr<IStrategyFactory>& factory);
+  void register_strategy_factory(kj::Rc<IStrategyFactory> factory);
 
   /**
    * @brief Create strategy instance
    * @param config Strategy configuration parameters
-   * @return Shared pointer to strategy instance
+   * @return kj::Rc reference to strategy instance
    */
-  std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config);
+  kj::Rc<IStrategy> create_strategy(const StrategyConfig& config);
 
   /**
    * @brief Start strategy
    * @param strategy_id Strategy ID
    * @return Whether start was successful
    */
-  bool start_strategy(const std::string& strategy_id);
+  bool start_strategy(kj::StringPtr strategy_id);
 
   /**
    * @brief Stop strategy
    * @param strategy_id Strategy ID
    * @return Whether stop was successful
    */
-  bool stop_strategy(const std::string& strategy_id);
+  bool stop_strategy(kj::StringPtr strategy_id);
 
   /**
    * @brief Remove strategy
    * @param strategy_id Strategy ID
    * @return Whether removal was successful
    */
-  bool remove_strategy(const std::string& strategy_id);
+  bool remove_strategy(kj::StringPtr strategy_id);
 
   /**
    * @brief Get strategy instance
    * @param strategy_id Strategy ID
-   * @return Shared pointer to strategy instance
+   * @return kj::Rc reference to strategy instance (null if not found)
    */
-  std::shared_ptr<IStrategy> get_strategy(const std::string& strategy_id) const;
+  kj::Rc<IStrategy> get_strategy(kj::StringPtr strategy_id);
 
   /**
    * @brief Get all strategy states
@@ -285,11 +362,88 @@ public:
    */
   kj::Vector<veloz::exec::PlaceOrderRequest> get_all_signals();
 
+  // Runtime integration methods
+
+  /**
+   * @brief Load a strategy at runtime
+   * @param config Strategy configuration
+   * @param logger Logger instance
+   * @return Strategy ID if successful, empty string otherwise
+   */
+  kj::String load_strategy(const StrategyConfig& config, veloz::core::Logger& logger);
+
+  /**
+   * @brief Unload a strategy at runtime
+   * @param strategy_id Strategy ID
+   * @return Whether unload was successful
+   */
+  bool unload_strategy(kj::StringPtr strategy_id);
+
+  /**
+   * @brief Hot-reload strategy parameters
+   * @param strategy_id Strategy ID
+   * @param parameters New parameter values
+   * @return Whether reload was successful
+   */
+  bool reload_parameters(kj::StringPtr strategy_id,
+                         const kj::TreeMap<kj::String, double>& parameters);
+
+  /**
+   * @brief Set signal callback for routing signals to engine
+   * @param callback Function called when strategies generate signals
+   */
+  void set_signal_callback(
+      kj::Function<void(const kj::Vector<veloz::exec::PlaceOrderRequest>&)> callback);
+
+  /**
+   * @brief Process signals from all strategies and route to callback
+   */
+  void process_and_route_signals();
+
+  /**
+   * @brief Get aggregated metrics for all strategies
+   * @return Combined metrics string
+   */
+  kj::String get_metrics_summary() const;
+
+  /**
+   * @brief Get metrics for a specific strategy
+   * @param strategy_id Strategy ID
+   * @return Maybe to metrics (none if not found)
+   */
+  kj::Maybe<const StrategyMetrics&> get_strategy_metrics(kj::StringPtr strategy_id) const;
+
+  /**
+   * @brief Check if a strategy is loaded
+   * @param strategy_id Strategy ID
+   * @return Whether strategy is loaded
+   */
+  bool is_strategy_loaded(kj::StringPtr strategy_id) const;
+
+  /**
+   * @brief Get count of loaded strategies
+   * @return Number of loaded strategies
+   */
+  size_t strategy_count() const;
+
 private:
-  // Using std::map with std::string keys for ordered lookup and compatibility
-  std::map<std::string, std::shared_ptr<IStrategy>> strategies_;       ///< Strategy instance map
-  std::map<std::string, std::shared_ptr<IStrategyFactory>> factories_; ///< Strategy factory map
-  std::shared_ptr<veloz::core::Logger> logger_;                        ///< Logger instance
+  // Thread-safe state using KJ mutex
+  // kj::HashMap for fast string key lookup (unordered)
+  // kj::Rc for reference-counted strategies and factories
+  struct State {
+    kj::HashMap<kj::String, kj::Rc<IStrategy>> strategies;
+    kj::HashMap<kj::String, kj::Rc<IStrategyFactory>> factories;
+    kj::Maybe<kj::Function<void(const kj::Vector<veloz::exec::PlaceOrderRequest>&)>>
+        signal_callback;
+  };
+  kj::MutexGuarded<State> state_;
+  kj::Own<veloz::core::Logger> logger_;
+
+  // Legacy accessors for backward compatibility (will be removed)
+  // kj::HashMap for fast string key lookup
+  // kj::Rc for reference-counted strategies and factories
+  kj::HashMap<kj::String, kj::Rc<IStrategy>> strategies_;       ///< Strategy instance map
+  kj::HashMap<kj::String, kj::Rc<IStrategyFactory>> factories_; ///< Strategy factory map
 };
 
 /**
@@ -307,7 +461,7 @@ public:
    */
   explicit BaseStrategy(const StrategyConfig& config)
       : config_(kj::mv(const_cast<StrategyConfig&>(config))),
-        strategy_id_(generate_strategy_id(config_)), logger_ptr_(nullptr) {}
+        strategy_id_(generate_strategy_id(config_)) {}  // logger_ defaults to kj::none
 
   /**
    * @brief Virtual destructor
@@ -337,8 +491,10 @@ public:
    * @return Whether initialization was successful
    */
   bool initialize(const StrategyConfig& config, core::Logger& logger) override {
-    logger_ptr_ = &logger;
-    logger_ptr_->info(std::string(kj::str("Strategy ", config.name, " initialized").cStr()));
+    logger_ = logger;  // kj::Maybe<T&> stores reference, doesn't copy
+    KJ_IF_SOME(l, logger_) {
+      l.info(std::string(kj::str("Strategy ", config.name, " initialized").cStr()));
+    }
     initialized_ = true;
     return true;
   }
@@ -411,7 +567,7 @@ protected:
 
   StrategyConfig config_;          ///< Strategy configuration parameters
   kj::String strategy_id_;         ///< Strategy ID
-  core::Logger* logger_ptr_;       ///< Logger pointer
+  kj::Maybe<veloz::core::Logger&> logger_;  ///< Optional logger reference (non-owning)
   bool initialized_{false};        ///< Whether initialized
   bool running_{false};            ///< Whether running
   double current_pnl_{0.0};        ///< Current profit and loss
@@ -436,10 +592,10 @@ public:
   /**
    * @brief Create strategy instance
    * @param config Strategy configuration parameters
-   * @return Shared pointer to strategy instance
+   * @return kj::Rc reference to strategy instance
    */
-  std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config) override {
-    return std::make_shared<StrategyImpl>(config);
+  kj::Rc<IStrategy> create_strategy(const StrategyConfig& config) override {
+    return kj::rc<StrategyImpl>(config);
   }
 
   /**

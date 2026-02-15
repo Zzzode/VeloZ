@@ -1,19 +1,25 @@
 #include "veloz/strategy/advanced_strategies.h"
 
+// std::abs, std::sqrt for math operations (standard C++ library)
 #include <cmath>
-#include <functional>
-#include <numeric>
+// std::chrono for wall clock timestamps (KJ time is async I/O only)
+#include <chrono>
+// std::max for algorithm operations (standard C++ library)
+#include <algorithm>
+// std::numeric_limits for numeric bounds (standard C++ library)
+#include <limits>
+// std::vector: iterator/erase support needed for sliding window operations
+#include <vector>
 
 namespace veloz::strategy {
 
 namespace {
-// Helper function to get parameter from map with kj::String keys
-double get_param_or_default(const std::map<kj::String, double>& params, const char* key,
+// Helper function to get parameter from kj::TreeMap with kj::String keys
+// Uses KJ_IF_SOME pattern for kj::Maybe return from find()
+double get_param_or_default(const kj::TreeMap<kj::String, double>& params, kj::StringPtr key,
                             double default_value) {
-  kj::String kj_key = kj::str(key);
-  auto it = params.find(kj_key);
-  if (it != params.end()) {
-    return it->second;
+  KJ_IF_SOME(value, params.find(key)) {
+    return value;
   }
   return default_value;
 }
@@ -130,9 +136,9 @@ TechnicalIndicatorStrategy::calculate_standard_deviation(const std::vector<doubl
 // RsiStrategy implementation
 RsiStrategy::RsiStrategy(const StrategyConfig& config)
     : TechnicalIndicatorStrategy(config),
-      rsi_period_(get_param_or_default(config.parameters, "rsi_period", 14.0)),
-      overbought_level_(get_param_or_default(config.parameters, "overbought_level", 70.0)),
-      oversold_level_(get_param_or_default(config.parameters, "oversold_level", 30.0)) {}
+      rsi_period_(get_param_or_default(config.parameters, "rsi_period"_kj, 14.0)),
+      overbought_level_(get_param_or_default(config.parameters, "overbought_level"_kj, 70.0)),
+      oversold_level_(get_param_or_default(config.parameters, "oversold_level"_kj, 30.0)) {}
 
 StrategyType RsiStrategy::get_type() const {
   return StrategyType::Custom;
@@ -140,8 +146,8 @@ StrategyType RsiStrategy::get_type() const {
 
 void RsiStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    if (std::holds_alternative<market::TradeData>(event.data)) {
-      const auto& trade_data = std::get<market::TradeData>(event.data);
+    if (event.data.is<market::TradeData>()) {
+      const auto& trade_data = event.data.get<market::TradeData>();
       recent_prices_.push_back(trade_data.price);
       // Remove oldest price if we have too many
       while (recent_prices_.size() > static_cast<size_t>(rsi_period_ + 1)) {
@@ -160,10 +166,8 @@ void RsiStrategy::on_event(const market::MarketEvent& event) {
                                                .type = exec::OrderType::Market});
         } else if (rsi < oversold_level_ && current_position_.size() == 0) {
           // Generate buy signal
-          kj::String pos_size_key = kj::str("position_size");
           double quantity =
-              config_.max_position_size *
-              (config_.parameters.count(pos_size_key) ? config_.parameters.at(pos_size_key) : 1.0);
+              config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
           signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                                .side = exec::OrderSide::Buy,
                                                .qty = quantity,
@@ -190,10 +194,10 @@ kj::StringPtr RsiStrategy::get_strategy_type() {
 // MacdStrategy implementation
 MacdStrategy::MacdStrategy(const StrategyConfig& config)
     : TechnicalIndicatorStrategy(config),
-      fast_period_(static_cast<int>(get_param_or_default(config.parameters, "fast_period", 12.0))),
-      slow_period_(static_cast<int>(get_param_or_default(config.parameters, "slow_period", 26.0))),
+      fast_period_(static_cast<int>(get_param_or_default(config.parameters, "fast_period"_kj, 12.0))),
+      slow_period_(static_cast<int>(get_param_or_default(config.parameters, "slow_period"_kj, 26.0))),
       signal_period_(
-          static_cast<int>(get_param_or_default(config.parameters, "signal_period", 9.0))) {}
+          static_cast<int>(get_param_or_default(config.parameters, "signal_period"_kj, 9.0))) {}
 
 StrategyType MacdStrategy::get_type() const {
   return StrategyType::Custom;
@@ -201,7 +205,7 @@ StrategyType MacdStrategy::get_type() const {
 
 void MacdStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    recent_prices_.push_back(std::get<market::TradeData>(event.data).price);
+    recent_prices_.push_back(event.data.get<market::TradeData>().price);
     int max_period = std::max({fast_period_, slow_period_, signal_period_});
     while (recent_prices_.size() > static_cast<size_t>(max_period + 1)) {
       recent_prices_.erase(recent_prices_.begin());
@@ -214,20 +218,18 @@ void MacdStrategy::on_event(const market::MarketEvent& event) {
 
       // MACD crossover signal
       if (macd > signal && current_position_.size() == 0) {
-        kj::String pos_size_key = kj::str("position_size");
         double quantity =
-            config_.max_position_size *
-            (config_.parameters.count(pos_size_key) ? config_.parameters.at(pos_size_key) : 1.0);
+            config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
-                                             .price = std::get<market::TradeData>(event.data).price,
+                                             .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       } else if (macd < signal && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
-                                             .price = std::get<market::TradeData>(event.data).price,
+                                             .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       }
     }
@@ -249,8 +251,8 @@ kj::StringPtr MacdStrategy::get_strategy_type() {
 // BollingerBandsStrategy implementation
 BollingerBandsStrategy::BollingerBandsStrategy(const StrategyConfig& config)
     : TechnicalIndicatorStrategy(config),
-      period_(static_cast<int>(get_param_or_default(config.parameters, "period", 20.0))),
-      std_dev_(get_param_or_default(config.parameters, "std_dev", 2.0)) {}
+      period_(static_cast<int>(get_param_or_default(config.parameters, "period"_kj, 20.0))),
+      std_dev_(get_param_or_default(config.parameters, "std_dev"_kj, 2.0)) {}
 
 StrategyType BollingerBandsStrategy::get_type() const {
   return StrategyType::Custom;
@@ -258,7 +260,7 @@ StrategyType BollingerBandsStrategy::get_type() const {
 
 void BollingerBandsStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    recent_prices_.push_back(std::get<market::TradeData>(event.data).price);
+    recent_prices_.push_back(event.data.get<market::TradeData>().price);
     while (recent_prices_.size() > static_cast<size_t>(period_ + 1)) {
       recent_prices_.erase(recent_prices_.begin());
     }
@@ -267,22 +269,20 @@ void BollingerBandsStrategy::on_event(const market::MarketEvent& event) {
       double upper, middle, lower;
       calculate_bollinger_bands(recent_prices_, upper, middle, lower, period_, std_dev_);
 
-      if (std::get<market::TradeData>(event.data).price <= lower && current_position_.size() == 0) {
-        kj::String pos_size_key = kj::str("position_size");
+      if (event.data.get<market::TradeData>().price <= lower && current_position_.size() == 0) {
         double quantity =
-            config_.max_position_size *
-            (config_.parameters.count(pos_size_key) ? config_.parameters.at(pos_size_key) : 1.0);
+            config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
-                                             .price = std::get<market::TradeData>(event.data).price,
+                                             .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
-      } else if (std::get<market::TradeData>(event.data).price >= upper &&
+      } else if (event.data.get<market::TradeData>().price >= upper &&
                  current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
-                                             .price = std::get<market::TradeData>(event.data).price,
+                                             .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       }
     }
@@ -304,10 +304,10 @@ kj::StringPtr BollingerBandsStrategy::get_strategy_type() {
 // StochasticOscillatorStrategy implementation
 StochasticOscillatorStrategy::StochasticOscillatorStrategy(const StrategyConfig& config)
     : TechnicalIndicatorStrategy(config),
-      k_period_(static_cast<int>(get_param_or_default(config.parameters, "k_period", 14.0))),
-      d_period_(static_cast<int>(get_param_or_default(config.parameters, "d_period", 3.0))),
-      overbought_level_(get_param_or_default(config.parameters, "overbought_level", 80.0)),
-      oversold_level_(get_param_or_default(config.parameters, "oversold_level", 20.0)) {}
+      k_period_(static_cast<int>(get_param_or_default(config.parameters, "k_period"_kj, 14.0))),
+      d_period_(static_cast<int>(get_param_or_default(config.parameters, "d_period"_kj, 3.0))),
+      overbought_level_(get_param_or_default(config.parameters, "overbought_level"_kj, 80.0)),
+      oversold_level_(get_param_or_default(config.parameters, "oversold_level"_kj, 20.0)) {}
 
 StrategyType StochasticOscillatorStrategy::get_type() const {
   return StrategyType::Custom;
@@ -315,7 +315,7 @@ StrategyType StochasticOscillatorStrategy::get_type() const {
 
 void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    recent_prices_.push_back(std::get<market::TradeData>(event.data).price);
+    recent_prices_.push_back(event.data.get<market::TradeData>().price);
     while (recent_prices_.size() > static_cast<size_t>(k_period_ + 1)) {
       recent_prices_.erase(recent_prices_.begin());
     }
@@ -325,20 +325,18 @@ void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
       calculate_stochastic_oscillator(recent_prices_, k, d, k_period_, d_period_);
 
       if (k < oversold_level_ && d < oversold_level_ && current_position_.size() == 0) {
-        kj::String pos_size_key = kj::str("position_size");
         double quantity =
-            config_.max_position_size *
-            (config_.parameters.count(pos_size_key) ? config_.parameters.at(pos_size_key) : 1.0);
+            config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
-                                             .price = std::get<market::TradeData>(event.data).price,
+                                             .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       } else if (k > overbought_level_ && d > overbought_level_ && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
-                                             .price = std::get<market::TradeData>(event.data).price,
+                                             .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       }
     }
@@ -359,10 +357,10 @@ kj::StringPtr StochasticOscillatorStrategy::get_strategy_type() {
 
 // MarketMakingHFTStrategy implementation
 MarketMakingHFTStrategy::MarketMakingHFTStrategy(const StrategyConfig& config)
-    : BaseStrategy(config), spread_(get_param_or_default(config.parameters, "spread", 0.001)),
-      order_size_(get_param_or_default(config.parameters, "order_size", 0.01)),
+    : BaseStrategy(config), spread_(get_param_or_default(config.parameters, "spread"_kj, 0.001)),
+      order_size_(get_param_or_default(config.parameters, "order_size"_kj, 0.01)),
       refresh_rate_ms_(
-          static_cast<int>(get_param_or_default(config.parameters, "refresh_rate_ms", 100.0))),
+          static_cast<int>(get_param_or_default(config.parameters, "refresh_rate_ms"_kj, 100.0))),
       last_order_time_(0) {}
 
 StrategyType MarketMakingHFTStrategy::get_type() const {
@@ -375,7 +373,7 @@ void MarketMakingHFTStrategy::on_event(const market::MarketEvent& event) {
                                std::chrono::system_clock::now().time_since_epoch())
                                .count();
     if (last_order_time_ == 0 || (current_time - last_order_time_) > refresh_rate_ms_) {
-      double mid_price = std::get<market::TradeData>(event.data).price;
+      double mid_price = event.data.get<market::TradeData>().price;
       double ask_price = mid_price * (1 + spread_);
       double bid_price = mid_price * (1 - spread_);
 
@@ -411,16 +409,17 @@ kj::StringPtr MarketMakingHFTStrategy::get_strategy_type() {
 // CrossExchangeArbitrageStrategy implementation
 CrossExchangeArbitrageStrategy::CrossExchangeArbitrageStrategy(const StrategyConfig& config)
     : BaseStrategy(config),
-      min_profit_(get_param_or_default(config.parameters, "min_profit", 0.001)),
-      max_slippage_(get_param_or_default(config.parameters, "max_slippage", 0.0005)) {}
+      min_profit_(get_param_or_default(config.parameters, "min_profit"_kj, 0.001)),
+      max_slippage_(get_param_or_default(config.parameters, "max_slippage"_kj, 0.0005)) {}
 
 StrategyType CrossExchangeArbitrageStrategy::get_type() const {
   return StrategyType::Arbitrage;
 }
 
 void CrossExchangeArbitrageStrategy::on_event(const market::MarketEvent& event) {
-  // Store prices by venue
-  prices_by_venue_[event.venue] = std::get<market::TradeData>(event.data).price;
+  // Store prices by venue using kj::TreeMap upsert
+  prices_by_venue_.upsert(event.venue, event.data.get<market::TradeData>().price,
+                          [](double& existing, double&& replacement) { existing = replacement; });
 
   // Check for arbitrage opportunity when we have prices from at least two venues
   if (prices_by_venue_.size() > 1) {
@@ -428,15 +427,16 @@ void CrossExchangeArbitrageStrategy::on_event(const market::MarketEvent& event) 
     double best_ask = std::numeric_limits<double>::max();
     veloz::common::Venue best_bid_venue, best_ask_venue;
 
-    for (const auto& [venue, price] : prices_by_venue_) {
-      if (price > best_bid) {
-        best_bid = price;
-        best_bid_venue = venue;
+    // kj::TreeMap iteration uses entry with .key and .value
+    for (const auto& entry : prices_by_venue_) {
+      if (entry.value > best_bid) {
+        best_bid = entry.value;
+        best_bid_venue = entry.key;
       }
 
-      if (price < best_ask) {
-        best_ask = price;
-        best_ask_venue = venue;
+      if (entry.value < best_ask) {
+        best_ask = entry.value;
+        best_ask_venue = entry.key;
       }
     }
 
@@ -473,30 +473,34 @@ kj::StringPtr CrossExchangeArbitrageStrategy::get_strategy_type() {
 }
 
 // StrategyPortfolioManager implementation
-void StrategyPortfolioManager::add_strategy(const std::shared_ptr<IStrategy>& strategy,
+void StrategyPortfolioManager::add_strategy(kj::Rc<IStrategy> strategy,
                                             double weight) {
-  strategies_[std::string(strategy->get_id().cStr())] = {strategy, weight};
+  kj::String id = kj::str(strategy->get_id());
+  strategies_.upsert(kj::mv(id), StrategyWeight{kj::mv(strategy), weight},
+                     [](StrategyWeight& existing, StrategyWeight&& replacement) {
+                       existing = kj::mv(replacement);
+                     });
 }
 
 void StrategyPortfolioManager::remove_strategy(kj::StringPtr strategy_id) {
-  strategies_.erase(std::string(strategy_id.cStr()));
+  strategies_.erase(strategy_id);
 }
 
 void StrategyPortfolioManager::update_strategy_weight(kj::StringPtr strategy_id, double weight) {
-  auto it = strategies_.find(std::string(strategy_id.cStr()));
-  if (it != strategies_.end()) {
-    it->second.weight = weight;
+  KJ_IF_SOME(sw, strategies_.find(strategy_id)) {
+    sw.weight = weight;
   }
 }
 
 kj::Vector<exec::PlaceOrderRequest> StrategyPortfolioManager::get_combined_signals() {
   kj::Vector<exec::PlaceOrderRequest> combined_signals;
 
-  for (auto& [strategy_id, sw] : strategies_) {
-    auto signals = sw.strategy->get_signals();
+  // kj::HashMap iteration uses entry with .key and .value
+  for (auto& entry : strategies_) {
+    auto signals = entry.value.strategy->get_signals();
     // Adjust signal quantity based on strategy weight
     for (size_t i = 0; i < signals.size(); ++i) {
-      signals[i].qty *= sw.weight;
+      signals[i].qty *= entry.value.weight;
       combined_signals.add(kj::mv(signals[i]));
     }
   }
@@ -514,9 +518,10 @@ StrategyState StrategyPortfolioManager::get_portfolio_state() const {
   portfolio_state.lose_count = 0;
   portfolio_state.total_pnl = 0.0;
 
-  for (const auto& [strategy_id, sw] : strategies_) {
-    auto state = sw.strategy->get_state();
-    portfolio_state.pnl += state.pnl * sw.weight;
+  // kj::HashMap iteration uses entry with .key and .value
+  for (const auto& entry : strategies_) {
+    auto state = entry.value.strategy->get_state();
+    portfolio_state.pnl += state.pnl * entry.value.weight;
     portfolio_state.trade_count += state.trade_count;
     portfolio_state.win_count += state.win_count;
     portfolio_state.lose_count += state.lose_count;
@@ -536,19 +541,21 @@ void StrategyPortfolioManager::set_risk_model(
 }
 
 void StrategyPortfolioManager::rebalance_portfolio() {
-  KJ_IF_MAYBE (risk_model, risk_model_) {
+  KJ_IF_SOME (risk_model, risk_model_) {
     // Calculate risk for each strategy (simplified)
     kj::Vector<double> risks;
-    for (const auto& [strategy_id, sw] : strategies_) {
+    // kj::HashMap iteration uses entry with .key and .value
+    for (const auto& entry : strategies_) {
+      (void)entry;
       risks.add(1.0); // Simplified, assuming each strategy has equal risk
     }
 
-    double risk = (*risk_model)(risks);
+    double risk = risk_model(risks);
     (void)risk; // Risk value used for future weight adjustments
     // Adjust weights based on risk (simplified)
     double new_weight = 1.0 / strategies_.size();
-    for (auto& [strategy_id, sw] : strategies_) {
-      sw.weight = new_weight;
+    for (auto& entry : strategies_) {
+      entry.value.weight = new_weight;
     }
   }
 }

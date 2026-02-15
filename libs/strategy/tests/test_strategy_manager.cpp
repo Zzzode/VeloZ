@@ -1,12 +1,12 @@
 #include "veloz/strategy/strategy.h"
 
-#include <gtest/gtest.h> // Kept for gtest framework compatibility
+#include <gtest/gtest.h> // gtest framework
 #include <kj/memory.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <memory> // Kept for std::shared_ptr (gtest compatibility)
-#include <string> // Kept for gtest string comparisons
-#include <vector> // Kept for gtest compatibility
+#include <string> // gtest string comparisons
+#include <vector> // gtest compatibility
 
 namespace veloz::strategy::tests {
 
@@ -14,10 +14,10 @@ namespace veloz::strategy::tests {
 class TestStrategy;
 
 // Test strategy factory
-// Note: std::shared_ptr kept for gtest compatibility and StrategyFactory API
+// kj::Rc required by IStrategyFactory::create_strategy() API
 class TestStrategyFactory : public StrategyFactory<TestStrategy> {
 public:
-  std::shared_ptr<IStrategy> create_strategy(const StrategyConfig& config) override;
+  kj::Rc<IStrategy> create_strategy(const StrategyConfig& config) override;
   kj::StringPtr get_strategy_type() const override;
 };
 
@@ -29,10 +29,9 @@ public:
 protected:
   void SetUp() override {
     manager_ = kj::heap<StrategyManager>();
-    // Register test strategy factory
-    // Note: std::shared_ptr kept for gtest compatibility and StrategyManager API
-    auto factory = std::make_shared<TestStrategyFactory>();
-    manager_->register_strategy_factory(factory);
+    // Register test strategy factory (kj::Rc required by API)
+    kj::Rc<IStrategyFactory> factory = kj::rc<TestStrategyFactory>();
+    manager_->register_strategy_factory(kj::mv(factory));
   }
 
   void TearDown() override {
@@ -43,10 +42,12 @@ protected:
 };
 
 // Test strategy implementation for testing
+// Inherits from IStrategy which inherits from kj::Refcounted
 class TestStrategy : public IStrategy {
 public:
   // Note: StrategyConfig contains kj::String which is not copyable, so we store a reference
   explicit TestStrategy(const StrategyConfig& config) : config_ref_(config) {}
+  ~TestStrategy() noexcept(false) override = default;
 
   kj::StringPtr get_id() const override {
     return "test-strategy"_kj;
@@ -118,10 +119,9 @@ private:
   bool running_ = false;
 };
 
-// Test strategy factory implementation
-// Note: std::shared_ptr kept for gtest compatibility and StrategyFactory API
-std::shared_ptr<IStrategy> TestStrategyFactory::create_strategy(const StrategyConfig& config) {
-  return std::make_shared<TestStrategy>(config);
+// Test strategy factory implementation (kj::Rc required by IStrategyFactory API)
+kj::Rc<IStrategy> TestStrategyFactory::create_strategy(const StrategyConfig& config) {
+  return kj::rc<TestStrategy>(config);
 }
 
 kj::StringPtr TestStrategyFactory::get_strategy_type() const {
@@ -141,7 +141,7 @@ TEST_F(StrategyManagerTest, TestStrategyRegistration) {
   config.symbols.add(kj::str("BTCUSDT"));
 
   auto strategy = manager_->create_strategy(config);
-  EXPECT_TRUE(strategy);
+  EXPECT_TRUE(strategy != nullptr);
   EXPECT_EQ(std::string(strategy->get_name().cStr()), std::string(config.name.cStr()));
 }
 
@@ -157,7 +157,7 @@ TEST_F(StrategyManagerTest, TestStrategyLifecycle) {
   config.symbols.add(kj::str("BTCUSDT"));
 
   auto strategy = manager_->create_strategy(config);
-  EXPECT_TRUE(strategy);
+  EXPECT_TRUE(strategy != nullptr);
 
   // Test start and stop
   auto ids = manager_->get_all_strategy_ids();
@@ -206,6 +206,106 @@ TEST_F(StrategyManagerTest, TestStrategyEventDispatch) {
 
   // Dispatch event (should not throw exception)
   manager_->on_market_event(event);
+}
+
+// Test runtime load/unload
+TEST_F(StrategyManagerTest, TestRuntimeLoadUnload) {
+  StrategyConfig config;
+  config.name = kj::str("Runtime Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
+
+  core::Logger logger;
+
+  // Load strategy at runtime
+  auto strategy_id = manager_->load_strategy(config, logger);
+  EXPECT_FALSE(strategy_id.size() == 0);
+  EXPECT_TRUE(manager_->is_strategy_loaded(strategy_id.cStr()));
+  EXPECT_EQ(manager_->strategy_count(), 1);
+
+  // Unload strategy
+  EXPECT_TRUE(manager_->unload_strategy(strategy_id.cStr()));
+  EXPECT_FALSE(manager_->is_strategy_loaded(strategy_id.cStr()));
+  EXPECT_EQ(manager_->strategy_count(), 0);
+}
+
+// Test signal callback routing
+TEST_F(StrategyManagerTest, TestSignalCallback) {
+  StrategyConfig config;
+  config.name = kj::str("Signal Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
+
+  manager_->create_strategy(config);
+
+  // Set up signal callback
+  bool callback_called = false;
+  manager_->set_signal_callback(
+      [&callback_called](const kj::Vector<exec::PlaceOrderRequest>& signals) {
+        callback_called = true;
+      });
+
+  // Process signals (callback may or may not be called depending on strategy)
+  manager_->process_and_route_signals();
+  // Note: TestStrategy returns empty signals, so callback won't be called
+  // This test verifies the callback mechanism works without errors
+}
+
+// Test metrics summary
+TEST_F(StrategyManagerTest, TestMetricsSummary) {
+  StrategyConfig config;
+  config.name = kj::str("Metrics Strategy");
+  config.type = StrategyType::Custom;
+  config.risk_per_trade = 0.01;
+  config.max_position_size = 1.0;
+  config.stop_loss = 0.05;
+  config.take_profit = 0.1;
+  config.symbols.add(kj::str("BTCUSDT"));
+
+  manager_->create_strategy(config);
+
+  // Get metrics summary
+  auto summary = manager_->get_metrics_summary();
+  EXPECT_TRUE(summary.size() > 0);
+  // Should contain "Total strategies: 1"
+  EXPECT_TRUE(std::string(summary.cStr()).find("Total strategies: 1") != std::string::npos);
+}
+
+// Test strategy count
+TEST_F(StrategyManagerTest, TestStrategyCount) {
+  EXPECT_EQ(manager_->strategy_count(), 0);
+
+  StrategyConfig config1;
+  config1.name = kj::str("Strategy 1");
+  config1.type = StrategyType::Custom;
+  config1.risk_per_trade = 0.01;
+  config1.max_position_size = 1.0;
+  config1.stop_loss = 0.05;
+  config1.take_profit = 0.1;
+  config1.symbols.add(kj::str("BTCUSDT"));
+
+  manager_->create_strategy(config1);
+  EXPECT_EQ(manager_->strategy_count(), 1);
+
+  StrategyConfig config2;
+  config2.name = kj::str("Strategy 2");
+  config2.type = StrategyType::Custom;
+  config2.risk_per_trade = 0.02;
+  config2.max_position_size = 2.0;
+  config2.stop_loss = 0.03;
+  config2.take_profit = 0.15;
+  config2.symbols.add(kj::str("ETHUSDT"));
+
+  manager_->create_strategy(config2);
+  EXPECT_EQ(manager_->strategy_count(), 2);
 }
 
 } // namespace veloz::strategy::tests

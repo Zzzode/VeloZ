@@ -19,8 +19,8 @@ public:
     // Simple trend following logic using moving average crossover
     if (event.type == market::MarketEventType::Ticker) {
       // Track recent prices for moving average calculation
-      if (std::holds_alternative<market::TradeData>(event.data)) {
-        const auto& trade_data = std::get<market::TradeData>(event.data);
+      if (event.data.is<market::TradeData>()) {
+        const auto& trade_data = event.data.get<market::TradeData>();
         recent_prices_.push_back(trade_data.price);
         if (recent_prices_.size() > 20) { // Simple 20-period moving average
           recent_prices_.pop_front();
@@ -91,8 +91,8 @@ public:
   void on_event(const market::MarketEvent& event) override {
     // Simple mean reversion logic using Bollinger Bands
     if (event.type == market::MarketEventType::Ticker) {
-      if (std::holds_alternative<market::TradeData>(event.data)) {
-        const auto& trade_data = std::get<market::TradeData>(event.data);
+      if (event.data.is<market::TradeData>()) {
+        const auto& trade_data = event.data.get<market::TradeData>();
         recent_prices_.push_back(trade_data.price);
         if (recent_prices_.size() > 20) { // 20-period Bollinger Bands
           recent_prices_.pop_front();
@@ -172,8 +172,8 @@ public:
   void on_event(const market::MarketEvent& event) override {
     // Simple momentum strategy using price change over time
     if (event.type == market::MarketEventType::Ticker) {
-      if (std::holds_alternative<market::TradeData>(event.data)) {
-        const auto& trade_data = std::get<market::TradeData>(event.data);
+      if (event.data.is<market::TradeData>()) {
+        const auto& trade_data = event.data.get<market::TradeData>();
         recent_prices_.push_back(trade_data.price);
         if (recent_prices_.size() > 10) { // 10-period momentum
           recent_prices_.pop_front();

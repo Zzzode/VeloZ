@@ -1,10 +1,10 @@
 #include "veloz/strategy/advanced_strategies.h"
 
-#include <gtest/gtest.h> // Kept for gtest framework compatibility
+#include <gtest/gtest.h> // gtest framework
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <memory> // Kept for std::shared_ptr (gtest compatibility)
-#include <vector> // Kept for gtest compatibility
+#include <vector> // gtest compatibility
 
 class AdvancedStrategiesTest : public ::testing::Test {
 public:
@@ -20,9 +20,10 @@ protected:
     config_.stop_loss = 0.05;
     config_.take_profit = 0.1;
     config_.symbols.add(kj::str("BTCUSDT"));
-    config_.parameters[kj::str("rsi_period")] = 14.0;
-    config_.parameters[kj::str("overbought_level")] = 70.0;
-    config_.parameters[kj::str("oversold_level")] = 30.0;
+    // kj::TreeMap uses insert() instead of operator[]
+    config_.parameters.insert(kj::str("rsi_period"), 14.0);
+    config_.parameters.insert(kj::str("overbought_level"), 70.0);
+    config_.parameters.insert(kj::str("oversold_level"), 30.0);
   }
 
   void TearDown() override {}
@@ -152,15 +153,15 @@ TEST_F(AdvancedStrategiesTest, CrossExchangeArbitrageStrategyCreation) {
 TEST_F(AdvancedStrategiesTest, StrategyPortfolioManagerTest) {
   veloz::strategy::StrategyPortfolioManager portfolio;
 
-  // Create some strategy instances
-  auto rsi_strategy = std::make_shared<veloz::strategy::RsiStrategy>(config_);
-  auto macd_strategy = std::make_shared<veloz::strategy::MacdStrategy>(config_);
-  auto bollinger_strategy = std::make_shared<veloz::strategy::BollingerBandsStrategy>(config_);
+  // Create some strategy instances using kj::rc
+  kj::Rc<veloz::strategy::IStrategy> rsi_strategy = kj::rc<veloz::strategy::RsiStrategy>(config_);
+  kj::Rc<veloz::strategy::IStrategy> macd_strategy = kj::rc<veloz::strategy::MacdStrategy>(config_);
+  kj::Rc<veloz::strategy::IStrategy> bollinger_strategy = kj::rc<veloz::strategy::BollingerBandsStrategy>(config_);
 
   // Add strategies to the portfolio
-  portfolio.add_strategy(rsi_strategy, 0.4);
-  portfolio.add_strategy(macd_strategy, 0.3);
-  portfolio.add_strategy(bollinger_strategy, 0.3);
+  portfolio.add_strategy(kj::mv(rsi_strategy), 0.4);
+  portfolio.add_strategy(kj::mv(macd_strategy), 0.3);
+  portfolio.add_strategy(kj::mv(bollinger_strategy), 0.3);
 
   // Test portfolio state
   auto state = portfolio.get_portfolio_state();

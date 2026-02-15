@@ -4,8 +4,12 @@
 
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/map.h>
+#include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
+// std::vector for iterator/erase support needed for sliding window operations
+#include <vector>
 
 namespace veloz::strategy {
 
@@ -43,8 +47,8 @@ enum class AdvancedStrategyType {
 // Strategy configuration for advanced strategies
 struct AdvancedStrategyConfig : public StrategyConfig {
   AdvancedStrategyType advanced_type;
-  std::map<kj::String, kj::String>
-      ml_model_config;                   // For ML strategies (std::map for ordered lookup)
+  kj::TreeMap<kj::String, kj::String>
+      ml_model_config;                   // For ML strategies (kj::TreeMap for ordered lookup)
   kj::Vector<kj::String> target_symbols; // For arbitrage strategies
   kj::Vector<kj::String> venues;         // For cross-exchange strategies
 };
@@ -176,7 +180,7 @@ public:
 
 private:
   kj::Vector<exec::PlaceOrderRequest> signals_;
-  std::map<veloz::common::Venue, double> prices_by_venue_; // std::map for ordered lookup
+  kj::TreeMap<veloz::common::Venue, double> prices_by_venue_; // kj::TreeMap for ordered lookup
   double min_profit_;
   double max_slippage_;
 };
@@ -187,7 +191,7 @@ public:
   StrategyPortfolioManager() = default;
   ~StrategyPortfolioManager() = default;
 
-  void add_strategy(const std::shared_ptr<IStrategy>& strategy, double weight);
+  void add_strategy(kj::Rc<IStrategy> strategy, double weight);
   void remove_strategy(kj::StringPtr strategy_id);
   void update_strategy_weight(kj::StringPtr strategy_id, double weight);
   kj::Vector<exec::PlaceOrderRequest> get_combined_signals();
@@ -197,11 +201,13 @@ public:
 
 private:
   struct StrategyWeight {
-    std::shared_ptr<IStrategy> strategy;
+    // kj::Rc for reference-counted strategies
+    kj::Rc<IStrategy> strategy;
     double weight;
   };
 
-  std::map<std::string, StrategyWeight> strategies_; // std::map for ordered lookup
+  // kj::HashMap for fast string key lookup, kj::Rc for reference counting
+  kj::HashMap<kj::String, StrategyWeight> strategies_;
   kj::Maybe<kj::Function<double(const kj::Vector<double>&)>> risk_model_;
   double total_exposure_;
 };
