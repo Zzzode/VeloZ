@@ -10,19 +10,21 @@ void OrderBook::apply_snapshot(const kj::Vector<BookLevel>& bids, const kj::Vect
   asks_.clear();
 
   // Clear the update buffer since we're resetting with a snapshot
-  while (!update_buffer_.empty()) {
-    update_buffer_.pop();
-  }
+  update_buffer_.clear();
 
   for (const auto& level : bids) {
     if (level.qty > 0.0) {
-      bids_[level.price] = level.qty;
+      bids_.upsert(DescendingPrice(level.price), level.qty, [](double& existing, double newVal) {
+        existing = newVal;
+      });
     }
   }
 
   for (const auto& level : asks) {
     if (level.qty > 0.0) {
-      asks_[level.price] = level.qty;
+      asks_.upsert(level.price, level.qty, [](double& existing, double newVal) {
+        existing = newVal;
+      });
     }
   }
 
@@ -40,7 +42,7 @@ UpdateResult OrderBook::apply_delta(const BookLevel& level, bool is_bid, int64_t
   if (state_ == OrderBookState::Empty) {
     // Buffer the update and request snapshot
     if (update_buffer_.size() < max_buffer_size_) {
-      update_buffer_.push(BufferedDelta{level, is_bid, sequence});
+      update_buffer_.add(BufferedDelta{level, is_bid, sequence});
       trigger_snapshot_request();
       state_ = OrderBookState::Syncing;
       return UpdateResult::Buffered;
@@ -51,7 +53,7 @@ UpdateResult OrderBook::apply_delta(const BookLevel& level, bool is_bid, int64_t
   // Handle syncing state - buffer updates until snapshot arrives
   if (state_ == OrderBookState::Syncing) {
     if (update_buffer_.size() < max_buffer_size_) {
-      update_buffer_.push(BufferedDelta{level, is_bid, sequence});
+      update_buffer_.add(BufferedDelta{level, is_bid, sequence});
       return UpdateResult::Buffered;
     }
     return UpdateResult::BufferOverflow;
@@ -69,7 +71,7 @@ UpdateResult OrderBook::apply_delta(const BookLevel& level, bool is_bid, int64_t
 
     // If gap is within acceptable range, buffer the update
     if (gap <= max_sequence_gap_ && update_buffer_.size() < max_buffer_size_) {
-      update_buffer_.push(BufferedDelta{level, is_bid, sequence});
+      update_buffer_.add(BufferedDelta{level, is_bid, sequence});
       gap_count_++;
       return UpdateResult::GapDetected;
     }
@@ -81,7 +83,7 @@ UpdateResult OrderBook::apply_delta(const BookLevel& level, bool is_bid, int64_t
 
     // Buffer this update for after snapshot
     if (update_buffer_.size() < max_buffer_size_) {
-      update_buffer_.push(BufferedDelta{level, is_bid, sequence});
+      update_buffer_.add(BufferedDelta{level, is_bid, sequence});
       return UpdateResult::Buffered;
     }
     return UpdateResult::BufferOverflow;
@@ -153,46 +155,76 @@ UpdateResult OrderBook::apply_deltas(const kj::Vector<BookLevel>& bids,
 void OrderBook::apply_level(const BookLevel& level, bool is_bid) {
   if (is_bid) {
     if (level.qty == 0.0) {
-      bids_.erase(level.price);
+      bids_.erase(DescendingPrice(level.price));
     } else {
-      bids_[level.price] = level.qty;
+      bids_.upsert(DescendingPrice(level.price), level.qty, [](double& existing, double newVal) {
+        existing = newVal;
+      });
     }
   } else {
     if (level.qty == 0.0) {
       asks_.erase(level.price);
     } else {
-      asks_[level.price] = level.qty;
+      asks_.upsert(level.price, level.qty, [](double& existing, double newVal) {
+        existing = newVal;
+      });
     }
   }
 }
 
 void OrderBook::process_buffered_updates() {
-  while (!update_buffer_.empty()) {
-    const auto& top = update_buffer_.top();
+  // Sort buffer by sequence (simple bubble sort for small buffers)
+  // In production, would use a proper heap structure
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (size_t i = 0; i + 1 < update_buffer_.size(); ++i) {
+      if (update_buffer_[i].sequence > update_buffer_[i + 1].sequence) {
+        auto tmp = update_buffer_[i];
+        update_buffer_[i] = update_buffer_[i + 1];
+        update_buffer_[i + 1] = tmp;
+        changed = true;
+      }
+    }
+  }
 
-    // If the buffered update is older than current sequence, discard it
-    if (top.sequence <= sequence_) {
-      update_buffer_.pop();
+  // Process sorted buffer
+  size_t i = 0;
+  while (i < update_buffer_.size()) {
+    const auto& item = update_buffer_[i];
+
+    // If the buffered update is older than current sequence, skip it
+    if (item.sequence <= sequence_) {
+      ++i;
       continue;
     }
 
     // If the buffered update is the next expected sequence, apply it
-    if (top.sequence == expected_sequence_) {
-      apply_level(top.level, top.is_bid);
-      sequence_ = top.sequence;
-      expected_sequence_ = top.sequence + 1;
-      update_buffer_.pop();
+    if (item.sequence == expected_sequence_) {
+      apply_level(item.level, item.is_bid);
+      sequence_ = item.sequence;
+      expected_sequence_ = item.sequence + 1;
+      ++i;
       rebuild_cache();
     } else {
       // Gap still exists, stop processing
       break;
     }
   }
+
+  // Remove processed items
+  if (i > 0) {
+    kj::Vector<BufferedDelta> remaining;
+    for (size_t j = i; j < update_buffer_.size(); ++j) {
+      remaining.add(update_buffer_[j]);
+    }
+    update_buffer_ = kj::mv(remaining);
+  }
 }
 
 void OrderBook::trigger_snapshot_request() {
-  KJ_IF_MAYBE (callback, snapshot_callback_) {
-    (*callback)();
+  KJ_IF_SOME(callback, snapshot_callback_) {
+    callback();
   }
 }
 
@@ -205,32 +237,32 @@ const kj::Vector<BookLevel>& OrderBook::asks() const {
 }
 
 kj::Maybe<BookLevel> OrderBook::best_bid() const {
-  if (bids_cache_.empty())
-    return nullptr;
+  if (bids_cache_.size() == 0)
+    return kj::none;
   return bids_cache_.front();
 }
 
 kj::Maybe<BookLevel> OrderBook::best_ask() const {
-  if (asks_cache_.empty())
-    return nullptr;
+  if (asks_cache_.size() == 0)
+    return kj::none;
   return asks_cache_.front();
 }
 
 double OrderBook::spread() const {
-  // Use KJ_IF_MAYBE pattern for proper Maybe handling
-  KJ_IF_MAYBE (bid, best_bid()) {
-    KJ_IF_MAYBE (ask, best_ask()) {
-      return ask->price - bid->price;
+  // Use KJ_IF_SOME pattern for proper Maybe handling
+  KJ_IF_SOME(bid, best_bid()) {
+    KJ_IF_SOME(ask, best_ask()) {
+      return ask.price - bid.price;
     }
   }
   return 0.0;
 }
 
 double OrderBook::mid_price() const {
-  // Use KJ_IF_MAYBE pattern for proper Maybe handling
-  KJ_IF_MAYBE (bid, best_bid()) {
-    KJ_IF_MAYBE (ask, best_ask()) {
-      return (bid->price + ask->price) / 2.0;
+  // Use KJ_IF_SOME pattern for proper Maybe handling
+  KJ_IF_SOME(bid, best_bid()) {
+    KJ_IF_SOME(ask, best_ask()) {
+      return (bid.price + ask.price) / 2.0;
     }
   }
   return 0.0;
@@ -260,23 +292,27 @@ kj::Vector<BookLevel> OrderBook::top_asks(size_t n) const {
 
 double OrderBook::depth_at_price(double price, bool is_bid) const {
   if (is_bid) {
-    auto it = bids_.find(price);
-    return (it != bids_.end()) ? it->second : 0.0;
+    KJ_IF_SOME(qty, bids_.find(DescendingPrice(price))) {
+      return qty;
+    }
+    return 0.0;
   } else {
-    auto it = asks_.find(price);
-    return (it != asks_.end()) ? it->second : 0.0;
+    KJ_IF_SOME(qty, asks_.find(price)) {
+      return qty;
+    }
+    return 0.0;
   }
 }
 
 double OrderBook::total_depth(bool is_bid) const {
   double total = 0.0;
   if (is_bid) {
-    for (const auto& [_, qty] : bids_) {
-      total += qty;
+    for (const auto& entry : bids_) {
+      total += entry.value;
     }
   } else {
-    for (const auto& [_, qty] : asks_) {
-      total += qty;
+    for (const auto& entry : asks_) {
+      total += entry.value;
     }
   }
   return total;
@@ -286,17 +322,18 @@ double OrderBook::cumulative_depth(double price, bool is_bid) const {
   double cumulative = 0.0;
 
   if (is_bid) {
-    for (const auto& [level_price, qty] : bids_) {
-      if (level_price >= price) {
-        cumulative += qty;
+    for (const auto& entry : bids_) {
+      // bids_ uses DescendingPrice, so entry.key.value is the actual price
+      if (entry.key.value >= price) {
+        cumulative += entry.value;
       } else {
         break;
       }
     }
   } else {
-    for (const auto& [level_price, qty] : asks_) {
-      if (level_price <= price) {
-        cumulative += qty;
+    for (const auto& entry : asks_) {
+      if (entry.key <= price) {
+        cumulative += entry.value;
       } else {
         break;
       }
@@ -310,10 +347,10 @@ kj::Vector<LiquidityPoint> OrderBook::liquidity_profile(bool is_bid, double pric
                                                         double step) const {
   kj::Vector<LiquidityPoint> profile;
 
-  // Use KJ_IF_MAYBE pattern for proper Maybe handling
-  KJ_IF_MAYBE (ref_level, is_bid ? best_bid() : best_ask()) {
-    double start_price = is_bid ? (ref_level->price - price_range) : ref_level->price;
-    double end_price = is_bid ? ref_level->price : (ref_level->price + price_range);
+  // Use KJ_IF_SOME pattern for proper Maybe handling
+  KJ_IF_SOME(ref_level, is_bid ? best_bid() : best_ask()) {
+    double start_price = is_bid ? (ref_level.price - price_range) : ref_level.price;
+    double end_price = is_bid ? ref_level.price : (ref_level.price + price_range);
 
     for (double price = start_price; price <= end_price; price += step) {
       double depth = cumulative_depth(price, is_bid);
@@ -401,9 +438,7 @@ void OrderBook::clear() {
   asks_cache_.clear();
 
   // Clear the update buffer
-  while (!update_buffer_.empty()) {
-    update_buffer_.pop();
-  }
+  update_buffer_.clear();
 
   sequence_ = 0;
   expected_sequence_ = 0;
@@ -413,7 +448,7 @@ void OrderBook::clear() {
 }
 
 bool OrderBook::empty() const {
-  return bids_.empty() && asks_.empty();
+  return bids_.size() == 0 && asks_.size() == 0;
 }
 
 OrderBookState OrderBook::state() const {
@@ -452,6 +487,103 @@ void OrderBook::set_max_sequence_gap(int64_t gap) {
   max_sequence_gap_ = gap;
 }
 
+void OrderBook::set_max_depth_levels(size_t levels) {
+  max_depth_levels_ = levels;
+  // Trim existing data if needed
+  if (max_depth_levels_ > 0) {
+    // Collect keys to remove (kj::TreeMap doesn't support std::prev(end()))
+    // For bids: keep first max_depth_levels_ entries (highest prices due to DescendingPrice)
+    // For asks: keep first max_depth_levels_ entries (lowest prices)
+    if (bids_.size() > max_depth_levels_) {
+      kj::Vector<DescendingPrice> keys_to_remove;
+      size_t count = 0;
+      for (const auto& entry : bids_) {
+        if (count >= max_depth_levels_) {
+          keys_to_remove.add(entry.key);
+        }
+        ++count;
+      }
+      for (const auto& key : keys_to_remove) {
+        bids_.erase(key);
+      }
+    }
+    if (asks_.size() > max_depth_levels_) {
+      kj::Vector<double> keys_to_remove;
+      size_t count = 0;
+      for (const auto& entry : asks_) {
+        if (count >= max_depth_levels_) {
+          keys_to_remove.add(entry.key);
+        }
+        ++count;
+      }
+      for (const auto& key : keys_to_remove) {
+        asks_.erase(key);
+      }
+    }
+    rebuild_cache();
+  }
+}
+
+BookData OrderBook::snapshot(size_t depth) const {
+  BookData data;
+  data.sequence = sequence_;
+
+  size_t bid_count = (depth == 0 || depth > bids_cache_.size()) ? bids_cache_.size() : depth;
+  size_t ask_count = (depth == 0 || depth > asks_cache_.size()) ? asks_cache_.size() : depth;
+
+  for (size_t i = 0; i < bid_count; ++i) {
+    data.bids.add(bids_cache_[i]);
+  }
+  for (size_t i = 0; i < ask_count; ++i) {
+    data.asks.add(asks_cache_[i]);
+  }
+
+  return data;
+}
+
+double OrderBook::imbalance(size_t depth) const {
+  double bid_volume = 0.0;
+  double ask_volume = 0.0;
+
+  size_t bid_count = (depth == 0 || depth > bids_cache_.size()) ? bids_cache_.size() : depth;
+  size_t ask_count = (depth == 0 || depth > asks_cache_.size()) ? asks_cache_.size() : depth;
+
+  for (size_t i = 0; i < bid_count; ++i) {
+    bid_volume += bids_cache_[i].qty;
+  }
+  for (size_t i = 0; i < ask_count; ++i) {
+    ask_volume += asks_cache_[i].qty;
+  }
+
+  double total = bid_volume + ask_volume;
+  if (total == 0.0) {
+    return 0.0;
+  }
+  return (bid_volume - ask_volume) / total;
+}
+
+kj::Vector<BookLevel> OrderBook::levels_within_range(double percent_range, bool is_bid) const {
+  kj::Vector<BookLevel> result;
+  double mid = mid_price();
+  if (mid == 0.0) {
+    return result;
+  }
+
+  double range = mid * percent_range;
+  const auto& cache = is_bid ? bids_cache_ : asks_cache_;
+
+  for (const auto& level : cache) {
+    double distance = is_bid ? (mid - level.price) : (level.price - mid);
+    if (distance <= range) {
+      result.add(level);
+    } else {
+      break; // Cache is sorted, so we can stop early
+    }
+  }
+
+  return result;
+}
+
 void OrderBook::request_rebuild() {
   state_ = OrderBookState::Syncing;
   trigger_snapshot_request();
@@ -459,13 +591,23 @@ void OrderBook::request_rebuild() {
 
 void OrderBook::rebuild_cache() {
   bids_cache_.clear();
-  for (const auto& [price, qty] : bids_) {
-    bids_cache_.add(BookLevel{price, qty});
+  size_t count = 0;
+  for (const auto& entry : bids_) {
+    if (max_depth_levels_ > 0 && count >= max_depth_levels_) {
+      break;
+    }
+    bids_cache_.add(BookLevel{entry.key.value, entry.value});
+    ++count;
   }
 
   asks_cache_.clear();
-  for (const auto& [price, qty] : asks_) {
-    asks_cache_.add(BookLevel{price, qty});
+  count = 0;
+  for (const auto& entry : asks_) {
+    if (max_depth_levels_ > 0 && count >= max_depth_levels_) {
+      break;
+    }
+    asks_cache_.add(BookLevel{entry.key, entry.value});
+    ++count;
   }
 }
 

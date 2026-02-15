@@ -3,23 +3,22 @@
 #include "veloz/core/json.h"
 #include "veloz/market/market_event.h"
 
-#include <atomic>
+#include <atomic> // std::atomic - KJ doesn't provide atomic primitives
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/compat/tls.h>
 #include <kj/debug.h>
 #include <kj/encoding.h>
 #include <kj/function.h>
+#include <kj/hash.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/timer.h>
 #include <kj/vector.h>
-#include <map>
-#include <vector>
 
 namespace veloz::market {
 
@@ -165,10 +164,10 @@ private:
   };
   kj::MutexGuarded<CallbackState> callback_state_;
 
-  // Subscriptions - std::map for ordered lookup, std::vector for dynamic array
+  // Subscriptions - using kj::HashMap with symbol string key and kj::Vector for event types
   struct SubscriptionState {
-    std::map<veloz::common::SymbolId, std::vector<MarketEventType>> subscriptions;
-    std::atomic<int> next_subscription_id;
+    kj::HashMap<kj::String, kj::Vector<MarketEventType>> subscriptions;
+    std::atomic<int> next_subscription_id; // std::atomic - KJ doesn't provide atomic primitives
   };
   kj::MutexGuarded<SubscriptionState> subscription_state_;
 

@@ -68,11 +68,11 @@ KJ_TEST("OrderBook: Best bid ask") {
   auto best_bid = book.best_bid();
   auto best_ask = book.best_ask();
 
-  KJ_IF_MAYBE (bid, best_bid) {
-    KJ_EXPECT(bid->price == 50000.0);
+  KJ_IF_SOME(bid, best_bid) {
+    KJ_EXPECT(bid.price == 50000.0);
   }
-  KJ_IF_MAYBE (ask, best_ask) {
-    KJ_EXPECT(ask->price == 50001.0);
+  KJ_IF_SOME(ask, best_ask) {
+    KJ_EXPECT(ask.price == 50001.0);
   }
 }
 

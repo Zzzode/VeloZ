@@ -4,7 +4,7 @@ namespace veloz::market {
 
 kj::String SubscriptionManager::make_subscription_key(const veloz::common::SymbolId& symbol,
                                                       MarketEventType event_type) {
-  return kj::str(symbol.value, "|", static_cast<int>(event_type));
+  return kj::str(symbol.value.c_str(), "|", static_cast<int>(event_type));
 }
 
 void SubscriptionManager::subscribe(const veloz::common::SymbolId& symbol,
@@ -13,11 +13,11 @@ void SubscriptionManager::subscribe(const veloz::common::SymbolId& symbol,
 
   // Find or create subscriber set for this key
   auto find_result = subscriptions_.find(key);
-  KJ_IF_MAYBE (subscribers_ref, find_result) {
+  KJ_IF_SOME(subscribers_ref, find_result) {
     // Key exists, check if subscriber already exists before inserting
     // kj::HashSet::insert throws on duplicates, so we check first
-    if (!(*subscribers_ref).contains(subscriber_id)) {
-      (*subscribers_ref).insert(kj::str(subscriber_id));
+    if (!subscribers_ref.contains(subscriber_id)) {
+      subscribers_ref.insert(kj::str(subscriber_id));
     }
   } else {
     // Key doesn't exist, create new entry with subscriber
@@ -33,8 +33,8 @@ void SubscriptionManager::unsubscribe(const veloz::common::SymbolId& symbol,
   kj::String key = make_subscription_key(symbol, event_type);
 
   auto find_result = subscriptions_.find(key);
-  KJ_IF_MAYBE (subscribers_ref, find_result) {
-    auto& set = *subscribers_ref;
+  KJ_IF_SOME(subscribers_ref, find_result) {
+    auto& set = subscribers_ref;
     // eraseMatch takes a key directly and returns bool indicating if element was found
     if (set.eraseMatch(subscriber_id)) {
       if (set.size() == 0) {
@@ -49,8 +49,8 @@ size_t SubscriptionManager::subscriber_count(const veloz::common::SymbolId& symb
                                              MarketEventType event_type) const {
   kj::String key = make_subscription_key(symbol, event_type);
   auto find_result = subscriptions_.find(key);
-  KJ_IF_MAYBE (subscribers_ref, find_result) {
-    return (*subscribers_ref).size();
+  KJ_IF_SOME(subscribers_ref, find_result) {
+    return subscribers_ref.size();
   }
   return 0;
 }
@@ -60,8 +60,8 @@ bool SubscriptionManager::is_subscribed(const veloz::common::SymbolId& symbol,
                                         kj::StringPtr subscriber_id) const {
   kj::String key = make_subscription_key(symbol, event_type);
   auto find_result = subscriptions_.find(key);
-  KJ_IF_MAYBE (subscribers_ref, find_result) {
-    return (*subscribers_ref).contains(subscriber_id);
+  KJ_IF_SOME(subscribers_ref, find_result) {
+    return subscribers_ref.contains(subscriber_id);
   }
   return false;
 }
@@ -78,7 +78,7 @@ kj::Vector<MarketEventType>
 SubscriptionManager::event_types(const veloz::common::SymbolId& symbol) const {
   // Use kj::HashSet to collect unique event types
   kj::HashSet<int> type_ints;
-  kj::StringPtr symbol_prefix = kj::StringPtr(symbol.value);
+  kj::StringPtr symbol_prefix = symbol.value.c_str();
 
   for (const auto& entry : subscriptions_) {
     kj::StringPtr key = entry.key;
@@ -123,8 +123,8 @@ kj::Vector<kj::String> SubscriptionManager::subscribers(const veloz::common::Sym
   kj::String key = make_subscription_key(symbol, event_type);
 
   auto find_result = subscriptions_.find(key);
-  KJ_IF_MAYBE (subscribers_ref, find_result) {
-    for (const auto& sub : *subscribers_ref) {
+  KJ_IF_SOME(subscribers_ref, find_result) {
+    for (const auto& sub : subscribers_ref) {
       result.add(kj::str(sub.asPtr()));
     }
   }

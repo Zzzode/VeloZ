@@ -17,11 +17,18 @@
 
 #include <cstdint>
 #include <kj/common.h>
+#include <kj/one-of.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <variant> // std::variant has no KJ equivalent, required for type-safe union
 
 namespace veloz::market {
+
+/**
+ * @brief Empty state for kj::OneOf (replaces std::monostate)
+ */
+struct EmptyData {
+  bool operator==(const EmptyData&) const { return true; }
+};
 
 /**
  * @brief Market event type enumeration
@@ -128,8 +135,8 @@ struct MarketEvent final {
   std::int64_t ts_recv_ns{0};     ///< Receive timestamp (nanoseconds)
   std::int64_t ts_pub_ns{0};      ///< Publish timestamp (nanoseconds)
 
-  // Variant for typed access (optional, can parse from payload)
-  std::variant<std::monostate, TradeData, BookData, KlineData> data; ///< Event data
+  // kj::OneOf for typed access (optional, can parse from payload)
+  kj::OneOf<EmptyData, TradeData, BookData, KlineData> data; ///< Event data
 
   // Raw JSON payload for backward compatibility
   kj::String payload; ///< Raw JSON payload

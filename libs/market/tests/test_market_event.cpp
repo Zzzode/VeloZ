@@ -69,7 +69,7 @@ KJ_TEST("MarketEvent: Payload access") {
   KJ_EXPECT(event.payload.size() > 0);
   // Use kj::StringPtr::findFirst to search for substring
   kj::StringPtr payloadPtr = event.payload;
-  KJ_EXPECT(payloadPtr.findFirst('p') != nullptr);
+  KJ_EXPECT(payloadPtr.findFirst('p') != kj::none);
 }
 
 KJ_TEST("MarketEvent: Timestamp operations") {

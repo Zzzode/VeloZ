@@ -1,8 +1,8 @@
 #include "veloz/market/binance_websocket.h"
 
 // KJ library includes for async I/O and networking
-#include <algorithm>
-#include <chrono>
+// Note: std::stod used for string-to-double conversion (no KJ equivalent)
+#include <chrono>  // std::chrono - KJ timer uses different time representation
 #include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/debug.h>
@@ -11,7 +11,7 @@
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/timer.h>
-#include <random>
+#include <random>  // std::random_device, std::mt19937 - KJ doesn't provide RNG
 
 namespace veloz::market {
 
@@ -20,7 +20,7 @@ using namespace veloz::core;
 namespace {
 
 // WebSocket magic GUID for Sec-WebSocket-Accept computation (RFC 6455)
-constexpr const char* WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+constexpr kj::StringPtr WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"_kj;
 
 // Generate a random 32-bit mask key for WebSocket frames
 std::uint32_t generate_mask_key() {
@@ -48,12 +48,13 @@ public:
     buffer_size_ = 0;
   }
 
-  void update(const void* data, size_t len) {
-    const auto* bytes = static_cast<const uint8_t*>(data);
+  void update(kj::ArrayPtr<const kj::byte> data) {
+    const auto* bytes = data.begin();
+    size_t len = data.size();
     total_bits_ += len * 8;
 
     while (len > 0) {
-      size_t to_copy = std::min(len, 64 - buffer_size_);
+      size_t to_copy = kj::min(len, 64 - buffer_size_);
       std::memcpy(buffer_ + buffer_size_, bytes, to_copy);
       buffer_size_ += to_copy;
       bytes += to_copy;
@@ -199,10 +200,10 @@ kj::String BinanceWebSocket::generate_websocket_key() {
 
 kj::String BinanceWebSocket::compute_accept_key(kj::StringPtr key) {
   // Compute SHA-1 hash of key + magic GUID
-  kj::String combined = kj::str(key, kj::heapString(WS_MAGIC_GUID));
+  kj::String combined = kj::str(key, WS_MAGIC_GUID);
 
   SHA1 sha1;
-  sha1.update(combined.cStr(), combined.size());
+  sha1.update(combined.asBytes());
   auto hash = sha1.finalize();
 
   return kj::encodeBase64(hash);
@@ -233,61 +234,122 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
   if (response.size() < 12)
     return false;
 
-  std::string resp(response.cStr());
+  // Helper lambda to convert char to lowercase
+  auto toLower = [](char c) -> char {
+    return (c >= 'A' && c <= 'Z') ? (c + ('a' - 'A')) : c;
+  };
+
+  // Helper lambda to find substring (case-insensitive)
+  auto findCaseInsensitive = [&](kj::StringPtr haystack, kj::StringPtr needle) -> kj::Maybe<size_t> {
+    if (needle.size() > haystack.size()) return kj::none;
+    for (size_t i = 0; i <= haystack.size() - needle.size(); ++i) {
+      bool match = true;
+      for (size_t j = 0; j < needle.size(); ++j) {
+        if (toLower(haystack[i + j]) != toLower(needle[j])) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return i;
+    }
+    return kj::none;
+  };
+
+  // Helper lambda to find substring (case-sensitive)
+  auto findSubstring = [](kj::StringPtr haystack, kj::StringPtr needle) -> kj::Maybe<size_t> {
+    if (needle.size() > haystack.size()) return kj::none;
+    for (size_t i = 0; i <= haystack.size() - needle.size(); ++i) {
+      bool match = true;
+      for (size_t j = 0; j < needle.size(); ++j) {
+        if (haystack[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return i;
+    }
+    return kj::none;
+  };
 
   // Check status line
-  if (resp.find("HTTP/1.1 101") == std::string::npos &&
-      resp.find("HTTP/1.0 101") == std::string::npos) {
+  bool has101 = false;
+  KJ_IF_SOME(pos, findSubstring(response, "HTTP/1.1 101"_kj)) {
+    has101 = true;
+    (void)pos;
+  }
+  if (!has101) {
+    KJ_IF_SOME(pos, findSubstring(response, "HTTP/1.0 101"_kj)) {
+      has101 = true;
+      (void)pos;
+    }
+  }
+  if (!has101) {
     KJ_LOG(ERROR, "WebSocket handshake failed: not 101 response");
     return false;
   }
 
-  // Check for Upgrade: websocket header
-  std::string lower_resp = resp;
-  std::transform(lower_resp.begin(), lower_resp.end(), lower_resp.begin(), ::tolower);
-  if (lower_resp.find("upgrade: websocket") == std::string::npos) {
+  // Check for Upgrade: websocket header (case-insensitive)
+  KJ_IF_SOME(pos, findCaseInsensitive(response, "upgrade: websocket"_kj)) {
+    (void)pos;
+  } else {
     KJ_LOG(ERROR, "WebSocket handshake failed: missing Upgrade header");
     return false;
   }
 
-  // Check for Connection: Upgrade header
-  if (lower_resp.find("connection: upgrade") == std::string::npos) {
+  // Check for Connection: Upgrade header (case-insensitive)
+  KJ_IF_SOME(pos, findCaseInsensitive(response, "connection: upgrade"_kj)) {
+    (void)pos;
+  } else {
     KJ_LOG(ERROR, "WebSocket handshake failed: missing Connection header");
     return false;
   }
 
-  // Check Sec-WebSocket-Accept header
-  std::string accept_header = "sec-websocket-accept: ";
-  size_t accept_pos = lower_resp.find(accept_header);
-  if (accept_pos == std::string::npos) {
+  // Check Sec-WebSocket-Accept header (case-insensitive search for header name)
+  kj::StringPtr accept_header = "sec-websocket-accept: "_kj;
+  KJ_IF_SOME(accept_pos, findCaseInsensitive(response, accept_header)) {
+    // Extract accept value - need to find the actual position in original string
+    // since we need case-sensitive value extraction
+    size_t value_start = accept_pos + accept_header.size();
+
+    // Find end of line
+    size_t value_end = response.size();
+    for (size_t i = value_start; i < response.size() - 1; ++i) {
+      if (response[i] == '\r' && response[i + 1] == '\n') {
+        value_end = i;
+        break;
+      }
+    }
+
+    // Extract and trim accept value
+    kj::String accept_value = kj::heapString(response.slice(value_start, value_end));
+
+    // Trim trailing whitespace
+    size_t end = accept_value.size();
+    while (end > 0 && (accept_value[end - 1] == ' ' || accept_value[end - 1] == '\t')) {
+      --end;
+    }
+
+    // Trim leading whitespace
+    size_t start = 0;
+    while (start < end && (accept_value[start] == ' ' || accept_value[start] == '\t')) {
+      ++start;
+    }
+
+    auto sliced = accept_value.slice(start, end);
+    kj::String trimmed = kj::str(sliced);
+
+    // Validate accept key
+    if (trimmed != expectedAccept) {
+      KJ_LOG(ERROR, "WebSocket handshake failed: invalid Sec-WebSocket-Accept", trimmed.cStr(),
+             expectedAccept.cStr());
+      return false;
+    }
+
+    return true;
+  } else {
     KJ_LOG(ERROR, "WebSocket handshake failed: missing Sec-WebSocket-Accept header");
     return false;
   }
-
-  // Extract accept value
-  size_t value_start = accept_pos + accept_header.length();
-  size_t value_end = resp.find("\r\n", value_start);
-  if (value_end == std::string::npos) {
-    value_end = resp.length();
-  }
-  std::string accept_value = resp.substr(value_start, value_end - value_start);
-
-  // Trim whitespace
-  while (!accept_value.empty() && std::isspace(accept_value.back())) {
-    accept_value.pop_back();
-  }
-  while (!accept_value.empty() && std::isspace(accept_value.front())) {
-    accept_value.erase(0, 1);
-  }
-
-  // Validate accept key
-  if (accept_value != std::string(expectedAccept.cStr())) {
-    KJ_LOG(ERROR, "WebSocket handshake failed: invalid Sec-WebSocket-Accept", accept_value,
-           expectedAccept);
-    return false;
-  }
-
-  return true;
 }
 
 kj::Array<kj::byte> BinanceWebSocket::encode_websocket_frame(kj::ArrayPtr<const kj::byte> payload,
@@ -347,12 +409,12 @@ kj::Array<kj::byte> BinanceWebSocket::encode_websocket_frame(kj::ArrayPtr<const 
 }
 
 kj::Promise<WebSocketFrame> BinanceWebSocket::read_websocket_frame() {
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
 
     // Read at least 2 bytes for the frame header
     auto headerBuf = kj::heapArray<kj::byte>(2);
-    return stream->read(headerBuf.begin(), 2, 2)
+    return stream.read(headerBuf.asPtr(), 2)
         .then([this, headerBuf = kj::mv(headerBuf)](
                   size_t bytesRead) mutable -> kj::Promise<WebSocketFrame> {
           if (bytesRead < 2) {
@@ -383,10 +445,10 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_websocket_frame() {
 }
 
 kj::Promise<WebSocketFrame> BinanceWebSocket::read_extended_length_16(WebSocketFrame frame) {
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
     auto extBuf = kj::heapArray<kj::byte>(2);
-    return stream->read(extBuf.begin(), 2, 2)
+    return stream.read(extBuf.asPtr(), 2)
         .then([this, frame = kj::mv(frame),
                extBuf = kj::mv(extBuf)](size_t bytesRead) mutable -> kj::Promise<WebSocketFrame> {
           if (bytesRead < 2) {
@@ -402,10 +464,10 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_extended_length_16(WebSocketF
 }
 
 kj::Promise<WebSocketFrame> BinanceWebSocket::read_extended_length_64(WebSocketFrame frame) {
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
     auto extBuf = kj::heapArray<kj::byte>(8);
-    return stream->read(extBuf.begin(), 8, 8)
+    return stream.read(extBuf.asPtr(), 8)
         .then([this, frame = kj::mv(frame),
                extBuf = kj::mv(extBuf)](size_t bytesRead) mutable -> kj::Promise<WebSocketFrame> {
           if (bytesRead < 8) {
@@ -436,10 +498,10 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_frame_payload(WebSocketFrame 
 
 kj::Promise<WebSocketFrame> BinanceWebSocket::read_mask_key(WebSocketFrame frame,
                                                             uint64_t payload_len) {
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
     auto maskBuf = kj::heapArray<kj::byte>(4);
-    return stream->read(maskBuf.begin(), 4, 4)
+    return stream.read(maskBuf.asPtr(), 4)
         .then([this, frame = kj::mv(frame), maskBuf = kj::mv(maskBuf),
                payload_len](size_t bytesRead) mutable -> kj::Promise<WebSocketFrame> {
           if (bytesRead < 4) {
@@ -465,10 +527,10 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_mask_key(WebSocketFrame frame
 
 kj::Promise<WebSocketFrame> BinanceWebSocket::read_masked_payload(WebSocketFrame frame,
                                                                   uint64_t payload_len) {
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
     auto payloadBuf = kj::heapArray<kj::byte>(payload_len);
-    return stream->read(payloadBuf.begin(), payload_len, payload_len)
+    return stream.read(payloadBuf.asPtr(), payload_len)
         .then([frame = kj::mv(frame), payloadBuf = kj::mv(payloadBuf)](
                   size_t bytesRead) mutable -> kj::Promise<WebSocketFrame> {
           if (bytesRead < payloadBuf.size()) {
@@ -495,10 +557,10 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_unmasked_payload(WebSocketFra
     return kj::mv(frame);
   }
 
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
     auto payloadBuf = kj::heapArray<kj::byte>(payload_len);
-    return stream->read(payloadBuf.begin(), payload_len, payload_len)
+    return stream.read(payloadBuf.asPtr(), payload_len)
         .then([frame = kj::mv(frame), payloadBuf = kj::mv(payloadBuf)](
                   size_t bytesRead) mutable -> kj::Promise<WebSocketFrame> {
           if (bytesRead < payloadBuf.size()) {
@@ -514,10 +576,10 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_unmasked_payload(WebSocketFra
 
 kj::Promise<void> BinanceWebSocket::send_websocket_frame(kj::ArrayPtr<const kj::byte> payload,
                                                          WebSocketOpcode opcode) {
-  KJ_IF_MAYBE (streamOwn, stream_) {
-    auto* stream = streamOwn->get();
+  KJ_IF_SOME(streamOwn, stream_) {
+    auto& stream = *streamOwn;
     auto frame = encode_websocket_frame(payload, opcode, true); // Client frames must be masked
-    return stream->write(frame.begin(), frame.size()).then([frame = kj::mv(frame)]() {
+    return stream.write(frame.asPtr()).then([frame = kj::mv(frame)]() {
       // Frame sent successfully
     });
   } else {
@@ -559,17 +621,17 @@ kj::Promise<void> BinanceWebSocket::connect() {
       .then([this](kj::Own<kj::AsyncIoStream> tlsStream) -> kj::Promise<void> {
         stream_ = kj::mv(tlsStream);
 
-        // Send WebSocket handshake - need to access stream via KJ_IF_MAYBE
-        KJ_IF_MAYBE (streamOwn, stream_) {
-          auto* stream = streamOwn->get();
+        // Send WebSocket handshake - need to access stream via KJ_IF_SOME
+        KJ_IF_SOME(streamOwn, stream_) {
+          auto& stream = *streamOwn;
           kj::String handshake = build_websocket_handshake();
-          return stream->write(handshake.begin(), handshake.size())
+          return stream.write(handshake.asBytes())
               .then([this, handshake = kj::mv(handshake)]() -> kj::Promise<void> {
                 // Read handshake response
-                KJ_IF_MAYBE (streamOwn2, stream_) {
-                  auto* stream2 = streamOwn2->get();
+                KJ_IF_SOME(streamOwn2, stream_) {
+                  auto& stream2 = *streamOwn2;
                   auto responseBuf = kj::heapArray<char>(4096);
-                  return stream2->tryRead(responseBuf.begin(), 1, responseBuf.size())
+                  return stream2.tryRead(responseBuf.begin(), 1, responseBuf.size())
                       .then([this,
                              responseBuf = kj::mv(responseBuf)](size_t bytesRead) mutable -> void {
                         if (bytesRead == 0) {
@@ -605,7 +667,7 @@ kj::Promise<void> BinanceWebSocket::disconnect() {
   KJ_LOG(INFO, "Disconnecting from Binance WebSocket...");
 
   // Send close frame if stream is available
-  KJ_IF_MAYBE (streamOwn, stream_) {
+  KJ_IF_SOME(streamOwn, stream_) {
     // Close frame with status code 1000 (normal closure)
     auto closePayload = kj::heapArray<kj::byte>(2);
     closePayload[0] = 0x03; // 1000 >> 8
@@ -613,13 +675,13 @@ kj::Promise<void> BinanceWebSocket::disconnect() {
 
     return send_websocket_frame(closePayload, WebSocketOpcode::Close).then([this]() {
       connected_ = false;
-      stream_ = nullptr;
+      stream_ = kj::none;
       KJ_LOG(INFO, "WebSocket disconnected");
     });
   }
 
   connected_ = false;
-  stream_ = nullptr;
+  stream_ = kj::none;
   return kj::READY_NOW;
 }
 
@@ -727,9 +789,13 @@ void BinanceWebSocket::stop() {
 }
 
 kj::String BinanceWebSocket::format_symbol(const veloz::common::SymbolId& symbol) {
-  std::string formatted = symbol.value;
-  std::transform(formatted.begin(), formatted.end(), formatted.begin(), ::tolower);
-  return kj::heapString(formatted);
+  // Convert symbol to lowercase using KJ
+  kj::Vector<char> formatted;
+  for (char c : symbol.value) {
+    formatted.add((c >= 'A' && c <= 'Z') ? (c + ('a' - 'A')) : c);
+  }
+  formatted.add('\0');
+  return kj::heapString(formatted.begin(), formatted.size() - 1);
 }
 
 kj::StringPtr BinanceWebSocket::event_type_to_stream_name(MarketEventType event_type) {
@@ -750,16 +816,31 @@ kj::StringPtr BinanceWebSocket::event_type_to_stream_name(MarketEventType event_
 }
 
 MarketEventType BinanceWebSocket::parse_stream_name(kj::StringPtr stream_name) {
-  std::string str(stream_name.cStr());
-  if (str.find("@trade") != std::string::npos) {
+  // Helper lambda to check if stream_name contains a substring
+  auto contains = [&stream_name](kj::StringPtr needle) -> bool {
+    if (needle.size() > stream_name.size()) return false;
+    for (size_t i = 0; i <= stream_name.size() - needle.size(); ++i) {
+      bool match = true;
+      for (size_t j = 0; j < needle.size(); ++j) {
+        if (stream_name[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return true;
+    }
+    return false;
+  };
+
+  if (contains("@trade"_kj)) {
     return MarketEventType::Trade;
-  } else if (str.find("@bookTicker") != std::string::npos) {
+  } else if (contains("@bookTicker"_kj)) {
     return MarketEventType::BookTop;
-  } else if (str.find("@depth") != std::string::npos) {
+  } else if (contains("@depth"_kj)) {
     return MarketEventType::BookDelta;
-  } else if (str.find("@kline") != std::string::npos) {
+  } else if (contains("@kline"_kj)) {
     return MarketEventType::Kline;
-  } else if (str.find("@miniTicker") != std::string::npos) {
+  } else if (contains("@miniTicker"_kj)) {
     return MarketEventType::Ticker;
   }
 
@@ -778,30 +859,36 @@ kj::String BinanceWebSocket::build_subscription_message(const veloz::common::Sym
   builder.put_array("params", [&](JsonBuilder& arr) { arr.add(std::string(stream.cStr())); });
   builder.put("id", subscription_state_.lockExclusive()->next_subscription_id++);
 
-  return kj::str(builder.build());
+  return kj::str(builder.build().c_str());
 }
 
 kj::Promise<bool> BinanceWebSocket::subscribe(const veloz::common::SymbolId& symbol,
                                               MarketEventType event_type) {
   {
     auto lock = subscription_state_.lockExclusive();
+    kj::String symbol_key = kj::heapString(symbol.value.c_str());
 
     // Check if already subscribed
-    auto it = lock->subscriptions.find(symbol);
-    if (it != lock->subscriptions.end()) {
-      for (size_t i = 0; i < it->second.size(); ++i) {
-        if (it->second[i] == event_type) {
+    auto find_result = lock->subscriptions.find(symbol_key);
+    KJ_IF_SOME(event_types_ref, find_result) {
+      for (size_t i = 0; i < event_types_ref.size(); ++i) {
+        if (event_types_ref[i] == event_type) {
           return kj::Promise<bool>(true); // Already subscribed
         }
       }
+      // Add event type to existing subscription
+      event_types_ref.add(event_type);
+    } else {
+      // Create new subscription entry
+      kj::Vector<MarketEventType> event_types;
+      event_types.add(event_type);
+      lock->subscriptions.insert(kj::mv(symbol_key), kj::mv(event_types));
     }
-
-    // Add to subscriptions
-    lock->subscriptions[symbol].push_back(event_type);
   }
 
   // Send subscription message if connected
-  KJ_IF_MAYBE (streamOwn, stream_) {
+  KJ_IF_SOME(streamOwn, stream_) {
+    (void)streamOwn;
     if (connected_) {
       kj::String msg = build_subscription_message(symbol, event_type, true);
       KJ_LOG(INFO, "Subscribing to stream", msg);
@@ -816,37 +903,42 @@ kj::Promise<bool> BinanceWebSocket::unsubscribe(const veloz::common::SymbolId& s
                                                 MarketEventType event_type) {
   {
     auto lock = subscription_state_.lockExclusive();
+    kj::String symbol_key = kj::heapString(symbol.value.c_str());
 
-    auto it = lock->subscriptions.find(symbol);
-    if (it == lock->subscriptions.end()) {
-      return kj::Promise<bool>(false); // Not subscribed
-    }
+    auto find_result = lock->subscriptions.find(symbol_key);
+    KJ_IF_SOME(event_types_ref, find_result) {
+      bool found = false;
+      kj::Vector<MarketEventType> new_types;
 
-    auto& event_types = it->second;
-    bool found = false;
-    std::vector<MarketEventType> new_types;
-
-    for (size_t i = 0; i < event_types.size(); ++i) {
-      if (event_types[i] == event_type) {
-        found = true;
-      } else {
-        new_types.push_back(event_types[i]);
+      for (size_t i = 0; i < event_types_ref.size(); ++i) {
+        if (event_types_ref[i] == event_type) {
+          found = true;
+        } else {
+          new_types.add(event_types_ref[i]);
+        }
       }
-    }
 
-    if (!found) {
-      return kj::Promise<bool>(false); // Not subscribed to this event type
-    }
+      if (!found) {
+        return kj::Promise<bool>(false); // Not subscribed to this event type
+      }
 
-    if (new_types.empty()) {
-      lock->subscriptions.erase(it);
+      if (new_types.size() == 0) {
+        lock->subscriptions.erase(symbol_key);
+      } else {
+        // Replace with filtered list
+        event_types_ref.clear();
+        for (auto& t : new_types) {
+          event_types_ref.add(t);
+        }
+      }
     } else {
-      it->second = new_types;
+      return kj::Promise<bool>(false); // Not subscribed
     }
   }
 
   // Send unsubscribe message if connected
-  KJ_IF_MAYBE (streamOwn, stream_) {
+  KJ_IF_SOME(streamOwn, stream_) {
+    (void)streamOwn;
     if (connected_) {
       kj::String msg = build_subscription_message(symbol, event_type, false);
       KJ_LOG(INFO, "Unsubscribing from stream", msg);
@@ -863,13 +955,20 @@ void BinanceWebSocket::set_event_callback(MarketEventCallback callback) {
 }
 
 kj::Promise<void> BinanceWebSocket::resubscribe_all() {
-  KJ_IF_MAYBE (streamOwn, stream_) {
+  KJ_IF_SOME(streamOwn, stream_) {
+    (void)streamOwn;
     kj::Vector<kj::Promise<void>> promises;
 
     auto lock = subscription_state_.lockExclusive();
-    for (const auto& [symbol, event_types] : lock->subscriptions) {
-      for (const auto& event_type : event_types) {
-        kj::String msg = build_subscription_message(symbol, event_type, true);
+    for (const auto& entry : lock->subscriptions) {
+      kj::StringPtr symbol_key = entry.key;
+      const kj::Vector<MarketEventType>& event_types = entry.value;
+
+      // Reconstruct SymbolId from key
+      veloz::common::SymbolId symbol{std::string(symbol_key.cStr())};
+
+      for (size_t i = 0; i < event_types.size(); ++i) {
+        kj::String msg = build_subscription_message(symbol, event_types[i], true);
         KJ_LOG(INFO, "Resubscribing to stream", msg);
         promises.add(send_text(msg));
       }
@@ -895,7 +994,7 @@ kj::Promise<void> BinanceWebSocket::schedule_reconnect() {
 
   // Exponential backoff with jitter, capped at 30 seconds
   auto delay_ms = reconnect_delay_ms_.load();
-  reconnect_delay_ms_.store(std::min(delay_ms * 2, static_cast<std::int64_t>(30000)));
+  reconnect_delay_ms_.store(kj::min(delay_ms * 2, static_cast<std::int64_t>(30000)));
 
   // Add jitter (0-25%)
   std::random_device rd;
@@ -933,54 +1032,64 @@ void BinanceWebSocket::handle_message(kj::StringPtr message) {
       return;
     }
 
-    std::string stream_str = stream.get_string();
+    kj::String stream_str = kj::heapString(stream.get_string().c_str());
 
-    // Parse symbol and event type from stream name
-    size_t separator_pos = stream_str.find('@');
-    if (separator_pos == std::string::npos) {
-      return;
-    }
-
-    std::string symbol_str = stream_str.substr(0, separator_pos);
-    std::transform(symbol_str.begin(), symbol_str.end(), symbol_str.begin(), ::toupper);
-    veloz::common::SymbolId symbol(symbol_str);
-
-    MarketEventType event_type = parse_stream_name(kj::StringPtr(stream_str.c_str()));
-
-    // Parse message based on event type
-    MarketEvent market_event;
-    switch (event_type) {
-    case MarketEventType::Trade:
-      market_event = parse_trade_message(data, symbol);
-      break;
-    case MarketEventType::BookTop:
-      market_event = parse_book_message(data, symbol, true);
-      break;
-    case MarketEventType::BookDelta:
-      market_event = parse_book_message(data, symbol, false);
-      break;
-    case MarketEventType::Kline:
-      market_event = parse_kline_message(data, symbol);
-      break;
-    case MarketEventType::Ticker:
-      market_event = parse_ticker_message(data, symbol);
-      break;
-    default:
-      return;
-    }
-
-    // Call callback if set
-    {
-      auto lock = callback_state_.lockExclusive();
-      KJ_IF_MAYBE (cb, lock->callback) {
-        (*cb)(market_event);
+    // Parse symbol and event type from stream name - find '@' separator
+    kj::Maybe<size_t> separator_pos = kj::none;
+    for (size_t i = 0; i < stream_str.size(); ++i) {
+      if (stream_str[i] == '@') {
+        separator_pos = i;
+        break;
       }
     }
 
-    message_count_++;
-    last_message_time_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                             std::chrono::system_clock::now().time_since_epoch())
-                             .count();
+    KJ_IF_SOME(pos, separator_pos) {
+      // Extract symbol and convert to uppercase
+      kj::Vector<char> symbol_chars;
+      for (size_t i = 0; i < pos; ++i) {
+        char c = stream_str[i];
+        symbol_chars.add((c >= 'a' && c <= 'z') ? (c - ('a' - 'A')) : c);
+      }
+      symbol_chars.add('\0');
+      veloz::common::SymbolId symbol(std::string(symbol_chars.begin()));
+
+      MarketEventType event_type = parse_stream_name(stream_str);
+
+      // Parse message based on event type
+      MarketEvent market_event;
+      switch (event_type) {
+      case MarketEventType::Trade:
+        market_event = parse_trade_message(data, symbol);
+        break;
+      case MarketEventType::BookTop:
+        market_event = parse_book_message(data, symbol, true);
+        break;
+      case MarketEventType::BookDelta:
+        market_event = parse_book_message(data, symbol, false);
+        break;
+      case MarketEventType::Kline:
+        market_event = parse_kline_message(data, symbol);
+        break;
+      case MarketEventType::Ticker:
+        market_event = parse_ticker_message(data, symbol);
+        break;
+      default:
+        return;
+      }
+
+      // Call callback if set
+      {
+        auto lock = callback_state_.lockExclusive();
+        KJ_IF_SOME(cb, lock->callback) {
+          cb(market_event);
+        }
+      }
+
+      message_count_++;
+      last_message_time_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+    }
   } catch (const std::exception& e) {
     KJ_LOG(ERROR, "Error parsing WebSocket message", e.what());
   }
@@ -1115,8 +1224,8 @@ MarketEvent BinanceWebSocket::parse_ticker_message(const veloz::core::JsonValue&
                          std::chrono::steady_clock::now().time_since_epoch())
                          .count();
 
-  // TickerData not yet defined in market_event.h, use monostate for now
-  event.data = std::monostate{};
+  // TickerData not yet defined in market_event.h, use EmptyData for now
+  event.data = EmptyData{};
   event.payload = kj::heapString("");
 
   return event;

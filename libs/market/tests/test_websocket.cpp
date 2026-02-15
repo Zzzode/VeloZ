@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <string>
 #include <kj/array.h>
 #include <kj/common.h>
 #include <kj/debug.h>
@@ -23,6 +22,7 @@
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/test.h>
+#include <string>
 
 namespace {
 
@@ -44,12 +44,13 @@ public:
     buffer_size_ = 0;
   }
 
-  void update(const void* data, size_t len) {
-    const auto* bytes = static_cast<const uint8_t*>(data);
+  void update(kj::ArrayPtr<const kj::byte> data) {
+    const auto* bytes = data.begin();
+    size_t len = data.size();
     total_bits_ += len * 8;
 
     while (len > 0) {
-      size_t to_copy = std::min(len, 64 - buffer_size_);
+      size_t to_copy = kj::min(len, 64 - buffer_size_);
       std::memcpy(buffer_ + buffer_size_, bytes, to_copy);
       buffer_size_ += to_copy;
       bytes += to_copy;
@@ -150,7 +151,7 @@ private:
 };
 
 // WebSocket magic GUID for Sec-WebSocket-Accept computation (RFC 6455)
-constexpr const char* WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+constexpr kj::StringPtr WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"_kj;
 
 // Test opcode values
 enum class WebSocketOpcode : std::uint8_t {
@@ -222,7 +223,7 @@ kj::Array<kj::byte> encode_websocket_frame(kj::ArrayPtr<const kj::byte> payload,
 
 KJ_TEST("SHA1: EmptyString") {
   SHA1 sha1;
-  sha1.update("", 0);
+  sha1.update(kj::ArrayPtr<const kj::byte>());
   auto hash = sha1.finalize();
   kj::String hashHex = kj::encodeHex(hash);
   // SHA-1 of empty string is: da39a3ee5e6b4b0d3255bfef95601890afd80709
@@ -231,7 +232,7 @@ KJ_TEST("SHA1: EmptyString") {
 
 KJ_TEST("SHA1: KnownTestVector1") {
   SHA1 sha1;
-  sha1.update("abc", 3);
+  sha1.update(kj::StringPtr("abc").asBytes());
   auto hash = sha1.finalize();
   kj::String hashHex = kj::encodeHex(hash);
   // SHA-1 of "abc": a9993e364706816aba3e25717850c26c9cd0d89d
@@ -240,8 +241,8 @@ KJ_TEST("SHA1: KnownTestVector1") {
 
 KJ_TEST("SHA1: KnownTestVector2") {
   SHA1 sha1;
-  const char* msg = "The quick brown fox jumps over the lazy dog";
-  sha1.update(msg, strlen(msg));
+  kj::StringPtr msg = "The quick brown fox jumps over the lazy dog"_kj;
+  sha1.update(msg.asBytes());
   auto hash = sha1.finalize();
   kj::String hashHex = kj::encodeHex(hash);
   // 2fd4e1c67a2d28fced849ee1bb76e7391b93eb12
@@ -250,9 +251,11 @@ KJ_TEST("SHA1: KnownTestVector2") {
 
 KJ_TEST("SHA1: LongString") {
   SHA1 sha1;
-  std::string input;
-  input.resize(1000000, 'a');
-  sha1.update(input.data(), input.size());
+  auto input = kj::heapArray<kj::byte>(1000000);
+  for (size_t i = 0; i < 1000000; ++i) {
+    input[i] = static_cast<kj::byte>('a');
+  }
+  sha1.update(input.asPtr());
   auto hash = sha1.finalize();
   kj::String hashHex = kj::encodeHex(hash);
   // Known SHA-1 for million 'a's
@@ -267,10 +270,10 @@ KJ_TEST("WebSocketHandshake: KnownKeyAccept") {
   // Test with known key: dGhlIHNhbXBsZSBub25jZQ==
   // Expected accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
   kj::String key = kj::heapString("dGhlIHNhbXBsZSBub25jZQ==");
-  kj::String combined = kj::str(key, kj::heapString(WS_MAGIC_GUID));
+  kj::String combined = kj::str(key, WS_MAGIC_GUID);
 
   SHA1 sha1;
-  sha1.update(combined.cStr(), combined.size());
+  sha1.update(combined.asBytes());
   auto hash = sha1.finalize();
   kj::String accept = kj::encodeBase64(hash);
 
@@ -280,10 +283,10 @@ KJ_TEST("WebSocketHandshake: KnownKeyAccept") {
 KJ_TEST("WebSocketHandshake: DifferentKey") {
   // Test with another known key
   kj::String key = kj::heapString("AQIDBAUGBwgJCgsMDQ4PEA==");
-  kj::String combined = kj::str(key, kj::heapString(WS_MAGIC_GUID));
+  kj::String combined = kj::str(key, WS_MAGIC_GUID);
 
   SHA1 sha1;
-  sha1.update(combined.cStr(), combined.size());
+  sha1.update(combined.asBytes());
   auto hash = sha1.finalize();
   kj::String accept = kj::encodeBase64(hash);
 

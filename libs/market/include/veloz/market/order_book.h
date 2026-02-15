@@ -4,13 +4,29 @@
 
 #include <kj/common.h>
 #include <kj/function.h>
+#include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/vector.h>
-#include <map>   // std::map for ordered key lookup - KJ doesn't provide ordered map equivalent
-#include <queue> // std::priority_queue for buffered updates - KJ doesn't provide priority queue
 
 namespace veloz::market {
+
+// Wrapper for descending order keys in kj::TreeMap
+// kj::TreeMap uses operator< for ordering, so we invert the comparison
+struct DescendingPrice {
+  double value;
+
+  DescendingPrice() : value(0.0) {}
+  explicit DescendingPrice(double v) : value(v) {}
+
+  // Invert comparison for descending order
+  bool operator<(const DescendingPrice& other) const { return value > other.value; }
+  bool operator==(const DescendingPrice& other) const { return value == other.value; }
+
+  // Allow comparison with raw double
+  bool operator<(double other) const { return value > other; }
+  bool operator==(double other) const { return value == other; }
+};
 
 // Liquidity point for liquidity profile analysis
 // Using dedicated struct instead of std::pair for clarity
@@ -114,6 +130,43 @@ public:
   void set_max_buffer_size(size_t size);
   void set_max_sequence_gap(int64_t gap);
 
+  // Depth level configuration
+  /**
+   * @brief Set maximum depth levels to maintain
+   * @param levels Maximum number of price levels (0 = unlimited)
+   */
+  void set_max_depth_levels(size_t levels);
+
+  /**
+   * @brief Get current max depth levels setting
+   */
+  [[nodiscard]] size_t max_depth_levels() const {
+    return max_depth_levels_;
+  }
+
+  // Snapshot functionality
+  /**
+   * @brief Get a snapshot of the order book at current state
+   * @param depth Number of levels to include (0 = all)
+   * @return BookData containing bid and ask levels
+   */
+  [[nodiscard]] BookData snapshot(size_t depth = 0) const;
+
+  /**
+   * @brief Get order book imbalance ratio
+   * @param depth Number of levels to consider (0 = all)
+   * @return Imbalance ratio: (bid_volume - ask_volume) / (bid_volume + ask_volume)
+   */
+  [[nodiscard]] double imbalance(size_t depth = 5) const;
+
+  /**
+   * @brief Get price levels within a percentage range from mid price
+   * @param percent_range Percentage range (e.g., 0.01 for 1%)
+   * @param is_bid true for bids, false for asks
+   * @return Vector of levels within range
+   */
+  [[nodiscard]] kj::Vector<BookLevel> levels_within_range(double percent_range, bool is_bid) const;
+
   // Force rebuild request (e.g., on reconnection)
   void request_rebuild();
 
@@ -123,10 +176,11 @@ private:
   void process_buffered_updates();
   void trigger_snapshot_request();
 
-  // Using std::map for ordered key lookup - KJ doesn't provide ordered map equivalent
-  // bids_ sorted descending (best bid first), asks_ sorted ascending (best ask first)
-  std::map<double, double, std::greater<double>> bids_;
-  std::map<double, double> asks_;
+  // Using kj::TreeMap for ordered key lookup
+  // bids_ uses DescendingPrice wrapper for descending order (best bid first)
+  // asks_ uses double directly for ascending order (best ask first)
+  kj::TreeMap<DescendingPrice, double> bids_;
+  kj::TreeMap<double, double> asks_;
 
   // Cache for fast queries (bids[0] = best bid, asks[0] = best ask)
   kj::Vector<BookLevel> bids_cache_;
@@ -140,10 +194,11 @@ private:
   OrderBookState state_{OrderBookState::Empty};
 
   // Buffer for out-of-order updates
-  // Using std::priority_queue - KJ doesn't provide priority queue equivalent
-  std::priority_queue<BufferedDelta> update_buffer_;
+  // Using kj::Vector with manual heap operations (KJ doesn't provide priority queue)
+  kj::Vector<BufferedDelta> update_buffer_;
   size_t max_buffer_size_{1000};
   int64_t max_sequence_gap_{100}; // Max gap before requesting snapshot
+  size_t max_depth_levels_{0};    // Max depth levels to maintain (0 = unlimited)
 
   // Statistics
   int64_t gap_count_{0};
