@@ -17,9 +17,13 @@
 #include "veloz/oms/position.h"
 #include "veloz/risk/risk_metrics.h"
 
+// std::chrono for wall clock timestamps (KJ time is async I/O only)
 #include <chrono>
-#include <string>
-#include <unordered_map>
+#include <kj/common.h>
+#include <kj/hash.h>
+#include <kj/map.h>
+#include <kj/string.h>
+#include <kj/vector.h>
 
 namespace veloz::risk {
 
@@ -30,8 +34,8 @@ namespace veloz::risk {
  * rejection reason.
  */
 struct RiskCheckResult {
-  bool allowed{true}; ///< Whether trading is allowed
-  std::string reason; ///< Reason for rejection (if not allowed)
+  bool allowed{true};  ///< Whether trading is allowed
+  kj::String reason;   ///< Reason for rejection (if not allowed)
 };
 
 /**
@@ -46,6 +50,11 @@ enum class RiskLevel {
   Critical ///< Critical risk
 };
 
+// KJ hash function for RiskLevel enum to use in kj::HashMap
+inline kj::uint KJ_HASHCODE(RiskLevel level) {
+  return kj::hashCode(static_cast<int>(level));
+}
+
 /**
  * @brief Risk alert information structure
  *
@@ -54,9 +63,10 @@ enum class RiskLevel {
  */
 struct RiskAlert {
   RiskLevel level;                                 ///< Risk alert level
-  std::string message;                             ///< Alert message
+  kj::String message;                              ///< Alert message
+  // std::chrono for wall clock timestamps (KJ time is async I/O only)
   std::chrono::steady_clock::time_point timestamp; ///< Alert timestamp
-  std::string symbol;                              ///< Associated trading symbol
+  kj::String symbol;                               ///< Associated trading symbol
 };
 
 /**
@@ -191,7 +201,7 @@ public:
    * @brief Get risk alerts list
    * @return Risk alerts list
    */
-  std::vector<RiskAlert> get_risk_alerts() const;
+  kj::Vector<RiskAlert> get_risk_alerts() const;
 
   /**
    * @brief Clear risk alerts list
@@ -204,14 +214,14 @@ public:
    * @param message Alert message
    * @param symbol Associated trading symbol (optional)
    */
-  void add_risk_alert(RiskLevel level, const std::string& message, const std::string& symbol = "");
+  void add_risk_alert(RiskLevel level, kj::StringPtr message, kj::StringPtr symbol = ""_kj);
 
   // Risk metrics
   /**
    * @brief Set risk metrics calculator
-   * @param calculator Risk metrics calculator
+   * @param calculator Risk metrics calculator (moved)
    */
-  void set_risk_metrics_calculator(const RiskMetricsCalculator& calculator);
+  void set_risk_metrics_calculator(RiskMetricsCalculator calculator);
 
   /**
    * @brief Get risk metrics
@@ -279,13 +289,14 @@ private:
   bool take_profit_enabled_{false};
   double take_profit_percentage_{0.1}; // 10% default
 
-  std::unordered_map<std::string, veloz::oms::Position> positions_;
-  std::vector<std::chrono::steady_clock::time_point> order_timestamps_;
+  kj::HashMap<kj::String, veloz::oms::Position> positions_;
+  // std::chrono for wall clock timestamps (KJ time is async I/O only)
+  kj::Vector<std::chrono::steady_clock::time_point> order_timestamps_;
   bool circuit_breaker_tripped_{false};
   std::chrono::steady_clock::time_point circuit_breaker_reset_time_;
 
-  std::vector<RiskAlert> risk_alerts_;
-  std::unordered_map<RiskLevel, double> risk_level_thresholds_;
+  kj::Vector<RiskAlert> risk_alerts_;
+  kj::HashMap<RiskLevel, double> risk_level_thresholds_;
 
   RiskMetricsCalculator metrics_calculator_;
 };

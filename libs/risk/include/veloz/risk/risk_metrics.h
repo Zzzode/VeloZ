@@ -1,8 +1,11 @@
 #pragma once
 
+// std::chrono for wall clock timestamps (KJ time is async I/O only)
 #include <chrono>
-#include <string>
-#include <unordered_map>
+#include <kj/common.h>
+#include <kj/string.h>
+#include <kj/vector.h>
+// std::vector for algorithm support (std::sort, std::accumulate)
 #include <vector>
 
 namespace veloz::risk {
@@ -49,12 +52,13 @@ struct RiskMetrics {
 
 // Trade history record
 struct TradeHistory {
-  std::string symbol;
-  std::string side;
+  kj::String symbol;
+  kj::String side;
   double entry_price;
   double exit_price;
   double quantity;
   double profit;
+  // std::chrono for wall clock timestamps (KJ time is async I/O only)
   std::chrono::system_clock::time_point entry_time;
   std::chrono::system_clock::time_point exit_time;
 };
@@ -83,7 +87,7 @@ public:
   void calculate_trade_statistics(RiskMetrics& metrics) const;
 
   // Get trade history records
-  const std::vector<TradeHistory>& get_trades() const;
+  const kj::Vector<TradeHistory>& get_trades() const;
 
   // Clear trade history records
   void clear_trades();
@@ -92,7 +96,7 @@ public:
   void set_risk_free_rate(double rate);
 
 private:
-  std::vector<TradeHistory> trades_;
+  kj::Vector<TradeHistory> trades_;
   double risk_free_rate_{0.0}; // Default risk-free rate is 0%
 };
 

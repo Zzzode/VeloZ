@@ -2,17 +2,18 @@
 
 #include "veloz/risk/risk_metrics.h"
 
+// std::abs for math operations (standard C++ library)
 #include <cmath>
-#include <sstream>
 
 namespace veloz::risk {
 
 RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest& req) {
   // Check circuit breaker
+  // std::chrono for wall clock timestamps (KJ time is async I/O only)
   if (is_circuit_breaker_tripped()) {
     auto now = std::chrono::steady_clock::now();
     if (now < circuit_breaker_reset_time_) {
-      return {false, "Circuit breaker tripped"};
+      return {false, kj::heapString("Circuit breaker tripped")};
     }
     circuit_breaker_tripped_ = false;
   }
@@ -21,60 +22,60 @@ RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest
   if (!check_order_rate()) {
     circuit_breaker_tripped_ = true;
     circuit_breaker_reset_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    add_risk_alert(RiskLevel::Critical, "Order rate limit exceeded", req.symbol.value);
-    return {false, "Order rate limit exceeded"};
+    add_risk_alert(RiskLevel::Critical, "Order rate limit exceeded"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    return {false, kj::heapString("Order rate limit exceeded")};
   }
 
   // Check order size
   if (!check_order_size(req)) {
-    add_risk_alert(RiskLevel::High, "Order size exceeds limit", req.symbol.value);
-    return {false, "Order size exceeds limit"};
+    add_risk_alert(RiskLevel::High, "Order size exceeds limit"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    return {false, kj::heapString("Order size exceeds limit")};
   }
 
   // Check available funds
   if (!check_available_funds(req)) {
-    add_risk_alert(RiskLevel::Critical, "Insufficient funds for order", req.symbol.value);
-    return {false, "Insufficient funds"};
+    add_risk_alert(RiskLevel::Critical, "Insufficient funds for order"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    return {false, kj::heapString("Insufficient funds")};
   }
 
   // Check max position
   if (!check_max_position(req)) {
-    add_risk_alert(RiskLevel::High, "Order size exceeds max position", req.symbol.value);
-    return {false, "Order size exceeds max position"};
+    add_risk_alert(RiskLevel::High, "Order size exceeds max position"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    return {false, kj::heapString("Order size exceeds max position")};
   }
 
   // Check price deviation
   if (!check_price_deviation(req)) {
-    add_risk_alert(RiskLevel::Medium, "Price deviation exceeds max", req.symbol.value);
-    return {false, "Price deviation exceeds max"};
+    add_risk_alert(RiskLevel::Medium, "Price deviation exceeds max"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    return {false, kj::heapString("Price deviation exceeds max")};
   }
 
   // Record order timestamp
-  order_timestamps_.push_back(std::chrono::steady_clock::now());
+  order_timestamps_.add(std::chrono::steady_clock::now());
 
   // Assess risk level
   assess_risk_level();
 
-  return {true, ""};
+  return {true, kj::heapString("")};
 }
 
 RiskCheckResult RiskEngine::check_post_trade(const veloz::oms::Position& position) {
   // Check stop loss
   if (stop_loss_enabled_ && !check_stop_loss(position)) {
-    add_risk_alert(RiskLevel::Critical, "Stop loss triggered", position.symbol().value);
-    return {false, "Stop loss triggered"};
+    add_risk_alert(RiskLevel::Critical, "Stop loss triggered"_kj, kj::StringPtr(position.symbol().value.c_str()));
+    return {false, kj::heapString("Stop loss triggered")};
   }
 
   // Check take profit
   if (take_profit_enabled_ && !check_take_profit(position)) {
-    add_risk_alert(RiskLevel::High, "Take profit triggered", position.symbol().value);
-    return {false, "Take profit triggered"};
+    add_risk_alert(RiskLevel::High, "Take profit triggered"_kj, kj::StringPtr(position.symbol().value.c_str()));
+    return {false, kj::heapString("Take profit triggered")};
   }
 
   // Assess risk level
   assess_risk_level();
 
-  return {true, ""};
+  return {true, kj::heapString("")};
 }
 
 void RiskEngine::set_account_balance(double balance_usdt) {
@@ -122,29 +123,41 @@ void RiskEngine::set_take_profit_percentage(double percentage) {
 }
 
 void RiskEngine::set_risk_level_threshold(RiskLevel level, double threshold) {
-  risk_level_thresholds_[level] = threshold;
+  // Use KJ HashMap upsert pattern
+  risk_level_thresholds_.upsert(level, threshold);
 }
 
-std::vector<RiskAlert> RiskEngine::get_risk_alerts() const {
-  return risk_alerts_;
+kj::Vector<RiskAlert> RiskEngine::get_risk_alerts() const {
+  // Copy alerts to return
+  kj::Vector<RiskAlert> result;
+  for (const auto& alert : risk_alerts_) {
+    RiskAlert copy;
+    copy.level = alert.level;
+    copy.message = kj::heapString(alert.message);
+    copy.timestamp = alert.timestamp;
+    copy.symbol = kj::heapString(alert.symbol);
+    result.add(kj::mv(copy));
+  }
+  return result;
 }
 
 void RiskEngine::clear_risk_alerts() {
   risk_alerts_.clear();
 }
 
-void RiskEngine::add_risk_alert(RiskLevel level, const std::string& message,
-                                const std::string& symbol) {
+void RiskEngine::add_risk_alert(RiskLevel level, kj::StringPtr message,
+                                kj::StringPtr symbol) {
   RiskAlert alert;
   alert.level = level;
-  alert.message = message;
+  alert.message = kj::heapString(message);
+  // std::chrono for wall clock timestamps (KJ time is async I/O only)
   alert.timestamp = std::chrono::steady_clock::now();
-  alert.symbol = symbol;
-  risk_alerts_.push_back(alert);
+  alert.symbol = kj::heapString(symbol);
+  risk_alerts_.add(kj::mv(alert));
 }
 
-void RiskEngine::set_risk_metrics_calculator(const RiskMetricsCalculator& calculator) {
-  metrics_calculator_ = calculator;
+void RiskEngine::set_risk_metrics_calculator(RiskMetricsCalculator calculator) {
+  metrics_calculator_ = kj::mv(calculator);
 }
 
 RiskMetrics RiskEngine::get_risk_metrics() const {
@@ -171,7 +184,10 @@ double RiskEngine::calculate_available_funds() const {
 double RiskEngine::calculate_used_margin() const {
   double total_used_margin = 0.0;
 
-  for (const auto& [symbol, position] : positions_) {
+  // KJ HashMap iteration uses Entry with .key and .value
+  for (const auto& entry : positions_) {
+    const auto& position = entry.value;
+    // std::abs for math operations (standard C++ library)
     double notional = std::abs(position.size()) * position.avg_price();
     total_used_margin += notional / max_leverage_;
   }
@@ -183,29 +199,37 @@ void RiskEngine::assess_risk_level() {
   // Assess risk level based on risk metrics and configured thresholds
   RiskMetrics metrics = get_risk_metrics();
 
+  // Helper to get threshold value from kj::HashMap
+  auto get_threshold = [this](RiskLevel level) -> double {
+    KJ_IF_SOME(value, risk_level_thresholds_.find(level)) {
+      return value;
+    }
+    return 0.0; // Default threshold
+  };
+
   // Check VaR
-  if (metrics.var_99 > risk_level_thresholds_[RiskLevel::Critical]) {
-    add_risk_alert(RiskLevel::Critical, "VaR 99% exceeds critical threshold");
-  } else if (metrics.var_99 > risk_level_thresholds_[RiskLevel::High]) {
-    add_risk_alert(RiskLevel::High, "VaR 99% exceeds high threshold");
-  } else if (metrics.var_99 > risk_level_thresholds_[RiskLevel::Medium]) {
-    add_risk_alert(RiskLevel::Medium, "VaR 99% exceeds medium threshold");
+  if (metrics.var_99 > get_threshold(RiskLevel::Critical)) {
+    add_risk_alert(RiskLevel::Critical, "VaR 99% exceeds critical threshold"_kj);
+  } else if (metrics.var_99 > get_threshold(RiskLevel::High)) {
+    add_risk_alert(RiskLevel::High, "VaR 99% exceeds high threshold"_kj);
+  } else if (metrics.var_99 > get_threshold(RiskLevel::Medium)) {
+    add_risk_alert(RiskLevel::Medium, "VaR 99% exceeds medium threshold"_kj);
   }
 
   // Check maximum drawdown
-  if (metrics.max_drawdown > risk_level_thresholds_[RiskLevel::Critical]) {
-    add_risk_alert(RiskLevel::Critical, "Max drawdown exceeds critical threshold");
-  } else if (metrics.max_drawdown > risk_level_thresholds_[RiskLevel::High]) {
-    add_risk_alert(RiskLevel::High, "Max drawdown exceeds high threshold");
-  } else if (metrics.max_drawdown > risk_level_thresholds_[RiskLevel::Medium]) {
-    add_risk_alert(RiskLevel::Medium, "Max drawdown exceeds medium threshold");
+  if (metrics.max_drawdown > get_threshold(RiskLevel::Critical)) {
+    add_risk_alert(RiskLevel::Critical, "Max drawdown exceeds critical threshold"_kj);
+  } else if (metrics.max_drawdown > get_threshold(RiskLevel::High)) {
+    add_risk_alert(RiskLevel::High, "Max drawdown exceeds high threshold"_kj);
+  } else if (metrics.max_drawdown > get_threshold(RiskLevel::Medium)) {
+    add_risk_alert(RiskLevel::Medium, "Max drawdown exceeds medium threshold"_kj);
   }
 
   // Check Sharpe ratio
-  if (metrics.sharpe_ratio < risk_level_thresholds_[RiskLevel::Critical]) {
-    add_risk_alert(RiskLevel::Critical, "Sharpe ratio below critical threshold");
-  } else if (metrics.sharpe_ratio < risk_level_thresholds_[RiskLevel::High]) {
-    add_risk_alert(RiskLevel::High, "Sharpe ratio below high threshold");
+  if (metrics.sharpe_ratio < get_threshold(RiskLevel::Critical)) {
+    add_risk_alert(RiskLevel::Critical, "Sharpe ratio below critical threshold"_kj);
+  } else if (metrics.sharpe_ratio < get_threshold(RiskLevel::High)) {
+    add_risk_alert(RiskLevel::High, "Sharpe ratio below high threshold"_kj);
   }
 }
 
@@ -240,7 +264,11 @@ bool RiskEngine::check_take_profit(const veloz::oms::Position& position) const {
 }
 
 void RiskEngine::update_position(const veloz::oms::Position& position) {
-  positions_[position.symbol().value] = position;
+  // Use kj::HashMap upsert instead of operator[]
+  kj::String symbol_key = kj::str(position.symbol().value.c_str());
+  positions_.upsert(kj::mv(symbol_key), position, [](veloz::oms::Position& existing, veloz::oms::Position&& replacement) {
+    existing = kj::mv(replacement);
+  });
 }
 
 void RiskEngine::clear_positions() {
@@ -256,13 +284,13 @@ void RiskEngine::reset_circuit_breaker() {
 }
 
 bool RiskEngine::check_available_funds(const veloz::exec::PlaceOrderRequest& req) const {
-  if (req.price == nullptr) {
+  KJ_IF_SOME (price, req.price) {
+    double notional = req.qty * price;
+    double required_margin = notional / max_leverage_;
+    return required_margin <= account_balance_;
+  } else {
     return true; // Market orders checked elsewhere
   }
-
-  double notional = req.qty * req.price.orDefault(0.0);
-  double required_margin = notional / max_leverage_;
-  return required_margin <= account_balance_;
 }
 
 bool RiskEngine::check_max_position(const veloz::exec::PlaceOrderRequest& req) const {
@@ -270,19 +298,25 @@ bool RiskEngine::check_max_position(const veloz::exec::PlaceOrderRequest& req) c
     return true; // No limit
   }
 
-  auto it = positions_.find(req.symbol.value);
-  double current_size = (it != positions_.end()) ? std::abs(it->second.size()) : 0.0;
+  // Use kj::HashMap find with KJ_IF_SOME pattern
+  double current_size = 0.0;
+  KJ_IF_SOME(position, positions_.find(kj::StringPtr(req.symbol.value.c_str()))) {
+    current_size = std::abs(position.size());
+  }
   return (current_size + req.qty) <= max_position_size_;
 }
 
 bool RiskEngine::check_price_deviation(const veloz::exec::PlaceOrderRequest& req) const {
-  if (reference_price_ <= 0.0 || req.price == nullptr) {
-    return true; // No reference price or market order
+  if (reference_price_ <= 0.0) {
+    return true; // No reference price
   }
 
-  double price = req.price.orDefault(0.0);
-  double deviation = std::abs((price - reference_price_) / reference_price_);
-  return deviation <= max_price_deviation_;
+  KJ_IF_SOME (price, req.price) {
+    double deviation = std::abs((price - reference_price_) / reference_price_);
+    return deviation <= max_price_deviation_;
+  } else {
+    return true; // Market order
+  }
 }
 
 bool RiskEngine::check_order_rate() const {

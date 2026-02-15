@@ -1,14 +1,27 @@
 #include "veloz/risk/risk_metrics.h"
 
+// std::sort/accumulate for statistical calculations (KJ lacks algorithm library)
 #include <algorithm>
+// std::abs/std::pow/std::sqrt for math operations (standard C++ library)
 #include <cmath>
 #include <numeric>
+// std::vector for algorithm support (std::sort, std::accumulate)
 #include <vector>
 
 namespace veloz::risk {
 
 void RiskMetricsCalculator::add_trade(const TradeHistory& trade) {
-  trades_.push_back(trade);
+  // Copy trade to add to kj::Vector
+  TradeHistory copy;
+  copy.symbol = kj::heapString(trade.symbol);
+  copy.side = kj::heapString(trade.side);
+  copy.entry_price = trade.entry_price;
+  copy.exit_price = trade.exit_price;
+  copy.quantity = trade.quantity;
+  copy.profit = trade.profit;
+  copy.entry_time = trade.entry_time;
+  copy.exit_time = trade.exit_time;
+  trades_.add(kj::mv(copy));
 }
 
 RiskMetrics RiskMetricsCalculator::calculate_all() const {
@@ -23,7 +36,7 @@ RiskMetrics RiskMetricsCalculator::calculate_all() const {
 }
 
 void RiskMetricsCalculator::calculate_var(RiskMetrics& metrics) const {
-  if (trades_.empty()) {
+  if (trades_.size() == 0) {
     return;
   }
 
@@ -55,7 +68,7 @@ void RiskMetricsCalculator::calculate_var(RiskMetrics& metrics) const {
 }
 
 void RiskMetricsCalculator::calculate_max_drawdown(RiskMetrics& metrics) const {
-  if (trades_.empty()) {
+  if (trades_.size() == 0) {
     return;
   }
 
@@ -83,7 +96,7 @@ void RiskMetricsCalculator::calculate_max_drawdown(RiskMetrics& metrics) const {
 }
 
 void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
-  if (trades_.empty()) {
+  if (trades_.size() == 0) {
     return;
   }
 
@@ -118,7 +131,7 @@ void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
 }
 
 void RiskMetricsCalculator::calculate_trade_statistics(RiskMetrics& metrics) const {
-  if (trades_.empty()) {
+  if (trades_.size() == 0) {
     return;
   }
 
@@ -161,7 +174,7 @@ void RiskMetricsCalculator::calculate_trade_statistics(RiskMetrics& metrics) con
   metrics.max_consecutive_losses = max_consecutive_losses;
 }
 
-const std::vector<TradeHistory>& RiskMetricsCalculator::get_trades() const {
+const kj::Vector<TradeHistory>& RiskMetricsCalculator::get_trades() const {
   return trades_;
 }
 
