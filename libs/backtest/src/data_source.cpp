@@ -272,7 +272,7 @@ CSVDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::int6
         event.ts_pub_ns = event.ts_exchange_ns;
 
         // Set symbol
-        event.symbol = veloz::common::SymbolId(tokens[1]);
+        event.symbol = veloz::common::SymbolId(kj::str(tokens[1].c_str()));
 
         // Set venue (default to Binance for CSV data)
         event.venue = veloz::common::Venue::Binance;

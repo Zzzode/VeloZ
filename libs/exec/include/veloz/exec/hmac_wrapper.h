@@ -2,7 +2,7 @@
 
 #include <kj/array.h>
 #include <kj/string.h>
-#include <string>
+#include <string>   // std::string for OpenSSL compatibility
 #include <string_view>
 
 namespace veloz::exec {
@@ -20,7 +20,7 @@ namespace veloz::exec {
 class HmacSha256 {
 public:
   /**
-   * @brief Generate HMAC-SHA256 signature
+   * @brief Generate HMAC-SHA256 signature (KJ version)
    * @param key Secret key for HMAC
    * @param data Data to sign
    * @return Hex-encoded signature string
@@ -28,7 +28,7 @@ public:
   [[nodiscard]] static kj::String sign(kj::StringPtr key, kj::StringPtr data);
 
   /**
-   * @brief Generate HMAC-SHA256 signature
+   * @brief Generate HMAC-SHA256 signature (std::string version for OpenSSL compatibility)
    * @param key Secret key for HMAC (std::string for OpenSSL compatibility)
    * @param data Data to sign (std::string for OpenSSL compatibility)
    * @return Hex-encoded signature string

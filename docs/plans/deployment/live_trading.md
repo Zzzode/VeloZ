@@ -455,7 +455,7 @@ private:
 
 - **Network Communication**: libcurl, Boost.Beast
 - **Encryption/Decryption**: OpenSSL
-- **Testing Framework**: GoogleTest, Catch2
+- **Testing Framework**: KJ Test (from Cap'n Proto)
 
 ### 8.2 Python Libraries
 

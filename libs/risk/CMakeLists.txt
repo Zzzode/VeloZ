@@ -12,7 +12,7 @@ target_include_directories(veloz_risk
 target_link_libraries(veloz_risk PUBLIC veloz_common veloz_core veloz_exec veloz_oms)
 target_compile_features(veloz_risk PUBLIC cxx_std_23)
 
-# Tests
+# Tests using KJ test framework
 if(VELOZ_BUILD_TESTS)
   add_executable(veloz_risk_tests
     tests/test_risk_engine.cpp
@@ -24,10 +24,8 @@ if(VELOZ_BUILD_TESTS)
       veloz_risk
       veloz_exec
       veloz_oms
-      GTest::gtest
-      GTest::gtest_main
+      kj-test
   )
-
-  gtest_discover_tests(veloz_risk_tests)
+  add_test(NAME veloz_risk_tests COMMAND veloz_risk_tests)
 endif()
 

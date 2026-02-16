@@ -621,7 +621,7 @@ private:
 - **Network Communication**: libcurl, Boost.Beast
 - **JSON Processing**: nlohmann/json
 - **Concurrency Programming**: C++23 Standard Library, Folly
-- **Testing Framework**: GoogleTest, Catch2
+- **Testing Framework**: KJ Test (from Cap'n Proto)
 
 ### 8.2 Python Libraries
 

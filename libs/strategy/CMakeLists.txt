@@ -20,7 +20,7 @@ target_link_libraries(veloz_strategy
 
 target_compile_features(veloz_strategy PUBLIC cxx_std_23)
 
-# Tests
+# Tests using KJ test framework
 if(VELOZ_BUILD_TESTS)
     add_executable(veloz_strategy_tests
         tests/test_strategy_manager.cpp
@@ -35,9 +35,8 @@ if(VELOZ_BUILD_TESTS)
             veloz_exec
             veloz_oms
             veloz_risk
-            GTest::gtest
-            GTest::gtest_main
+            kj-test
+            kj-async
     )
-
-    gtest_discover_tests(veloz_strategy_tests)
+    add_test(NAME veloz_strategy_tests COMMAND veloz_strategy_tests)
 endif()

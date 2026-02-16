@@ -105,15 +105,27 @@ std::string CoinbaseAdapter::build_jwt_token(const std::string& method,
 
 kj::String CoinbaseAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
   // Coinbase uses format like "BTC-USD" for spot
-  std::string sym = symbol.value;
-  // Convert BTCUSD to BTC-USD
-  if (sym.length() >= 6 && sym.substr(sym.length() - 4) == "USDT") {
-    return kj::str(sym.substr(0, sym.length() - 4).c_str(), "-USDT");
+  // Convert BTCUSDT to BTC-USDT or similar patterns
+  kj::StringPtr sym = symbol.value;
+  size_t len = sym.size();
+
+  // Check for USDT suffix
+  if (len >= 4) {
+    kj::StringPtr suffix = sym.slice(len - 4);
+    if (suffix == "USDT") {
+      return kj::str(sym.slice(0, len - 4), "-USDT");
+    }
   }
-  if (sym.length() >= 5 && sym.substr(sym.length() - 3) == "USD") {
-    return kj::str(sym.substr(0, sym.length() - 3).c_str(), "-USD");
+
+  // Check for USD suffix
+  if (len >= 3) {
+    kj::StringPtr suffix = sym.slice(len - 3);
+    if (suffix == "USD") {
+      return kj::str(sym.slice(0, len - 3), "-USD");
+    }
   }
-  return kj::str(sym.c_str());
+
+  return kj::heapString(sym);
 }
 
 kj::StringPtr CoinbaseAdapter::order_side_to_string(OrderSide side) {
@@ -276,7 +288,7 @@ CoinbaseAdapter::place_order_async(const PlaceOrderRequest& req) {
                    "\"}},\"client_order_id\":\"", req.client_order_id, "\"}");
   }
 
-  auto symbol_value = kj::str(req.symbol.value.c_str());
+  auto symbol_value = kj::str(req.symbol.value);
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v3/brokerage/orders", body)
@@ -298,14 +310,15 @@ kj::Promise<kj::Maybe<ExecutionReport>>
 CoinbaseAdapter::cancel_order_async(const CancelOrderRequest& req) {
   auto body = kj::str("{\"order_ids\":[\"", req.client_order_id, "\"]}");
 
-  auto symbol_value = kj::str(req.symbol.value.c_str());
+  auto symbol_value = kj::str(req.symbol.value);
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v3/brokerage/orders/batch_cancel", body)
       .then([symbol_value = kj::mv(symbol_value),
              client_order_id = kj::mv(client_order_id_copy)](kj::String response) mutable {
+        auto symbol_copy = kj::str(symbol_value);
         ExecutionReport report;
-        report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
+        report.symbol = veloz::common::SymbolId{symbol_copy};
         report.client_order_id = kj::mv(client_order_id);
         report.status = OrderStatus::Canceled;
         report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(

@@ -92,8 +92,8 @@ VeloZ uses the KJ library (v1.3.0) from Cap'n Proto as its core C++ foundation. 
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| KJ | 1.3.0 | Core utilities, async I/O, memory management |
-| GoogleTest | Latest | Testing framework |
+| KJ | From Cap'n Proto | Core utilities, async I/O, memory management |
+| KJ Test | From Cap'n Proto | Testing framework |
 | yyjson | Latest | JSON parsing |
 
 ### KJ Features Used
@@ -284,8 +284,8 @@ cmake --build --preset dev -j$(nproc)
 # Run with verbose output
 ctest --preset dev --output-on-failure
 
-# Run specific failing test
-./build/dev/libs/core/veloz_core_tests --gtest_filter=*TestName*
+# Run specific test
+./build/dev/libs/core/veloz_core_tests
 ```
 
 ## Next Steps

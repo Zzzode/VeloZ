@@ -2,10 +2,16 @@
 #include "veloz/backtest/data_source.h"
 #include "veloz/strategy/strategy.h"
 
-#include <gtest/gtest.h>
+#include <kj/test.h>
 #include <kj/memory.h>
 #include <kj/refcount.h>
 
+using namespace veloz::backtest;
+using namespace veloz::strategy;
+
+namespace {
+
+// Test strategy implementation
 class TestStrategy : public veloz::strategy::IStrategy {
 public:
   TestStrategy()
@@ -60,74 +66,84 @@ private:
   veloz::strategy::StrategyType type_;
 };
 
-class BacktestEngineTest : public ::testing::Test {
-public:
-  ~BacktestEngineTest() noexcept override = default;
-
-protected:
-  void SetUp() override {
-    engine_ = kj::heap<veloz::backtest::BacktestEngine>();
-    strategy_ = kj::rc<TestStrategy>();
-    data_source_ = veloz::backtest::DataSourceFactory::create_data_source("csv");
-
-    config_.strategy_name = kj::str("TestStrategy");
-    config_.symbol = kj::str("BTCUSDT");
-    config_.start_time = 1609459200000; // 2021-01-01
-    config_.end_time = 1640995200000;   // 2021-12-31
-    config_.initial_balance = 10000.0;
-    config_.risk_per_trade = 0.02;
-    config_.max_position_size = 0.1;
-    config_.data_source = kj::str("csv");
-    config_.data_type = kj::str("kline");
-    config_.time_frame = kj::str("1h");
-  }
-
-  void TearDown() override {
-    engine_ = nullptr;
-    strategy_ = nullptr;
-    data_source_ = nullptr;
-  }
-
-  kj::Own<veloz::backtest::BacktestEngine> engine_;
-  kj::Rc<TestStrategy> strategy_;
-  kj::Rc<veloz::backtest::IDataSource> data_source_;
-  veloz::backtest::BacktestConfig config_;
-};
-
-TEST_F(BacktestEngineTest, Initialize) {
-  EXPECT_TRUE(engine_->initialize(config_));
+// Helper to create test configuration
+BacktestConfig create_test_config() {
+  BacktestConfig config;
+  config.strategy_name = kj::str("TestStrategy");
+  config.symbol = kj::str("BTCUSDT");
+  config.start_time = 1609459200000; // 2021-01-01
+  config.end_time = 1640995200000;   // 2021-12-31
+  config.initial_balance = 10000.0;
+  config.risk_per_trade = 0.02;
+  config.max_position_size = 0.1;
+  config.data_source = kj::str("csv");
+  config.data_type = kj::str("kline");
+  config.time_frame = kj::str("1h");
+  return config;
 }
 
-TEST_F(BacktestEngineTest, SetStrategy) {
-  engine_->initialize(config_);
-  engine_->set_strategy(strategy_.addRef());
-  EXPECT_TRUE(true); // Should not throw
+// ============================================================================
+// BacktestEngine Tests
+// ============================================================================
+
+KJ_TEST("BacktestEngine: Initialize") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
 }
 
-TEST_F(BacktestEngineTest, SetDataSource) {
-  engine_->initialize(config_);
-  engine_->set_data_source(data_source_.addRef());
-  EXPECT_TRUE(true); // Should not throw
+KJ_TEST("BacktestEngine: SetStrategy") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
+
+  auto strategy = kj::rc<TestStrategy>();
+  engine->set_strategy(strategy.addRef());
+  // Should not throw
 }
 
-TEST_F(BacktestEngineTest, RunWithoutStrategy) {
-  engine_->initialize(config_);
-  engine_->set_data_source(data_source_.addRef());
-  EXPECT_FALSE(engine_->run());
+KJ_TEST("BacktestEngine: SetDataSource") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
+
+  auto data_source = DataSourceFactory::create_data_source("csv");
+  engine->set_data_source(data_source.addRef());
+  // Should not throw
 }
 
-TEST_F(BacktestEngineTest, RunWithoutDataSource) {
-  engine_->initialize(config_);
-  engine_->set_strategy(strategy_.addRef());
-  EXPECT_FALSE(engine_->run());
+KJ_TEST("BacktestEngine: RunWithoutStrategy") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
+
+  auto data_source = DataSourceFactory::create_data_source("csv");
+  engine->set_data_source(data_source.addRef());
+  KJ_EXPECT(!engine->run());
 }
 
-TEST_F(BacktestEngineTest, Reset) {
-  engine_->initialize(config_);
-  EXPECT_TRUE(engine_->reset());
+KJ_TEST("BacktestEngine: RunWithoutDataSource") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
+
+  auto strategy = kj::rc<TestStrategy>();
+  engine->set_strategy(strategy.addRef());
+  KJ_EXPECT(!engine->run());
 }
 
-TEST_F(BacktestEngineTest, StopNotRunning) {
-  engine_->initialize(config_);
-  EXPECT_FALSE(engine_->stop());
+KJ_TEST("BacktestEngine: Reset") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
+  KJ_EXPECT(engine->reset());
 }
+
+KJ_TEST("BacktestEngine: StopNotRunning") {
+  auto engine = kj::heap<BacktestEngine>();
+  auto config = create_test_config();
+  KJ_EXPECT(engine->initialize(config));
+  KJ_EXPECT(!engine->stop());
+}
+
+} // namespace

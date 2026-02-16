@@ -23,5 +23,5 @@ This directory contains documentation for VeloZ users and developers.
 ## Getting Help
 
 - See [FAQ](../build_and_run.md#faq) in build_and_run.md for common issues
-- Check [Implementation Status](../reviews/IMPLEMENTATION_STATUS.md) for feature progress
+- Check [Implementation Status](../reviews/implementation_status.md) for feature progress
 - Check [GitHub Issues](https://github.com/your-org/VeloZ/issues) for known problems

@@ -205,7 +205,7 @@ bool BacktestEngine::run() {
       KJ_IF_SOME (current_price, get_price_from_event(event)) {
         // Process each signal (order request)
         for (const auto& signal : signals) {
-          const std::string& symbol = signal.symbol.value;
+          kj::StringPtr symbol = signal.symbol.value;
           double qty = signal.qty;
 
           if (qty <= 0.0) {
@@ -214,7 +214,7 @@ bool BacktestEngine::run() {
           }
 
           // Get or create position for this symbol using kj::HashMap
-          kj::String symbol_key = kj::str(symbol.c_str());
+          kj::String symbol_key = kj::str(symbol);
           veloz::oms::Position* position_ptr = nullptr;
           KJ_IF_SOME(existing, impl_->positions.find(symbol_key)) {
             position_ptr = &existing;
@@ -264,7 +264,7 @@ bool BacktestEngine::run() {
           // Create trade record
           TradeRecord trade_record;
           trade_record.timestamp = event.ts_exchange_ns / 1'000'000; // Convert to milliseconds
-          trade_record.symbol = kj::str(symbol.c_str());
+          trade_record.symbol = kj::str(symbol);
           trade_record.side = order_side_to_string(signal.side);
           trade_record.price = fill_price;
           trade_record.quantity = qty;

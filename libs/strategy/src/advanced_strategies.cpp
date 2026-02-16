@@ -26,7 +26,7 @@ double get_param_or_default(const kj::TreeMap<kj::String, double>& params, kj::S
 } // anonymous namespace
 
 // TechnicalIndicatorStrategy implementation
-double TechnicalIndicatorStrategy::calculate_rsi(const std::vector<double>& prices,
+double TechnicalIndicatorStrategy::calculate_rsi(kj::ArrayPtr<const double> prices,
                                                  int period) const {
   if (prices.size() < static_cast<size_t>(period + 1))
     return 50.0; // Default to neutral
@@ -50,7 +50,7 @@ double TechnicalIndicatorStrategy::calculate_rsi(const std::vector<double>& pric
   return 100.0 - (100.0 / (1.0 + rs));
 }
 
-double TechnicalIndicatorStrategy::calculate_macd(const std::vector<double>& prices, double& signal,
+double TechnicalIndicatorStrategy::calculate_macd(kj::ArrayPtr<const double> prices, double& signal,
                                                   int fast_period, int slow_period,
                                                   int signal_period) const {
   double fast_ema = calculate_exponential_moving_average(prices, fast_period);
@@ -63,7 +63,7 @@ double TechnicalIndicatorStrategy::calculate_macd(const std::vector<double>& pri
   return macd;
 }
 
-void TechnicalIndicatorStrategy::calculate_bollinger_bands(const std::vector<double>& prices,
+void TechnicalIndicatorStrategy::calculate_bollinger_bands(kj::ArrayPtr<const double> prices,
                                                            double& upper, double& middle,
                                                            double& lower, int period,
                                                            double std_dev) const {
@@ -73,7 +73,7 @@ void TechnicalIndicatorStrategy::calculate_bollinger_bands(const std::vector<dou
   lower = middle - std_dev * sd;
 }
 
-void TechnicalIndicatorStrategy::calculate_stochastic_oscillator(const std::vector<double>& prices,
+void TechnicalIndicatorStrategy::calculate_stochastic_oscillator(kj::ArrayPtr<const double> prices,
                                                                  double& k, double& d, int k_period,
                                                                  int d_period) const {
   if (prices.size() < static_cast<size_t>(k_period)) {
@@ -98,7 +98,7 @@ void TechnicalIndicatorStrategy::calculate_stochastic_oscillator(const std::vect
 }
 
 double
-TechnicalIndicatorStrategy::calculate_exponential_moving_average(const std::vector<double>& prices,
+TechnicalIndicatorStrategy::calculate_exponential_moving_average(kj::ArrayPtr<const double> prices,
                                                                  int period) const {
   if (prices.size() == 0)
     return 0.0;
@@ -114,7 +114,7 @@ TechnicalIndicatorStrategy::calculate_exponential_moving_average(const std::vect
 }
 
 double
-TechnicalIndicatorStrategy::calculate_standard_deviation(const std::vector<double>& prices) const {
+TechnicalIndicatorStrategy::calculate_standard_deviation(kj::ArrayPtr<const double> prices) const {
   if (prices.size() == 0)
     return 0.0;
 
@@ -155,11 +155,12 @@ void RsiStrategy::on_event(const market::MarketEvent& event) {
       }
 
       if (recent_prices_.size() >= static_cast<size_t>(rsi_period_ + 1)) {
-        double rsi = calculate_rsi(recent_prices_, rsi_period_);
+        kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
+        double rsi = calculate_rsi(prices_ptr, rsi_period_);
 
         if (rsi > overbought_level_ && current_position_.size() > 0) {
           // Generate sell signal
-          signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+          signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                                .side = exec::OrderSide::Sell,
                                                .qty = current_position_.size(),
                                                .price = trade_data.price,
@@ -168,7 +169,7 @@ void RsiStrategy::on_event(const market::MarketEvent& event) {
           // Generate buy signal
           double quantity =
               config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
-          signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+          signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                                .side = exec::OrderSide::Buy,
                                                .qty = quantity,
                                                .price = trade_data.price,
@@ -212,21 +213,22 @@ void MacdStrategy::on_event(const market::MarketEvent& event) {
     }
 
     if (recent_prices_.size() >= static_cast<size_t>(max_period + 1)) {
+      kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
       double signal;
       double macd =
-          calculate_macd(recent_prices_, signal, fast_period_, slow_period_, signal_period_);
+          calculate_macd(prices_ptr, signal, fast_period_, slow_period_, signal_period_);
 
       // MACD crossover signal
       if (macd > signal && current_position_.size() == 0) {
         double quantity =
             config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
-        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
                                              .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       } else if (macd < signal && current_position_.size() > 0) {
-        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
                                              .price = event.data.get<market::TradeData>().price,
@@ -266,20 +268,21 @@ void BollingerBandsStrategy::on_event(const market::MarketEvent& event) {
     }
 
     if (recent_prices_.size() >= static_cast<size_t>(period_ + 1)) {
+      kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
       double upper, middle, lower;
-      calculate_bollinger_bands(recent_prices_, upper, middle, lower, period_, std_dev_);
+      calculate_bollinger_bands(prices_ptr, upper, middle, lower, period_, std_dev_);
 
       if (event.data.get<market::TradeData>().price <= lower && current_position_.size() == 0) {
         double quantity =
             config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
-        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
                                              .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       } else if (event.data.get<market::TradeData>().price >= upper &&
                  current_position_.size() > 0) {
-        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
                                              .price = event.data.get<market::TradeData>().price,
@@ -321,19 +324,20 @@ void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
     }
 
     if (recent_prices_.size() >= static_cast<size_t>(k_period_ + 1)) {
+      kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
       double k, d;
-      calculate_stochastic_oscillator(recent_prices_, k, d, k_period_, d_period_);
+      calculate_stochastic_oscillator(prices_ptr, k, d, k_period_, d_period_);
 
       if (k < oversold_level_ && d < oversold_level_ && current_position_.size() == 0) {
         double quantity =
             config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
-        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
                                              .price = event.data.get<market::TradeData>().price,
                                              .type = exec::OrderType::Market});
       } else if (k > overbought_level_ && d > overbought_level_ && current_position_.size() > 0) {
-        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+        signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
                                              .price = event.data.get<market::TradeData>().price,
@@ -377,13 +381,13 @@ void MarketMakingHFTStrategy::on_event(const market::MarketEvent& event) {
       double ask_price = mid_price * (1 + spread_);
       double bid_price = mid_price * (1 - spread_);
 
-      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Buy,
                                            .qty = order_size_,
                                            .price = bid_price,
                                            .type = exec::OrderType::Limit});
 
-      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Sell,
                                            .qty = order_size_,
                                            .price = ask_price,
@@ -444,14 +448,14 @@ void CrossExchangeArbitrageStrategy::on_event(const market::MarketEvent& event) 
     double spread = best_bid - best_ask;
     if (spread > min_profit_) {
       // Generate sell signal on best bid venue
-      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Sell,
                                            .qty = config_.max_position_size,
                                            .price = best_bid,
                                            .type = exec::OrderType::Limit});
 
       // Generate buy signal on best ask venue
-      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT",
+      signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Buy,
                                            .qty = config_.max_position_size,
                                            .price = best_ask,

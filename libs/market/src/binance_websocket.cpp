@@ -866,7 +866,7 @@ kj::Promise<bool> BinanceWebSocket::subscribe(const veloz::common::SymbolId& sym
                                               MarketEventType event_type) {
   {
     auto lock = subscription_state_.lockExclusive();
-    kj::String symbol_key = kj::heapString(symbol.value.c_str());
+    kj::String symbol_key = kj::heapString(symbol.value);
 
     // Check if already subscribed
     auto find_result = lock->subscriptions.find(symbol_key);
@@ -903,7 +903,7 @@ kj::Promise<bool> BinanceWebSocket::unsubscribe(const veloz::common::SymbolId& s
                                                 MarketEventType event_type) {
   {
     auto lock = subscription_state_.lockExclusive();
-    kj::String symbol_key = kj::heapString(symbol.value.c_str());
+    kj::String symbol_key = kj::heapString(symbol.value);
 
     auto find_result = lock->subscriptions.find(symbol_key);
     KJ_IF_SOME(event_types_ref, find_result) {
@@ -965,7 +965,7 @@ kj::Promise<void> BinanceWebSocket::resubscribe_all() {
       const kj::Vector<MarketEventType>& event_types = entry.value;
 
       // Reconstruct SymbolId from key
-      veloz::common::SymbolId symbol{std::string(symbol_key.cStr())};
+      veloz::common::SymbolId symbol{symbol_key};
 
       for (size_t i = 0; i < event_types.size(); ++i) {
         kj::String msg = build_subscription_message(symbol, event_types[i], true);
@@ -1051,7 +1051,7 @@ void BinanceWebSocket::handle_message(kj::StringPtr message) {
         symbol_chars.add((c >= 'a' && c <= 'z') ? (c - ('a' - 'A')) : c);
       }
       symbol_chars.add('\0');
-      veloz::common::SymbolId symbol(std::string(symbol_chars.begin()));
+      veloz::common::SymbolId symbol(kj::StringPtr(symbol_chars.begin()));
 
       MarketEventType event_type = parse_stream_name(stream_str);
 

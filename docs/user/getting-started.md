@@ -29,11 +29,11 @@ The gateway will start on `http://127.0.0.1:8080/`. Open this URL in your browse
 ### Dependencies (Automatically Fetched)
 
 VeloZ automatically fetches these dependencies via CMake FetchContent:
-- **KJ Library** (v1.3.0) - Core C++ utilities from Cap'n Proto
-- **GoogleTest** - Testing framework
+
+- **KJ Library** (from Cap'n Proto) - Core C++ utilities
+- **KJ Test** - Testing framework
 - **yyjson** - High-performance JSON parser
-- **KJ-Async** - Async I/O support for KJ
-- **KJ-TLS** - TLS support for KJ (requires OpenSSL)
+- **OpenSSL** - TLS support for WebSocket
 
 No manual dependency installation is required.
 
@@ -85,6 +85,7 @@ The engine starts in stdio mode and processes text commands (`ORDER ...`, `CANCE
 ```
 
 This starts:
+
 - The C++ engine (in stdio mode)
 - A Python HTTP gateway
 - A web UI accessible at `http://127.0.0.1:8080/`
@@ -184,7 +185,6 @@ export VELOZ_BINANCE_API_SECRET=your_api_secret
 - Check the [Backtest User Guide](backtest.md) for backtesting strategies
 - Explore the [design documents](../design/) for architecture details
 - Check the [implementation plans](../plans/) for development roadmap
-- Review the [CHANGELOG](../../CHANGELOG.md) for recent changes
 
 ---
 
@@ -193,6 +193,7 @@ export VELOZ_BINANCE_API_SECRET=your_api_secret
 ### Build fails with CMake version error
 
 Ensure CMake >= 3.24 is installed:
+
 ```bash
 cmake --version
 ```
@@ -200,6 +201,7 @@ cmake --version
 ### Engine executable not found
 
 Make sure you ran the build command first:
+
 ```bash
 cmake --preset dev
 cmake --build --preset dev -j
@@ -208,6 +210,7 @@ cmake --build --preset dev -j
 ### Gateway cannot start
 
 Check if port 8080 is already in use:
+
 ```bash
 # macOS/Linux
 lsof -i :8080

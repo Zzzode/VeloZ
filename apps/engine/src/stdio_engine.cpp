@@ -93,7 +93,7 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
           kj::String json = kj::str(
               R"({"type":"order_received","command_id":)", command_count_,
               R"(,"client_order_id":")", order.request.client_order_id,
-              R"(","symbol":")", order.request.symbol.value.c_str(),
+              R"(","symbol":")", order.request.symbol.value,
               R"(","side":")", (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"),
               R"(","type":")", (order.request.type == veloz::exec::OrderType::Market ? "market" : "limit"),
               R"(","quantity":)", order.request.qty,

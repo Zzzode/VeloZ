@@ -60,16 +60,16 @@ public:
   ~TechnicalIndicatorStrategy() noexcept override = default;
 
   // Common technical indicator calculations
-  // Using std::vector for these methods as they need iterator/algorithm support
-  double calculate_rsi(const std::vector<double>& prices, int period = 14) const;
-  double calculate_macd(const std::vector<double>& prices, double& signal, int fast_period = 12,
+  // Using kj::ArrayPtr for read-only access to price arrays
+  double calculate_rsi(kj::ArrayPtr<const double> prices, int period = 14) const;
+  double calculate_macd(kj::ArrayPtr<const double> prices, double& signal, int fast_period = 12,
                         int slow_period = 26, int signal_period = 9) const;
-  void calculate_bollinger_bands(const std::vector<double>& prices, double& upper, double& middle,
+  void calculate_bollinger_bands(kj::ArrayPtr<const double> prices, double& upper, double& middle,
                                  double& lower, int period = 20, double std_dev = 2.0) const;
-  void calculate_stochastic_oscillator(const std::vector<double>& prices, double& k, double& d,
+  void calculate_stochastic_oscillator(kj::ArrayPtr<const double> prices, double& k, double& d,
                                        int k_period = 14, int d_period = 3) const;
-  double calculate_exponential_moving_average(const std::vector<double>& prices, int period) const;
-  double calculate_standard_deviation(const std::vector<double>& prices) const;
+  double calculate_exponential_moving_average(kj::ArrayPtr<const double> prices, int period) const;
+  double calculate_standard_deviation(kj::ArrayPtr<const double> prices) const;
 };
 
 // RSI (Relative Strength Index) strategy

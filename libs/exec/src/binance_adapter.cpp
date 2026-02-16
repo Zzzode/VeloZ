@@ -212,12 +212,13 @@ kj::Promise<kj::String> BinanceAdapter::http_delete_async(kj::StringPtr endpoint
 }
 
 kj::String BinanceAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
-  kj::String formatted = kj::str(symbol.value.c_str());
   // Convert to uppercase
-  for (char& c : formatted) {
-    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  kj::Vector<char> formatted_chars;
+  for (char c : symbol.value) {
+    formatted_chars.add(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
   }
-  return formatted;
+  formatted_chars.add('\0');
+  return kj::heapString(formatted_chars.begin());
 }
 
 kj::StringPtr BinanceAdapter::order_side_to_string(OrderSide side) {

@@ -234,7 +234,7 @@ kj::Maybe<ParsedOrder> parse_order_command(kj::StringPtr line) {
 
   ParsedOrder out;
   out.raw_command = kj::str(line);
-  out.request.symbol.value = symbol.cStr();
+  out.request.symbol.value = kj::mv(symbol);
   out.request.side = parse_order_side(side_s);
 
   // Parse order type

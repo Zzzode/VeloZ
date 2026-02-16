@@ -25,7 +25,7 @@ constexpr int64_t DEFAULT_RECV_WINDOW = 5000;
 
 BybitAdapter::BybitAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key,
                            kj::StringPtr secret_key, Category category, bool testnet)
-    : io_context_(io_context), api_key_(api_key.cStr()), secret_key_(secret_key.cStr()),
+    : io_context_(io_context), api_key_(kj::heapString(api_key)), secret_key_(kj::heapString(secret_key)),
       connected_(false), testnet_(testnet), category_(category),
       last_activity_time_(kj::systemCoarseMonotonicClock().now()),
       request_timeout_(30 * kj::SECONDS), rate_limit_window_(1 * kj::SECONDS),
@@ -97,12 +97,12 @@ int64_t BybitAdapter::get_timestamp_ms() const {
       .count();
 }
 
-std::string BybitAdapter::build_signature(const std::string& timestamp, const std::string& params) {
+kj::String BybitAdapter::build_signature(kj::StringPtr timestamp, kj::StringPtr params) {
 #ifdef VELOZ_NO_OPENSSL
-  return "";
+  return ""_kj;
 #else
   // Bybit V5 API signature: HMAC_SHA256(timestamp + api_key + recv_window + params)
-  std::string prehash = timestamp + api_key_ + std::to_string(recv_window_) + params;
+  auto prehash = kj::str(timestamp, api_key_, kj::str(recv_window_), params);
 
   // Use HmacSha256 wrapper for HMAC-SHA256 signature
   return HmacSha256::sign(secret_key_, prehash);
@@ -111,7 +111,7 @@ std::string BybitAdapter::build_signature(const std::string& timestamp, const st
 
 kj::String BybitAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
   // Bybit uses format like "BTCUSDT" for spot and linear perpetual
-  return kj::str(symbol.value.c_str());
+  return kj::str(symbol.value);
 }
 
 kj::StringPtr BybitAdapter::order_side_to_string(OrderSide side) {
@@ -179,12 +179,12 @@ kj::Promise<kj::Own<kj::HttpClient>> BybitAdapter::get_http_client() {
 }
 
 kj::Promise<kj::String> BybitAdapter::http_get_async(kj::StringPtr endpoint, kj::StringPtr params) {
-  auto timestamp = std::to_string(get_timestamp_ms());
-  auto signature = build_signature(timestamp, params != nullptr ? params.cStr() : "");
+  auto timestamp = kj::str(get_timestamp_ms());
+  auto signature = build_signature(timestamp, params != nullptr ? params : kj::StringPtr());
 
-  return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+  return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params != nullptr ? params : kj::StringPtr()),
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -208,12 +208,12 @@ kj::Promise<kj::String> BybitAdapter::http_get_async(kj::StringPtr endpoint, kj:
 }
 
 kj::Promise<kj::String> BybitAdapter::http_post_async(kj::StringPtr endpoint, kj::StringPtr body) {
-  auto timestamp = std::to_string(get_timestamp_ms());
-  auto signature = build_signature(timestamp, body.cStr());
+  auto timestamp = kj::str(get_timestamp_ms());
+  auto signature = build_signature(timestamp, body);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), body = kj::str(body),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);

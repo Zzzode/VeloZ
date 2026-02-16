@@ -31,14 +31,14 @@ public:
           // If price crosses above MA, buy; if crosses below, sell
           if (trade_data.price > ma && last_price_ <= ma) {
             // Generate buy signal
-            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj, // Default symbol for example
                                                  .side = exec::OrderSide::Buy,
                                                  .qty = 0.1, // Fixed quantity for example
                                                  .price = trade_data.price,
                                                  .type = exec::OrderType::Market});
           } else if (trade_data.price < ma && last_price_ >= ma) {
             // Generate sell signal
-            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj, // Default symbol for example
                                                  .side = exec::OrderSide::Sell,
                                                  .qty = 0.1, // Fixed quantity for example
                                                  .price = trade_data.price,
@@ -106,13 +106,13 @@ public:
 
           // Buy when price touches lower band, sell when touches upper band
           if (trade_data.price <= lower_band) {
-            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj, // Default symbol for example
                                                  .side = exec::OrderSide::Buy,
                                                  .qty = 0.1,
                                                  .price = trade_data.price,
                                                  .type = exec::OrderType::Market});
           } else if (trade_data.price >= upper_band) {
-            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj, // Default symbol for example
                                                  .side = exec::OrderSide::Sell,
                                                  .qty = 0.1,
                                                  .price = trade_data.price,
@@ -183,13 +183,13 @@ public:
           double momentum = trade_data.price - recent_prices_.front();
           // Buy if positive momentum, sell if negative momentum
           if (momentum > 0.0) {
-            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj, // Default symbol for example
                                                  .side = exec::OrderSide::Buy,
                                                  .qty = 0.1,
                                                  .price = trade_data.price,
                                                  .type = exec::OrderType::Market});
           } else if (momentum < 0.0) {
-            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT", // Default symbol for example
+            signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj, // Default symbol for example
                                                  .side = exec::OrderSide::Sell,
                                                  .qty = 0.1,
                                                  .price = trade_data.price,

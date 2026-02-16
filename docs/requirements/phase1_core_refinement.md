@@ -958,7 +958,7 @@ Each component must meet its specific acceptance criteria listed in Section 3.
 - C++23 compiler support (GCC 13+, Clang 16+, MSVC 2022)
 - nlohmann/json (3.11.0+) for configuration
 - CMake 3.25+ for build system
-- GoogleTest 1.14+ for testing
+- KJ Test (from Cap'n Proto) for testing
 
 ### 8.3 Optional Dependencies
 

@@ -46,7 +46,7 @@ void Position::apply_fill(veloz::exec::OrderSide side, double qty, double price)
     // Buy: add to long or reduce short
     if (size_ < 0) {
       // Reducing short position
-      double close_qty = std::min(qty, -size_);
+      double close_qty = std::fmin(qty, -size_);
       realized_pnl_ += close_qty * (avg_price_ - price);
       size_ += close_qty;
       qty -= close_qty;
@@ -65,7 +65,7 @@ void Position::apply_fill(veloz::exec::OrderSide side, double qty, double price)
     // Sell: add to short or reduce long
     if (size_ > 0) {
       // Reducing long position
-      double close_qty = std::min(qty, size_);
+      double close_qty = std::fmin(qty, size_);
       realized_pnl_ += close_qty * (price - avg_price_);
       size_ -= close_qty;
       qty -= close_qty;

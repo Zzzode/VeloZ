@@ -1,118 +1,117 @@
+#include "kj/test.h"
+#include "kj/function.h"
 #include "veloz/risk/circuit_breaker.h"
 
 #include <atomic>
-#include <chrono>
-#include <gtest/gtest.h>
-#include <thread>
+#include <unistd.h>  // For usleep
+
+namespace {
 
 using namespace veloz::risk;
 
-TEST(CircuitBreaker, AllowRequestsWhenOpen) {
+KJ_TEST("CircuitBreaker: Allow requests when open") {
   CircuitBreaker cb;
 
-  EXPECT_TRUE(cb.allow_request());
+  KJ_EXPECT(cb.allow_request());
 }
 
-TEST(CircuitBreaker, TripOnFailures) {
+KJ_TEST("CircuitBreaker: Trip on failures") {
   CircuitBreaker cb;
   cb.set_failure_threshold(3);
 
   cb.record_failure();
   cb.record_failure();
-  EXPECT_TRUE(cb.allow_request()); // Still open
+  KJ_EXPECT(cb.allow_request());
 
-  cb.record_failure();              // Trip!
-  EXPECT_FALSE(cb.allow_request()); // Now open
+  cb.record_failure();
+  KJ_EXPECT(!cb.allow_request());
 }
 
-TEST(CircuitBreaker, AutoResetAfterTimeout) {
+KJ_TEST("CircuitBreaker: Auto reset after timeout") {
   CircuitBreaker cb;
   cb.set_failure_threshold(2);
   cb.set_timeout_ms(100);
 
   cb.record_failure();
   cb.record_failure();
-  EXPECT_FALSE(cb.allow_request());
+  KJ_EXPECT(!cb.allow_request());
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(150));
-  EXPECT_TRUE(cb.allow_request()); // Should be auto-reset
+  // Use usleep for timeout test (150ms)
+  usleep(150000);
+  KJ_EXPECT(cb.allow_request());
 }
 
-TEST(CircuitBreaker, ManualReset) {
+KJ_TEST("CircuitBreaker: Manual reset") {
   CircuitBreaker cb;
   cb.set_failure_threshold(2);
 
   cb.record_failure();
   cb.record_failure();
-  EXPECT_FALSE(cb.allow_request());
+  KJ_EXPECT(!cb.allow_request());
 
   cb.reset();
-  EXPECT_TRUE(cb.allow_request());
+  KJ_EXPECT(cb.allow_request());
 }
 
-TEST(CircuitBreaker, HalfOpenState) {
+KJ_TEST("CircuitBreaker: Half-open state") {
   CircuitBreaker cb;
   cb.set_failure_threshold(2);
 
   cb.record_failure();
   cb.record_failure();
-  EXPECT_FALSE(cb.allow_request());
+  KJ_EXPECT(!cb.allow_request());
 
-  cb.reset(); // Go to half-open
-  EXPECT_TRUE(cb.allow_request());
+  cb.reset();
+  KJ_EXPECT(cb.allow_request());
 
   cb.record_success();
-  EXPECT_TRUE(cb.allow_request()); // Stay closed
+  KJ_EXPECT(cb.allow_request());
 }
 
-TEST(CircuitBreaker, NamedCircuitBreaker) {
+KJ_TEST("CircuitBreaker: Named circuit breaker") {
   CircuitBreaker cb("test_service");
-  EXPECT_EQ(cb.name(), "test_service");
+  KJ_EXPECT(cb.name() == "test_service");
 
   cb.set_name("new_name");
-  EXPECT_EQ(cb.name(), "new_name");
+  KJ_EXPECT(cb.name() == "new_name");
 }
 
-TEST(CircuitBreaker, Statistics) {
+KJ_TEST("CircuitBreaker: Statistics") {
   CircuitBreaker cb("stats_test");
   cb.set_failure_threshold(3);
 
-  // Initial stats should be zero
-  EXPECT_EQ(cb.stats().total_requests.load(), 0);
-  EXPECT_EQ(cb.stats().successful_requests.load(), 0);
-  EXPECT_EQ(cb.stats().failed_requests.load(), 0);
+  KJ_EXPECT(cb.stats().total_requests.load() == 0);
+  KJ_EXPECT(cb.stats().successful_requests.load() == 0);
+  KJ_EXPECT(cb.stats().failed_requests.load() == 0);
 
-  // Make some requests
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_success();
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_failure();
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_success();
 
-  EXPECT_EQ(cb.stats().total_requests.load(), 3);
-  EXPECT_EQ(cb.stats().successful_requests.load(), 2);
-  EXPECT_EQ(cb.stats().failed_requests.load(), 1);
+  KJ_EXPECT(cb.stats().total_requests.load() == 3);
+  KJ_EXPECT(cb.stats().successful_requests.load() == 2);
+  KJ_EXPECT(cb.stats().failed_requests.load() == 1);
 }
 
-TEST(CircuitBreaker, RejectedRequestsTracking) {
+KJ_TEST("CircuitBreaker: Rejected requests tracking") {
   CircuitBreaker cb;
   cb.set_failure_threshold(2);
 
-  // Trip the circuit
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_failure();
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_failure();
 
-  // Now requests should be rejected
-  EXPECT_FALSE(cb.allow_request());
-  EXPECT_FALSE(cb.allow_request());
+  KJ_EXPECT(!cb.allow_request());
+  KJ_EXPECT(!cb.allow_request());
 
-  EXPECT_EQ(cb.stats().rejected_requests.load(), 2);
+  KJ_EXPECT(cb.stats().rejected_requests.load() == 2);
 }
 
-TEST(CircuitBreaker, StateChangeCallback) {
+KJ_TEST("CircuitBreaker: State change callback") {
   CircuitBreaker cb;
   cb.set_failure_threshold(2);
 
@@ -126,108 +125,98 @@ TEST(CircuitBreaker, StateChangeCallback) {
     last_new_state = new_state;
   });
 
-  // Trip the circuit
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_failure();
-  cb.allow_request();
+  (void)cb.allow_request();
   cb.record_failure();
 
-  EXPECT_EQ(callback_count.load(), 1);
-  EXPECT_EQ(last_old_state, CircuitState::Closed);
-  EXPECT_EQ(last_new_state, CircuitState::Open);
+  KJ_EXPECT(callback_count.load() == 1);
+  KJ_EXPECT(last_old_state == CircuitState::Closed);
+  KJ_EXPECT(last_new_state == CircuitState::Open);
 
-  // Reset to half-open
   cb.reset();
-  EXPECT_EQ(callback_count.load(), 2);
-  EXPECT_EQ(last_old_state, CircuitState::Open);
-  EXPECT_EQ(last_new_state, CircuitState::HalfOpen);
+  KJ_EXPECT(callback_count.load() == 2);
+  KJ_EXPECT(last_old_state == CircuitState::Open);
+  KJ_EXPECT(last_new_state == CircuitState::HalfOpen);
 }
 
-TEST(CircuitBreaker, HealthCheckCallback) {
+KJ_TEST("CircuitBreaker: Health check callback") {
   CircuitBreaker cb;
 
-  // No health check configured - should return true
-  EXPECT_TRUE(cb.check_health());
+  KJ_EXPECT(cb.check_health());
 
-  // Set health check that returns false
   cb.set_health_check_callback([]() { return false; });
-  EXPECT_FALSE(cb.check_health());
+  KJ_EXPECT(!cb.check_health());
 
-  // Set health check that returns true
   cb.set_health_check_callback([]() { return true; });
-  EXPECT_TRUE(cb.check_health());
+  KJ_EXPECT(cb.check_health());
 }
 
-TEST(CircuitBreaker, FailureRate) {
-  CircuitBreaker cb;
-  cb.set_failure_threshold(10); // High threshold to prevent tripping
-
-  // No requests yet
-  EXPECT_DOUBLE_EQ(cb.failure_rate(), 0.0);
-  EXPECT_DOUBLE_EQ(cb.success_rate(), 1.0);
-
-  // 2 successes, 1 failure = 33% failure rate
-  cb.allow_request();
-  cb.record_success();
-  cb.allow_request();
-  cb.record_success();
-  cb.allow_request();
-  cb.record_failure();
-
-  EXPECT_NEAR(cb.failure_rate(), 1.0 / 3.0, 0.01);
-  EXPECT_NEAR(cb.success_rate(), 2.0 / 3.0, 0.01);
-}
-
-TEST(CircuitBreaker, StateTransitionCount) {
-  CircuitBreaker cb;
-  cb.set_failure_threshold(2);
-
-  EXPECT_EQ(cb.stats().state_transitions.load(), 0);
-
-  // Trip the circuit (Closed -> Open)
-  cb.allow_request();
-  cb.record_failure();
-  cb.allow_request();
-  cb.record_failure();
-  EXPECT_EQ(cb.stats().state_transitions.load(), 1);
-
-  // Reset (Open -> HalfOpen)
-  cb.reset();
-  EXPECT_EQ(cb.stats().state_transitions.load(), 2);
-
-  // Success in half-open (HalfOpen -> Closed)
-  cb.allow_request();
-  cb.record_success();
-  cb.allow_request();
-  cb.record_success();
-  EXPECT_EQ(cb.stats().state_transitions.load(), 3);
-}
-
-TEST(CircuitBreaker, ResetStats) {
+KJ_TEST("CircuitBreaker: Failure rate") {
   CircuitBreaker cb;
   cb.set_failure_threshold(10);
 
-  cb.allow_request();
+  KJ_EXPECT(cb.failure_rate() == 0.0);
+  KJ_EXPECT(cb.success_rate() == 1.0);
+
+  (void)cb.allow_request();
   cb.record_success();
-  cb.allow_request();
+  (void)cb.allow_request();
+  cb.record_success();
+  (void)cb.allow_request();
   cb.record_failure();
 
-  EXPECT_GT(cb.stats().total_requests.load(), 0);
+  KJ_EXPECT(cb.failure_rate() >= 0.33 && cb.failure_rate() <= 0.34);
+  KJ_EXPECT(cb.success_rate() >= 0.66 && cb.success_rate() <= 0.67);
+}
+
+KJ_TEST("CircuitBreaker: State transition count") {
+  CircuitBreaker cb;
+  cb.set_failure_threshold(2);
+
+  KJ_EXPECT(cb.stats().state_transitions.load() == 0);
+
+  (void)cb.allow_request();
+  cb.record_failure();
+  (void)cb.allow_request();
+  cb.record_failure();
+  KJ_EXPECT(cb.stats().state_transitions.load() == 1);
+
+  cb.reset();
+  KJ_EXPECT(cb.stats().state_transitions.load() == 2);
+
+  (void)cb.allow_request();
+  cb.record_success();
+  (void)cb.allow_request();
+  cb.record_success();
+  KJ_EXPECT(cb.stats().state_transitions.load() == 3);
+}
+
+KJ_TEST("CircuitBreaker: Reset stats") {
+  CircuitBreaker cb;
+  cb.set_failure_threshold(10);
+
+  (void)cb.allow_request();
+  cb.record_success();
+  (void)cb.allow_request();
+  cb.record_failure();
+
+  KJ_EXPECT(cb.stats().total_requests.load() > 0);
 
   cb.reset_stats();
 
-  EXPECT_EQ(cb.stats().total_requests.load(), 0);
-  EXPECT_EQ(cb.stats().successful_requests.load(), 0);
-  EXPECT_EQ(cb.stats().failed_requests.load(), 0);
+  KJ_EXPECT(cb.stats().total_requests.load() == 0);
+  KJ_EXPECT(cb.stats().successful_requests.load() == 0);
+  KJ_EXPECT(cb.stats().failed_requests.load() == 0);
 }
 
-TEST(CircuitBreaker, ToStringFunction) {
-  EXPECT_EQ(to_string(CircuitState::Closed), "closed");
-  EXPECT_EQ(to_string(CircuitState::Open), "open");
-  EXPECT_EQ(to_string(CircuitState::HalfOpen), "half_open");
+KJ_TEST("CircuitBreaker: ToString function") {
+  KJ_EXPECT(to_string(CircuitState::Closed) == "closed");
+  KJ_EXPECT(to_string(CircuitState::Open) == "open");
+  KJ_EXPECT(to_string(CircuitState::HalfOpen) == "half_open");
 }
 
-TEST(CircuitBreakerGuard, MarkSuccess) {
+KJ_TEST("CircuitBreakerGuard: Mark success") {
   CircuitBreaker cb;
   cb.set_failure_threshold(10);
 
@@ -236,19 +225,20 @@ TEST(CircuitBreakerGuard, MarkSuccess) {
     guard.mark_success();
   }
 
-  EXPECT_EQ(cb.stats().successful_requests.load(), 1);
-  EXPECT_EQ(cb.stats().failed_requests.load(), 0);
+  KJ_EXPECT(cb.stats().successful_requests.load() == 1);
+  KJ_EXPECT(cb.stats().failed_requests.load() == 0);
 }
 
-TEST(CircuitBreakerGuard, AutoFailure) {
+KJ_TEST("CircuitBreakerGuard: Auto failure") {
   CircuitBreaker cb;
   cb.set_failure_threshold(10);
 
   {
     CircuitBreakerGuard guard(cb);
-    // Don't mark success - should record failure on destruction
   }
 
-  EXPECT_EQ(cb.stats().successful_requests.load(), 0);
-  EXPECT_EQ(cb.stats().failed_requests.load(), 1);
+  KJ_EXPECT(cb.stats().successful_requests.load() == 0);
+  KJ_EXPECT(cb.stats().failed_requests.load() == 1);
 }
+
+} // namespace

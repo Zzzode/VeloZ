@@ -4,7 +4,7 @@ namespace veloz::market {
 
 kj::String SubscriptionManager::make_subscription_key(const veloz::common::SymbolId& symbol,
                                                       MarketEventType event_type) {
-  return kj::str(symbol.value.c_str(), "|", static_cast<int>(event_type));
+  return kj::str(symbol.value, "|", static_cast<int>(event_type));
 }
 
 void SubscriptionManager::subscribe(const veloz::common::SymbolId& symbol,
@@ -78,7 +78,7 @@ kj::Vector<MarketEventType>
 SubscriptionManager::event_types(const veloz::common::SymbolId& symbol) const {
   // Use kj::HashSet to collect unique event types
   kj::HashSet<int> type_ints;
-  kj::StringPtr symbol_prefix = symbol.value.c_str();
+  kj::StringPtr symbol_prefix = symbol.value;
 
   for (const auto& entry : subscriptions_) {
     kj::StringPtr key = entry.key;
@@ -152,7 +152,7 @@ void SubscriptionManager::rebuild_symbol_cache() {
 
   active_symbols_cache_.clear();
   for (const auto& symbol_str : unique_symbols) {
-    active_symbols_cache_.add(veloz::common::SymbolId{std::string(symbol_str.cStr())});
+    active_symbols_cache_.add(veloz::common::SymbolId{symbol_str});
   }
 }
 

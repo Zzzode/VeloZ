@@ -309,7 +309,7 @@ OrderWal::serialize_order_request(const veloz::exec::PlaceOrderRequest& request)
   auto write_buffer = buffer.slice(offset, buffer.size());
   offset += write_string(write_buffer, request.client_order_id);
   write_buffer = buffer.slice(offset, buffer.size());
-  offset += write_string(write_buffer, kj::StringPtr(request.symbol.value.c_str()));
+  offset += write_string(write_buffer, kj::StringPtr(request.symbol.value));
   write_buffer = buffer.slice(offset, buffer.size());
   offset += write_uint8(write_buffer, static_cast<uint8_t>(request.side));
   write_buffer = buffer.slice(offset, buffer.size());
@@ -507,7 +507,7 @@ void OrderWal::deserialize_order_new(kj::ArrayPtr<const kj::byte> payload,
 
   veloz::exec::PlaceOrderRequest request;
   request.client_order_id = kj::mv(client_order_id);
-  request.symbol = veloz::common::SymbolId(std::string(symbol_str.cStr()));
+  request.symbol = veloz::common::SymbolId(symbol_str);
   request.side = side;
   request.type = type;
   request.tif = tif;
@@ -582,7 +582,7 @@ void OrderWal::deserialize_checkpoint(kj::ArrayPtr<const kj::byte> payload,
     // Create order request to populate store
     veloz::exec::PlaceOrderRequest request;
     request.client_order_id = kj::heapString(client_order_id);
-    request.symbol = veloz::common::SymbolId(std::string(symbol.cStr()));
+    request.symbol = veloz::common::SymbolId(symbol);
     request.side = (side == "SELL"_kj) ? veloz::exec::OrderSide::Sell : veloz::exec::OrderSide::Buy;
     request.qty = has_order_qty ? order_qty : 0.0;
     if (has_limit_price) {

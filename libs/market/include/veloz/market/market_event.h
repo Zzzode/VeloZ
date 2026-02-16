@@ -15,6 +15,7 @@
 
 #include "veloz/common/types.h"
 
+#include <compare>
 #include <cstdint>
 #include <kj/common.h>
 #include <kj/one-of.h>

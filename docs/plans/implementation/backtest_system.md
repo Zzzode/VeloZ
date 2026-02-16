@@ -443,7 +443,7 @@ public:
 
 - **Data Processing**: pugixml, nlohmann/json
 - **Math Calculation**: Eigen, Boost.Math
-- **Testing Framework**: GoogleTest, Catch2
+- **Testing Framework**: KJ Test (from Cap'n Proto)
 
 ### 7.2 Python Libraries
 

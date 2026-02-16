@@ -1,105 +1,61 @@
 #include "veloz/backtest/data_source.h"
 
+#include <kj/test.h>
+#include <kj/refcount.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
-#include <kj/refcount.h>
+#include <string>
 
-class DataSourceTest : public ::testing::Test {
-public:
-  ~DataSourceTest() noexcept override = default;
+using namespace veloz::backtest;
 
-protected:
-  void SetUp() override {
-    csv_data_source_ = kj::rc<veloz::backtest::CSVDataSource>();
-    binance_data_source_ = kj::rc<veloz::backtest::BinanceDataSource>();
-  }
+namespace {
 
-  void TearDown() override {
-    csv_data_source_ = nullptr;
-    binance_data_source_ = nullptr;
-  }
-
-  kj::Rc<veloz::backtest::CSVDataSource> csv_data_source_;
-  kj::Rc<veloz::backtest::BinanceDataSource> binance_data_source_;
-};
-
-TEST_F(DataSourceTest, CSVDataSourceCreation) {
-  EXPECT_TRUE(csv_data_source_ != nullptr);
-}
-
-TEST_F(DataSourceTest, BinanceDataSourceCreation) {
-  EXPECT_TRUE(binance_data_source_ != nullptr);
-}
-
-TEST_F(DataSourceTest, CSVDataSourceConnect) {
-  EXPECT_TRUE(csv_data_source_->connect());
-}
-
-TEST_F(DataSourceTest, CSVDataSourceDisconnect) {
-  EXPECT_TRUE(csv_data_source_->disconnect());
-}
-
-TEST_F(DataSourceTest, BinanceDataSourceConnect) {
-  EXPECT_TRUE(binance_data_source_->connect());
-}
-
-TEST_F(DataSourceTest, BinanceDataSourceDisconnect) {
-  EXPECT_TRUE(binance_data_source_->disconnect());
-}
-
-TEST_F(DataSourceTest, CSVDataSourceSetDataDirectory) {
-  csv_data_source_->set_data_directory("/tmp/data");
-  EXPECT_TRUE(true); // Should not throw
-}
-
-TEST_F(DataSourceTest, BinanceDataSourceSetAPIKey) {
-  binance_data_source_->set_api_key("test_api_key");
-  EXPECT_TRUE(true); // Should not throw
-}
-
-TEST_F(DataSourceTest, BinanceDataSourceSetAPISecret) {
-  binance_data_source_->set_api_secret("test_api_secret");
-  EXPECT_TRUE(true); // Should not throw
-}
-
-TEST_F(DataSourceTest, DataSourceFactoryCreateCSV) {
-  auto data_source = veloz::backtest::DataSourceFactory::create_data_source("csv");
-  EXPECT_TRUE(data_source != nullptr);
-  // kj::Rc doesn't support dynamic_pointer_cast, check type by calling connect()
-  EXPECT_TRUE(data_source->connect());
-}
-
-TEST_F(DataSourceTest, DataSourceFactoryCreateBinance) {
-  auto data_source = veloz::backtest::DataSourceFactory::create_data_source("binance");
-  EXPECT_TRUE(data_source != nullptr);
-  // kj::Rc doesn't support dynamic_pointer_cast, check type by calling connect()
-  EXPECT_TRUE(data_source->connect());
-}
-
-TEST_F(DataSourceTest, DataSourceFactoryCreateUnknown) {
-  auto data_source = veloz::backtest::DataSourceFactory::create_data_source("unknown");
-  EXPECT_TRUE(data_source == nullptr);
-}
-
-TEST_F(DataSourceTest, CSVDataSourceGetData) {
-  auto events = csv_data_source_->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
-  EXPECT_TRUE(events.empty()); // Should be empty as not implemented yet
-}
-
-TEST_F(DataSourceTest, BinanceDataSourceGetData) {
+// Helper to check if network tests should run
+bool should_run_network_tests() {
   const char* run_network_tests = std::getenv("VELOZ_RUN_NETWORK_TESTS");
-  if (!run_network_tests || std::string(run_network_tests) != "1") {
-    GTEST_SKIP();
-  }
-  auto events =
-      binance_data_source_->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
-  EXPECT_TRUE(events.empty()); // Should be empty as not implemented yet
+  return run_network_tests && std::string(run_network_tests) == "1";
 }
 
-TEST_F(DataSourceTest, CSVDataSourceDownloadData) {
-  // Test download_data with valid parameters for "trade" data type
+// Helper to check if string contains substring (for std::string)
+bool contains(const std::string& str, const char* substr) {
+  return str.find(substr) != std::string::npos;
+}
+
+// ============================================================================
+// CSVDataSource Tests
+// ============================================================================
+
+KJ_TEST("CSVDataSource: Creation") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
+  KJ_EXPECT(csv_data_source != nullptr);
+}
+
+KJ_TEST("CSVDataSource: Connect") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
+  KJ_EXPECT(csv_data_source->connect());
+}
+
+KJ_TEST("CSVDataSource: Disconnect") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
+  KJ_EXPECT(csv_data_source->disconnect());
+}
+
+KJ_TEST("CSVDataSource: SetDataDirectory") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
+  csv_data_source->set_data_directory("/tmp/data");
+  // Should not throw
+}
+
+KJ_TEST("CSVDataSource: GetData") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
+  auto events = csv_data_source->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
+  KJ_EXPECT(events.empty()); // Should be empty as not implemented yet
+}
+
+KJ_TEST("CSVDataSource: DownloadData") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
   const std::string test_file = "/tmp/test_csv_data_BTCUSDT_trade.csv";
   std::int64_t start_time = 1704067200000; // 2024-01-01 00:00:00 UTC
   std::int64_t end_time = 1704068100000;   // 2024-01-01 00:15:00 UTC (15 minutes)
@@ -108,12 +64,11 @@ TEST_F(DataSourceTest, CSVDataSourceDownloadData) {
   std::filesystem::remove(test_file);
 
   // Test successful download for trade data
-  bool result =
-      csv_data_source_->download_data("BTCUSDT", start_time, end_time, "trade", "", test_file.c_str());
-  EXPECT_TRUE(result);
+  bool result = csv_data_source->download_data("BTCUSDT", start_time, end_time, "trade", "", test_file.c_str());
+  KJ_EXPECT(result);
 
   // Verify file was created
-  EXPECT_TRUE(std::filesystem::exists(test_file));
+  KJ_EXPECT(std::filesystem::exists(test_file));
 
   // Verify file has content (should have header + some data)
   std::ifstream file(test_file);
@@ -122,32 +77,93 @@ TEST_F(DataSourceTest, CSVDataSourceDownloadData) {
   while (std::getline(file, line)) {
     line_count++;
   }
-  EXPECT_GT(line_count, 1); // At least header + 1 data line
+  KJ_EXPECT(line_count > 1); // At least header + 1 data line
   file.close();
 
   // Clean up test file
   std::filesystem::remove(test_file);
 }
 
-TEST_F(DataSourceTest, CSVDataSourceDownloadDataInvalidParams) {
+KJ_TEST("CSVDataSource: DownloadDataInvalidParams") {
+  auto csv_data_source = kj::rc<CSVDataSource>();
+
   // Test with invalid parameters
-  EXPECT_FALSE(csv_data_source_->download_data("", 1609459200000, 1640995200000, "trade", "",
-                                               "test.csv")); // Empty symbol
-  EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 0, 1640995200000, "trade", "",
-                                               "test.csv")); // Invalid start_time
-  EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1609459200000, 0, "trade", "",
-                                               "test.csv")); // Invalid end_time
-  EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1640995200000, 1609459200000, "trade", "",
-                                               "test.csv")); // end_time < start_time
-  EXPECT_FALSE(csv_data_source_->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline",
-                                               "1h", "test.csv")); // Unsupported data type
+  KJ_EXPECT(!csv_data_source->download_data("", 1609459200000, 1640995200000, "trade", "", "test.csv")); // Empty symbol
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 0, 1640995200000, "trade", "", "test.csv")); // Invalid start_time
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1609459200000, 0, "trade", "", "test.csv")); // Invalid end_time
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1640995200000, 1609459200000, "trade", "", "test.csv")); // end_time < start_time
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h", "test.csv")); // Unsupported data type
 }
 
-TEST_F(DataSourceTest, BinanceDataSourceDownloadData) {
-  const char* run_network_tests = std::getenv("VELOZ_RUN_NETWORK_TESTS");
-  if (!run_network_tests || std::string(run_network_tests) != "1") {
-    GTEST_SKIP();
-  }
-  EXPECT_FALSE(binance_data_source_->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline",
-                                                   "1h", "test_data.csv"));
+// ============================================================================
+// BinanceDataSource Tests
+// ============================================================================
+
+KJ_TEST("BinanceDataSource: Creation") {
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  KJ_EXPECT(binance_data_source != nullptr);
 }
+
+KJ_TEST("BinanceDataSource: Connect") {
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  KJ_EXPECT(binance_data_source->connect());
+}
+
+KJ_TEST("BinanceDataSource: Disconnect") {
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  KJ_EXPECT(binance_data_source->disconnect());
+}
+
+KJ_TEST("BinanceDataSource: SetAPIKey") {
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  binance_data_source->set_api_key("test_api_key");
+  // Should not throw
+}
+
+KJ_TEST("BinanceDataSource: SetAPISecret") {
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  binance_data_source->set_api_secret("test_api_secret");
+  // Should not throw
+}
+
+KJ_TEST("BinanceDataSource: GetData") {
+  if (!should_run_network_tests()) {
+    return; // Skip test
+  }
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  auto events = binance_data_source->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
+  KJ_EXPECT(events.empty()); // Should be empty as not implemented yet
+}
+
+KJ_TEST("BinanceDataSource: DownloadData") {
+  if (!should_run_network_tests()) {
+    return; // Skip test
+  }
+  auto binance_data_source = kj::rc<BinanceDataSource>();
+  KJ_EXPECT(!binance_data_source->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h", "test_data.csv"));
+}
+
+// ============================================================================
+// DataSourceFactory Tests
+// ============================================================================
+
+KJ_TEST("DataSourceFactory: CreateCSV") {
+  auto data_source = DataSourceFactory::create_data_source("csv");
+  KJ_EXPECT(data_source != nullptr);
+  // Check type by calling connect()
+  KJ_EXPECT(data_source->connect());
+}
+
+KJ_TEST("DataSourceFactory: CreateBinance") {
+  auto data_source = DataSourceFactory::create_data_source("binance");
+  KJ_EXPECT(data_source != nullptr);
+  // Check type by calling connect()
+  KJ_EXPECT(data_source->connect());
+}
+
+KJ_TEST("DataSourceFactory: CreateUnknown") {
+  auto data_source = DataSourceFactory::create_data_source("unknown");
+  KJ_EXPECT(data_source == nullptr);
+}
+
+} // namespace

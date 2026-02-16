@@ -14,11 +14,11 @@ Detailed plans for implementing major subsystems:
 
 | Document | Description | Progress |
 |----------|-------------|----------|
-| [market_data.md](implementation/market_data.md) | Market data ingestion and distribution | ~20% |
-| [execution_system.md](implementation/execution_system.md) | Order routing and execution | ~20% |
-| [risk_management.md](implementation/risk_management.md) | Risk checks and position limits | ~25% |
-| [backtest_system.md](implementation/backtest_system.md) | Historical data backtesting | ~15% |
-| [infrastructure.md](implementation/infrastructure.md) | Core infrastructure components | ~40% |
+| [market_data.md](implementation/market_data.md) | Market data ingestion and distribution | ~85% |
+| [execution_system.md](implementation/execution_system.md) | Order routing and execution | ~80% |
+| [risk_management.md](implementation/risk_management.md) | Risk checks and position limits | ~85% |
+| [backtest_system.md](implementation/backtest_system.md) | Historical data backtesting | ~95% |
+| [infrastructure.md](implementation/infrastructure.md) | Core infrastructure components | ~85% |
 
 ### Optimization Plans (`optimization/`)
 
@@ -27,7 +27,7 @@ Performance and quality improvement plans:
 | Document | Description | Progress |
 |----------|-------------|----------|
 | [infrastructure.md](optimization/infrastructure.md) | Infrastructure optimization | ~5% |
-| [testing.md](optimization/testing.md) | Testing framework improvements | ~15% |
+| [testing.md](optimization/testing.md) | Testing framework improvements (KJ Test migrated) | ~15% |
 | [event_loop.md](optimization/event_loop.md) | Event loop performance optimization | Specialized |
 
 ### Deployment Plans (`deployment/`)

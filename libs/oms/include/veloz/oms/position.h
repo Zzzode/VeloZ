@@ -18,6 +18,13 @@ public:
   Position() = default;
   explicit Position(veloz::common::SymbolId symbol);
 
+  // Copy constructor (needed since SymbolId contains move-only kj::String)
+  Position(const Position& other) = default;
+  Position& operator=(const Position& other) = default;
+  // Move constructor
+  Position(Position&& other) noexcept = default;
+  Position& operator=(Position&& other) noexcept = default;
+
   [[nodiscard]] const veloz::common::SymbolId& symbol() const;
   [[nodiscard]] double size() const;
   [[nodiscard]] double avg_price() const;

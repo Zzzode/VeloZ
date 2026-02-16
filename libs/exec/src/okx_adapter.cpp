@@ -132,15 +132,18 @@ std::string OKXAdapter::build_signature(const std::string& timestamp, const std:
 
 kj::String OKXAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
   // OKX uses format like "BTC-USDT" for spot
-  std::string sym = symbol.value;
+  kj::StringPtr sym = symbol.value;
+  size_t len = sym.size();
+
   // Convert BTCUSDT to BTC-USDT
-  if (sym.length() >= 6 && sym.substr(sym.length() - 4) == "USDT") {
-    return kj::str(sym.substr(0, sym.length() - 4).c_str(), "-USDT");
+  if (len >= 4) {
+    kj::StringPtr suffix = sym.slice(len - 4);
+    if (suffix == "USDT") {
+      return kj::str(sym.slice(0, len - 4), "-USDT");
+    }
   }
-  if (sym.length() >= 5 && sym.substr(sym.length() - 3) == "USD") {
-    return kj::str(sym.substr(0, sym.length() - 3).c_str(), "-USD");
-  }
-  return kj::str(sym.c_str());
+
+  return kj::heapString(sym);
 }
 
 kj::StringPtr OKXAdapter::order_side_to_string(OrderSide side) {
@@ -301,15 +304,16 @@ OKXAdapter::place_order_async(const PlaceOrderRequest& req) {
   }
 
   // Capture necessary fields by value since kj::String is not copyable
-  auto symbol_value = kj::str(req.symbol.value.c_str());
+  auto symbol_value = kj::str(req.symbol.value);
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v5/trade/order", body)
       .then([symbol_value = kj::mv(symbol_value),
              client_order_id = kj::mv(client_order_id_copy)](kj::String response) mutable {
         // Parse response and create execution report
+        auto symbol_copy = kj::str(symbol_value);
         ExecutionReport report;
-        report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
+        report.symbol = veloz::common::SymbolId{symbol_copy};
         report.client_order_id = kj::mv(client_order_id);
         report.status = OrderStatus::Accepted;
         report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -325,7 +329,7 @@ OKXAdapter::cancel_order_async(const CancelOrderRequest& req) {
   auto symbol = format_symbol(req.symbol);
   auto body = kj::str("{\"instId\":\"", symbol, "\",\"clOrdId\":\"", req.client_order_id, "\"}");
 
-  auto symbol_value = kj::str(req.symbol.value.c_str());
+  auto symbol_value = kj::str(req.symbol.value);
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v5/trade/cancel-order", body)

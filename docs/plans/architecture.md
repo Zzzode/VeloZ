@@ -439,7 +439,7 @@ public:
 | Concurrency Programming | C++23 Standard Library / Folly | Modern C++ feature support |
 | Logging | spdlog | High performance, easy to use |
 | Configuration | Custom implementation | **Type-safe, validation, hot-reload** - replaces YAML-CPP |
-| Testing | GoogleTest / Catch2 | Mature, easy to use |
+| Testing | KJ Test (from Cap'n Proto) | Mature, easy to use |
 
 ### 4.2 Python Library Selection
 

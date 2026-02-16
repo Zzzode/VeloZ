@@ -51,49 +51,33 @@ Testing and optimization are critical links in the quantitative trading framewor
 ### 2.2 Testing Framework Structure
 
 ```cpp
-// Test base class
-class BaseTest {
-public:
-  virtual void SetUp() {}
-  virtual void TearDown() {}
-  virtual ~BaseTest() = default;
-};
+// Strategy test using KJ Test framework
+KJ_TEST("Strategy: Creation") {
+  veloz::strategy::StrategyConfig config;
+  config.name = kj::str("TestStrategy");
+  config.risk_per_trade = 0.02;
 
-// Strategy test class
-class StrategyTest : public BaseTest {
-public:
-  void SetUp() override;
-  void TearDown() override;
+  auto strategy = strategy_manager->create_strategy(config);
+  KJ_EXPECT(strategy != nullptr);
+}
 
-  void test_strategy_creation();
-  void test_strategy_execution();
-  void test_strategy_stop();
-};
+// Strategy execution test
+KJ_TEST("Strategy: Execution") {
+  bool started = strategy_executor->start_strategy("TestStrategy");
+  KJ_EXPECT(started);
 
-// Backtest test class
-class BacktestTest : public BaseTest {
-public:
-  void SetUp() override;
-  void TearDown() override;
+  bool is_running = strategy_executor->is_strategy_running("TestStrategy");
+  KJ_EXPECT(is_running);
+}
 
-  void test_backtest_creation();
-  void test_backtest_execution();
-  void test_backtest_stop();
-  void test_backtest_result();
-};
+// Strategy stop test
+KJ_TEST("Strategy: Stop") {
+  bool stopped = strategy_executor->stop_strategy("TestStrategy");
+  KJ_EXPECT(stopped);
 
-// Live trading test class
-class LiveTradingTest : public BaseTest {
-public:
-  void SetUp() override;
-  void TearDown() override;
-
-  void test_strategy_start();
-  void test_strategy_stop();
-  void test_order_placement();
-  void test_order_cancellation();
-  void test_position_management();
-};
+  bool is_running = strategy_executor->is_strategy_running("TestStrategy");
+  KJ_EXPECT(!is_running);
+}
 ```
 
 ## 3. Test Case Design
@@ -102,41 +86,41 @@ public:
 
 ```cpp
 // Strategy creation test
-TEST_F(StrategyTest, test_strategy_creation) {
+KJ_TEST("Strategy: Creation") {
   // Test strategy creation
-  StrategyConfig config;
-  config.name = "TestStrategy";
-  config.parameters["period"] = "20";
+  veloz::strategy::StrategyConfig config;
+  config.name = kj::str("TestStrategy");
+  config.risk_per_trade = 0.02;
 
-  bool created = strategy_manager_->create_strategy(config);
-  EXPECT_TRUE(created);
+  bool created = strategy_manager->create_strategy(config);
+  KJ_EXPECT(created);
 
   // Test if strategy was successfully added to manager
-  auto strategies = strategy_manager_->list_strategies();
-  EXPECT_EQ(strategies.size(), 1);
-  EXPECT_EQ(strategies[0].name, "TestStrategy");
+  auto strategies = strategy_manager->list_strategies();
+  KJ_EXPECT(strategies.size() == 1);
+  KJ_EXPECT(strategies[0].name == kj::StringPtr("TestStrategy"));
 }
 
 // Strategy execution test
-TEST_F(StrategyTest, test_strategy_execution) {
+KJ_TEST("Strategy: Execution") {
   // Test strategy execution
-  bool started = strategy_executor_->start_strategy("TestStrategy");
-  EXPECT_TRUE(started);
+  bool started = strategy_executor->start_strategy("TestStrategy");
+  KJ_EXPECT(started);
 
   // Test if strategy is running
-  bool is_running = strategy_executor_->is_strategy_running("TestStrategy");
-  EXPECT_TRUE(is_running);
+  bool is_running = strategy_executor->is_strategy_running("TestStrategy");
+  KJ_EXPECT(is_running);
 }
 
 // Strategy stop test
-TEST_F(StrategyTest, test_strategy_stop) {
+KJ_TEST("Strategy: Stop") {
   // Test strategy stop
-  bool stopped = strategy_executor_->stop_strategy("TestStrategy");
-  EXPECT_TRUE(stopped);
+  bool stopped = strategy_executor->stop_strategy("TestStrategy");
+  KJ_EXPECT(stopped);
 
   // Test if strategy has stopped
-  bool is_running = strategy_executor_->is_strategy_running("TestStrategy");
-  EXPECT_FALSE(is_running);
+  bool is_running = strategy_executor->is_strategy_running("TestStrategy");
+  KJ_EXPECT(!is_running);
 }
 ```
 
@@ -144,35 +128,31 @@ TEST_F(StrategyTest, test_strategy_stop) {
 
 ```cpp
 // Backtest creation test
-TEST_F(BacktestTest, test_backtest_creation) {
-  // Test backtest creation
-  BacktestConfig config;
+KJ_TEST("Backtest: Creation") {
+  veloz::backtest::BacktestConfig config;
   config.start_time = 1609459200; // 2021-01-01
   config.end_time = 1612137600; // 2021-02-01
   config.initial_capital = 10000;
   config.transaction_cost = 0.001;
 
-  std::string backtest_id = backtest_manager_->start_backtest(config);
-  EXPECT_FALSE(backtest_id.empty());
+  kj::String backtest_id = backtest_manager->start_backtest(config);
+  KJ_EXPECT(backtest_id.size() > 0);
 }
 
 // Backtest execution test
-TEST_F(BacktestTest, test_backtest_execution) {
-  // Test backtest execution
-  BacktestStatus status = backtest_manager_->get_backtest_status("test_backtest_1");
-  EXPECT_EQ(status.state, BacktestState::Running);
+KJ_TEST("Backtest: Execution") {
+  veloz::backtest::BacktestStatus status = backtest_manager->get_backtest_status("test_backtest_1");
+  KJ_EXPECT(status.state == veloz::backtest::BacktestState::Running);
 }
 
 // Backtest result test
-TEST_F(BacktestTest, test_backtest_result) {
-  // Test backtest result
-  auto result = backtest_manager_->get_backtest_result("test_backtest_1");
-  EXPECT_TRUE(result.has_value());
+KJ_TEST("Backtest: Result") {
+  auto result = backtest_manager->get_backtest_result("test_backtest_1");
+  KJ_EXPECT(result.has_value());
 
-  // Verify validity of backtest result
-  EXPECT_GT(result->total_return, 0);
-  EXPECT_GT(result->annualized_return, 0);
-  EXPECT_LT(result->max_drawdown, 1);
+  KJ_EXPECT(result->total_return > 0);
+  KJ_EXPECT(result->annualized_return > 0);
+  KJ_EXPECT(result->max_drawdown < 1);
 }
 ```
 
@@ -180,40 +160,35 @@ TEST_F(BacktestTest, test_backtest_result) {
 
 ```cpp
 // Strategy start test
-TEST_F(LiveTradingTest, test_strategy_start) {
-  // Test strategy start
-  bool started = live_trading_api_->start_strategy("TestStrategy");
-  EXPECT_TRUE(started);
+KJ_TEST("LiveTrading: Strategy start") {
+  bool started = live_trading_api->start_strategy("TestStrategy");
+  KJ_EXPECT(started);
 
-  // Test if strategy is running
-  bool is_running = live_trading_api_->is_strategy_running("TestStrategy");
-  EXPECT_TRUE(is_running);
+  bool is_running = live_trading_api->is_strategy_running("TestStrategy");
+  KJ_EXPECT(is_running);
 }
 
 // Order placement test
-TEST_F(LiveTradingTest, test_order_placement) {
-  // Test order placement
-  PlaceOrderRequest order;
-  order.symbol = "BTC/USDT";
-  order.side = Side::Buy;
-  order.type = OrderType::Market;
+KJ_TEST("LiveTrading: Order placement") {
+  veloz::exec::PlaceOrderRequest order;
+  order.symbol = kj::str("BTC/USDT");
+  order.side = veloz::exec::OrderSide::Buy;
+  order.type = veloz::exec::OrderType::Market;
   order.quantity = 0.1;
 
-  auto result = live_trading_api_->place_order(order);
-  EXPECT_TRUE(result.has_value());
-  EXPECT_EQ(result->status, OrderStatus::Filled);
+  auto result = live_trading_api->place_order(order);
+  KJ_EXPECT(result.has_value());
+  KJ_EXPECT(result->status == veloz::exec::OrderStatus::Filled);
 }
 
 // Position management test
-TEST_F(LiveTradingTest, test_position_management) {
-  // Test position management
-  auto positions = live_trading_api_->get_positions();
-  EXPECT_GT(positions.size(), 0);
+KJ_TEST("LiveTrading: Position management") {
+  auto positions = live_trading_api->get_positions();
+  KJ_EXPECT(positions.size() > 0);
 
-  // Verify position information
   for (const auto& position : positions) {
-    EXPECT_GT(position.quantity, 0);
-    EXPECT_GT(position.market_value, 0);
+    KJ_EXPECT(position.quantity > 0);
+    KJ_EXPECT(position.market_value > 0);
   }
 }
 ```
@@ -448,9 +423,9 @@ public:
 
 ### 9.1 Development Environment
 
-- **Operating system**: Linux (Ubuntu 20.04+)
-- **Development tools**: CMake, GCC, Clang
-- **Testing frameworks**: GoogleTest, Catch2
+- **Operating system**: Linux (Ubuntu 20.04+), macOS 12+
+- **Development tools**: CMake, GCC 14.3+, Clang 14.0+
+- **Testing frameworks**: KJ Test (from Cap'n Proto), Catch2
 - **Code coverage tools**: gcov, lcov
 
 ### 9.2 Testing Environment
@@ -518,4 +493,5 @@ private:
 
 Testing and optimization are critical links in the quantitative trading framework development process, ensuring the system's quality, performance, and reliability. Through detailed testing framework design, test case development, and optimization strategy implementation, we will develop a complete testing and optimization system, supporting unit testing, integration testing, system testing, security testing, and performance testing.
 
-This plan will be completed within 8 weeks, with each phase focusing on the development of a core function, ensuring the system's quality and stability through a strict testing process.
+
+**Note on Test Framework Migration**: The VeloZ project has been migrated from GoogleTest to KJ Test framework (from Cap'n Proto library) to align with the project's KJ-first architecture. KJ Test provides lightweight, fast testing with KJ types and memory management.

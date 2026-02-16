@@ -90,7 +90,10 @@ private:
   // Helper methods
   // OpenSSL is used for HMAC-SHA256 signature generation - this is required for Bybit API
   // authentication. KJ does not provide HMAC functionality, so we use OpenSSL (external API).
-  std::string build_signature(const std::string& timestamp, const std::string& params);
+  kj::String build_signature(kj::StringPtr timestamp, kj::StringPtr params);
+
+  // KJ version of build_signature for Bybit V5 API
+  kj::String build_signature_v5(kj::StringPtr timestamp, kj::StringPtr params);
   kj::String format_symbol(const veloz::common::SymbolId& symbol);
   kj::StringPtr order_side_to_string(OrderSide side);
   kj::StringPtr order_type_to_string(OrderType type);
@@ -109,9 +112,9 @@ private:
   // TLS context for HTTPS connections
   kj::Own<kj::TlsContext> tls_context_;
 
-  // API credentials - std::string for OpenSSL HMAC compatibility
-  std::string api_key_;
-  std::string secret_key_;
+  // API credentials - kj::String for KJ library
+  kj::String api_key_;
+  kj::String secret_key_;
 
   // Connection status
   bool connected_;

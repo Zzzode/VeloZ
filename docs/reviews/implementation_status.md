@@ -3,7 +3,7 @@
 This document tracks implementation status of VeloZ features and components based on
 current repository state.
 
-**Last Updated**: 2026-02-15 (KJ Migration Complete)
+**Last Updated**: 2026-02-16 (WebSocket Implementation Complete)
 
 ## Summary
 
@@ -13,7 +13,7 @@ core modules are implemented with comprehensive KJ library integration. The fram
 multiple exchanges (Binance, Bybit, Coinbase, OKX) with resilient adapters.
 
 **KJ Library Migration**: **COMPLETE** - All migratable std types have been replaced
-with KJ equivalents. See [docs/migration/kj_migration_complete.md](../migration/kj_migration_complete.md).
+with KJ equivalents. See [docs/migration/README.md](../migration/README.md) for details.
 
 ## Core Infrastructure
 
@@ -67,7 +67,7 @@ with KJ equivalents. See [docs/migration/kj_migration_complete.md](../migration/
 | Account Display | Implemented | Balance view |
 | Strategy UI | Not Started | No strategy management UI |
 
-## Libraries (Standalone / Partial Integration)
+## Libraries (Fully Integrated)
 
 | Module | Status | Notes |
 |--------|--------|--------|
@@ -75,8 +75,8 @@ with KJ equivalents. See [docs/migration/kj_migration_complete.md](../migration/
 | Exec | Implemented | Order models, client order IDs, router, multiple exchange adapters |
 | OMS | Implemented | Order records, positions, WAL for order journaling |
 | Risk | Implemented | Risk engine and circuit breaker with KJ patterns |
-| Strategy | Implemented | Base strategy, manager, advanced strategies exist; not wired to engine |
-| Backtest | Implemented | Backtest engine, data sources, analyzer, reporter, optimizer (grid search complete) |
+| Strategy | Implemented | Base strategy, manager, advanced strategies (MA Crossover, RSI, Bollinger Bands) |
+| Backtest | Implemented | Backtest engine, data sources (CSV, synthetic, Binance API), analyzer, reporter (HTML/JSON), optimizer (grid search complete) |
 
 ## Exchange Adapters
 
@@ -145,6 +145,7 @@ with KJ equivalents. See [docs/migration/kj_migration_complete.md](../migration/
 | Metrics Tracking | Implemented | Reconnect count, message count, timestamps |
 | WebSocket Handshake | Implemented | Full HTTP Upgrade request per RFC 6455 |
 | Frame Encoding/Decoding | Implemented | Custom WebSocket frame parser |
+| WebSocket Module Status | **COMPLETE** | Fully functional WebSocket market data module |
 
 ## Testing Status
 

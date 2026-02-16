@@ -62,18 +62,21 @@
         "veloz_exec",
         "veloz_oms",
         "veloz_risk",
-        "veloz_strategy"
+        "veloz_strategy",
+        "veloz_backtest"
       ]
     },
     {
       "name": "dev-tests",
       "configurePreset": "dev",
       "targets": [
+        "veloz_core_tests",
         "veloz_market_tests",
         "veloz_exec_tests",
         "veloz_oms_tests",
         "veloz_risk_tests",
-        "veloz_strategy_tests"
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
       ]
     },
     {
@@ -104,18 +107,21 @@
         "veloz_exec",
         "veloz_oms",
         "veloz_risk",
-        "veloz_strategy"
+        "veloz_strategy",
+        "veloz_backtest"
       ]
     },
     {
       "name": "release-tests",
       "configurePreset": "release",
       "targets": [
+        "veloz_core_tests",
         "veloz_market_tests",
         "veloz_exec_tests",
         "veloz_oms_tests",
         "veloz_risk_tests",
-        "veloz_strategy_tests"
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
       ]
     },
     {
@@ -146,18 +152,21 @@
         "veloz_exec",
         "veloz_oms",
         "veloz_risk",
-        "veloz_strategy"
+        "veloz_strategy",
+        "veloz_backtest"
       ]
     },
     {
       "name": "asan-tests",
       "configurePreset": "asan",
       "targets": [
+        "veloz_core_tests",
         "veloz_market_tests",
         "veloz_exec_tests",
         "veloz_oms_tests",
         "veloz_risk_tests",
-        "veloz_strategy_tests"
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
       ]
     },
     {

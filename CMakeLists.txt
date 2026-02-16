@@ -27,19 +27,8 @@ if(VELOZ_BUILD_TESTS)
     enable_testing()
 endif()
 
-# GoogleTest setup
-if(VELOZ_BUILD_TESTS)
-    include(FetchContent)
-    FetchContent_Declare(
-        googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
-    )
-    # For Windows: Prevent overriding parent project's compiler/linker settings
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
-    include(GoogleTest)
-endif()
+# KJ Test framework is provided by libs/core/kj/CMakeLists.txt
+# All tests use KJ Test (kj::TestRunner) instead of GoogleTest
 
 add_subdirectory(libs/common)
 add_subdirectory(libs/core)

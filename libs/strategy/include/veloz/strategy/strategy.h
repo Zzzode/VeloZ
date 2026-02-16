@@ -518,7 +518,7 @@ public:
    * @param position Position information object
    */
   void on_position_update(const oms::Position& position) override {
-    current_position_ = position;
+    current_position_ = oms::Position{position};
   }
 
   /**

@@ -14,7 +14,7 @@ KJ_TEST("OrderWal: Basic construction") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
-  config.directory = kj::heapString(".");
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_orders");
   config.sync_on_write = false; // Faster for tests
 
@@ -29,6 +29,7 @@ KJ_TEST("OrderWal: Log order new") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_new");
   config.sync_on_write = false;
 
@@ -57,6 +58,7 @@ KJ_TEST("OrderWal: Log order fill") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_fill");
   config.sync_on_write = false;
 
@@ -75,6 +77,7 @@ KJ_TEST("OrderWal: Log order update") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_update");
   config.sync_on_write = false;
 
@@ -94,6 +97,7 @@ KJ_TEST("OrderWal: Multiple entries") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_multi");
   config.sync_on_write = false;
 
@@ -124,13 +128,14 @@ KJ_TEST("OrderWal: Checkpoint") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_checkpoint");
   config.sync_on_write = false;
 
   OrderWal wal(cwd, kj::mv(config));
   OrderStore store;
 
-  // Add some orders to the store
+  // Add some orders to store
   PlaceOrderRequest request1;
   request1.client_order_id = kj::heapString("ORDER-001");
   request1.symbol = veloz::common::SymbolId("BTCUSDT");
@@ -161,8 +166,8 @@ KJ_TEST("OrderWal: Replay into store") {
 
   // Use unique prefix to avoid conflicts with previous test runs
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                       std::chrono::system_clock::now().time_since_epoch())
-                       .count();
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
   auto prefix = kj::str("test_replay_", timestamp);
 
   // First, write some entries
@@ -185,7 +190,6 @@ KJ_TEST("OrderWal: Replay into store") {
     wal.log_order_fill("ORDER-001"_kj, "BTCUSDT"_kj, 0.5, 50100.0, 2000);
     wal.sync();
   }
-
   // Now replay into a new store
   {
     WalConfig config;
@@ -197,7 +201,7 @@ KJ_TEST("OrderWal: Replay into store") {
 
     wal.replay_into(store);
 
-    // Verify the order was restored
+    // Verify that order was restored
     auto maybeOrder = store.get("ORDER-001"_kj);
     KJ_IF_SOME (order, maybeOrder) {
       KJ_EXPECT(order.client_order_id == "ORDER-001"_kj);
@@ -210,7 +214,6 @@ KJ_TEST("OrderWal: Replay into store") {
     auto stats = wal.stats();
     KJ_EXPECT(stats.entries_replayed == 2);
   }
-
   // Clean up test WAL files
   auto walFileName = kj::str(prefix, "_0000000000000000.wal");
   cwd.tryRemove(kj::Path::parse(walFileName));
@@ -221,6 +224,7 @@ KJ_TEST("OrderWal: Stats tracking") {
   auto& cwd = fs->getCurrent();
 
   WalConfig config;
+  config.directory = kj::heapString("test_wal");
   config.file_prefix = kj::heapString("test_stats");
   config.sync_on_write = false;
 

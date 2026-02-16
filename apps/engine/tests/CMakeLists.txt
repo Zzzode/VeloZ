@@ -1,5 +1,5 @@
-# Tests for engine module
-# GTest is provided via FetchContent in root CMakeLists.txt
+# Tests for engine module using KJ test framework
+# KJ Test is provided by libs/core/kj/CMakeLists.txt
 
 # Create test executables
 add_executable(test_command_parser
@@ -9,8 +9,8 @@ add_executable(test_command_parser
 target_link_libraries(test_command_parser
     PRIVATE
     veloz_engine_lib
-    GTest::gtest
-    GTest::gtest_main
+    kj-test
+    kj-async
 )
 
 add_executable(test_stdio_engine
@@ -20,10 +20,10 @@ add_executable(test_stdio_engine
 target_link_libraries(test_stdio_engine
     PRIVATE
     veloz_engine_lib
-    GTest::gtest
-    GTest::gtest_main
+    kj-test
+    kj-async
 )
 
 # Register tests
-gtest_discover_tests(test_command_parser)
-gtest_discover_tests(test_stdio_engine)
+add_test(NAME test_command_parser COMMAND test_command_parser)
+add_test(NAME test_stdio_engine COMMAND test_stdio_engine)
