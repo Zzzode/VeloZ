@@ -133,30 +133,33 @@ ParsedCommand parse_command(kj::StringPtr line) {
   if (verb_lower == "order"_kj || verb_lower == "buy"_kj || verb_lower == "sell"_kj ||
       verb_lower == "b"_kj || verb_lower == "s"_kj) {
     auto order = parse_order_command(trimmed_line);
-    KJ_IF_SOME (o, order) {
+    KJ_IF_SOME(o, order) {
       result.type = CommandType::Order;
       result.order = kj::mv(o);
-    } else {
+    }
+    else {
       result.error = kj::str("Failed to parse ORDER command");
     }
   }
   // Check for CANCEL command
   else if (verb_lower == "cancel"_kj || verb_lower == "c"_kj) {
     auto cancel = parse_cancel_command(trimmed_line);
-    KJ_IF_SOME (c, cancel) {
+    KJ_IF_SOME(c, cancel) {
       result.type = CommandType::Cancel;
       result.cancel = kj::mv(c);
-    } else {
+    }
+    else {
       result.error = kj::str("Failed to parse CANCEL command");
     }
   }
   // Check for QUERY command
   else if (verb_lower == "query"_kj || verb_lower == "q"_kj) {
     auto query = parse_query_command(trimmed_line);
-    KJ_IF_SOME (q, query) {
+    KJ_IF_SOME(q, query) {
       result.type = CommandType::Query;
       result.query = kj::mv(q);
-    } else {
+    }
+    else {
       result.error = kj::str("Failed to parse QUERY command");
     }
   } else {
@@ -222,8 +225,7 @@ kj::Maybe<ParsedOrder> parse_order_command(kj::StringPtr line) {
   // Validate required parameters
   // Note: price can be 0 for market orders
   bool is_market_order =
-      is_valid_order_type(type_str) &&
-      parse_order_type(type_str) == veloz::exec::OrderType::Market;
+      is_valid_order_type(type_str) && parse_order_type(type_str) == veloz::exec::OrderType::Market;
   if (symbol.size() == 0 || qty <= 0.0 || client_id.size() == 0) {
     return kj::none;
   }

@@ -15,17 +15,19 @@ namespace {
 KJ_TEST("ParseOrderCommand: Buy") {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order001"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.symbol.value == "BTCUSDT");
     KJ_EXPECT(order.request.side == veloz::exec::OrderSide::Buy);
     KJ_EXPECT(order.request.qty == 0.5);
-    KJ_IF_SOME (price, order.request.price) {
+    KJ_IF_SOME(price, order.request.price) {
       KJ_EXPECT(price == 50000.0);
-    } else {
+    }
+    else {
       KJ_FAIL_EXPECT("price not found");
     }
     KJ_EXPECT(order.request.client_order_id == "order001"_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -33,17 +35,19 @@ KJ_TEST("ParseOrderCommand: Buy") {
 KJ_TEST("ParseOrderCommand: Sell") {
   auto result = parse_order_command("ORDER SELL ETHUSDT 10.0 3000.0 order002"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.symbol.value == "ETHUSDT");
     KJ_EXPECT(order.request.side == veloz::exec::OrderSide::Sell);
     KJ_EXPECT(order.request.qty == 10.0);
-    KJ_IF_SOME (price, order.request.price) {
+    KJ_IF_SOME(price, order.request.price) {
       KJ_EXPECT(price == 3000.0);
-    } else {
+    }
+    else {
       KJ_FAIL_EXPECT("price not found");
     }
     KJ_EXPECT(order.request.client_order_id == "order002"_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -51,10 +55,11 @@ KJ_TEST("ParseOrderCommand: Sell") {
 KJ_TEST("ParseOrderCommand: Buy shortcut") {
   auto result = parse_order_command("BUY BTCUSDT 0.5 50000.0 order003"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.symbol.value == "BTCUSDT");
     KJ_EXPECT(order.request.side == veloz::exec::OrderSide::Buy);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -62,10 +67,11 @@ KJ_TEST("ParseOrderCommand: Buy shortcut") {
 KJ_TEST("ParseOrderCommand: Sell shortcut") {
   auto result = parse_order_command("SELL ETHUSDT 10.0 3000.0 order004"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.symbol.value == "ETHUSDT");
     KJ_EXPECT(order.request.side == veloz::exec::OrderSide::Sell);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -73,10 +79,11 @@ KJ_TEST("ParseOrderCommand: Sell shortcut") {
 KJ_TEST("ParseOrderCommand: With order type") {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order005 MARKET GTC"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.type == veloz::exec::OrderType::Market);
     KJ_EXPECT(order.request.tif == veloz::exec::TimeInForce::GTC);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -84,9 +91,10 @@ KJ_TEST("ParseOrderCommand: With order type") {
 KJ_TEST("ParseOrderCommand: With market type") {
   auto result = parse_order_command("BUY BTCUSDT 0.5 0.0 order006 MARKET"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.type == veloz::exec::OrderType::Market);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -94,9 +102,10 @@ KJ_TEST("ParseOrderCommand: With market type") {
 KJ_TEST("ParseOrderCommand: With IOC TIF") {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0 order007 LIMIT IOC"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_EXPECT(order.request.tif == veloz::exec::TimeInForce::IOC);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order parsing failed");
   }
 }
@@ -104,9 +113,10 @@ KJ_TEST("ParseOrderCommand: With IOC TIF") {
 KJ_TEST("ParseOrderCommand: Invalid side") {
   auto result = parse_order_command("ORDER INVALID BTCUSDT 0.5 50000.0 order008"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_FAIL_EXPECT("expected parse to fail with invalid side");
-  } else {
+  }
+  else {
     // Expected: parsing failed
   }
 }
@@ -114,9 +124,10 @@ KJ_TEST("ParseOrderCommand: Invalid side") {
 KJ_TEST("ParseOrderCommand: Invalid quantity") {
   auto result = parse_order_command("ORDER BUY BTCUSDT -0.5 50000.0 order009"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_FAIL_EXPECT("expected parse to fail with invalid quantity");
-  } else {
+  }
+  else {
     // Expected: parsing failed
   }
 }
@@ -124,9 +135,10 @@ KJ_TEST("ParseOrderCommand: Invalid quantity") {
 KJ_TEST("ParseOrderCommand: Invalid price") {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 -50000.0 order010"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_FAIL_EXPECT("expected parse to fail with invalid price");
-  } else {
+  }
+  else {
     // Expected: parsing failed
   }
 }
@@ -134,9 +146,10 @@ KJ_TEST("ParseOrderCommand: Invalid price") {
 KJ_TEST("ParseOrderCommand: Missing client ID") {
   auto result = parse_order_command("ORDER BUY BTCUSDT 0.5 50000.0"_kj);
 
-  KJ_IF_SOME (order, result) {
+  KJ_IF_SOME(order, result) {
     KJ_FAIL_EXPECT("expected parse to fail with missing client ID");
-  } else {
+  }
+  else {
     // Expected: parsing failed
   }
 }
@@ -148,9 +161,10 @@ KJ_TEST("ParseOrderCommand: Missing client ID") {
 KJ_TEST("ParseCancelCommand: Basic") {
   auto result = parse_cancel_command("CANCEL order001"_kj);
 
-  KJ_IF_SOME (cancel, result) {
+  KJ_IF_SOME(cancel, result) {
     KJ_EXPECT(cancel.client_order_id == "order001"_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("cancel parsing failed");
   }
 }
@@ -158,9 +172,10 @@ KJ_TEST("ParseCancelCommand: Basic") {
 KJ_TEST("ParseCancelCommand: Shortcut") {
   auto result = parse_cancel_command("C order002"_kj);
 
-  KJ_IF_SOME (cancel, result) {
+  KJ_IF_SOME(cancel, result) {
     KJ_EXPECT(cancel.client_order_id == "order002"_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("cancel parsing failed");
   }
 }
@@ -168,9 +183,10 @@ KJ_TEST("ParseCancelCommand: Shortcut") {
 KJ_TEST("ParseCancelCommand: Missing ID") {
   auto result = parse_cancel_command("CANCEL"_kj);
 
-  KJ_IF_SOME (cancel, result) {
+  KJ_IF_SOME(cancel, result) {
     KJ_FAIL_EXPECT("expected parse to fail with missing ID");
-  } else {
+  }
+  else {
     // Expected: parsing failed
   }
 }
@@ -182,10 +198,11 @@ KJ_TEST("ParseCancelCommand: Missing ID") {
 KJ_TEST("ParseQueryCommand: Basic") {
   auto result = parse_query_command("QUERY account"_kj);
 
-  KJ_IF_SOME (query, result) {
+  KJ_IF_SOME(query, result) {
     KJ_EXPECT(query.query_type == "account"_kj);
     KJ_EXPECT(query.params == ""_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("query parsing failed");
   }
 }
@@ -193,10 +210,11 @@ KJ_TEST("ParseQueryCommand: Basic") {
 KJ_TEST("ParseQueryCommand: With params") {
   auto result = parse_query_command("QUERY order BTCUSDT"_kj);
 
-  KJ_IF_SOME (query, result) {
+  KJ_IF_SOME(query, result) {
     KJ_EXPECT(query.query_type == "order"_kj);
     KJ_EXPECT(query.params == "BTCUSDT"_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("query parsing failed");
   }
 }
@@ -204,9 +222,10 @@ KJ_TEST("ParseQueryCommand: With params") {
 KJ_TEST("ParseQueryCommand: Shortcut") {
   auto result = parse_query_command("Q balance"_kj);
 
-  KJ_IF_SOME (query, result) {
+  KJ_IF_SOME(query, result) {
     KJ_EXPECT(query.query_type == "balance"_kj);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("query parsing failed");
   }
 }
@@ -219,9 +238,10 @@ KJ_TEST("ParseCommand: Order") {
   auto result = parse_command("ORDER BUY BTCUSDT 0.5 50000.0 order001"_kj);
 
   KJ_EXPECT(result.type == CommandType::Order);
-  KJ_IF_SOME (order, result.order) {
+  KJ_IF_SOME(order, result.order) {
     // Order was parsed successfully
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("order not found in parsed command");
   }
 }
@@ -230,9 +250,10 @@ KJ_TEST("ParseCommand: Cancel") {
   auto result = parse_command("CANCEL order001"_kj);
 
   KJ_EXPECT(result.type == CommandType::Cancel);
-  KJ_IF_SOME (cancel, result.cancel) {
+  KJ_IF_SOME(cancel, result.cancel) {
     // Cancel was parsed successfully
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("cancel not found in parsed command");
   }
 }
@@ -241,9 +262,10 @@ KJ_TEST("ParseCommand: Query") {
   auto result = parse_command("QUERY account"_kj);
 
   KJ_EXPECT(result.type == CommandType::Query);
-  KJ_IF_SOME (query, result.query) {
+  KJ_IF_SOME(query, result.query) {
     // Query was parsed successfully
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("query not found in parsed command");
   }
 }

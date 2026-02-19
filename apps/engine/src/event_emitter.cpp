@@ -57,10 +57,10 @@ kj::String order_state_json(const veloz::oms::OrderState& st) {
   if (st.side.size() > 0) {
     parts.add(kj::str(",\"side\":\"", escape_json(st.side), "\""));
   }
-  KJ_IF_SOME (order_qty, st.order_qty) {
+  KJ_IF_SOME(order_qty, st.order_qty) {
     parts.add(kj::str(",\"order_qty\":", order_qty));
   }
-  KJ_IF_SOME (limit_price, st.limit_price) {
+  KJ_IF_SOME(limit_price, st.limit_price) {
     parts.add(kj::str(",\"limit_price\":", limit_price));
   }
   parts.add(kj::str(",\"executed_qty\":", st.executed_qty, ",\"avg_price\":", st.avg_price));
@@ -135,10 +135,10 @@ void EventEmitter::emit_order_update(kj::StringPtr client_order_id, kj::StringPt
   if (side.size() > 0) {
     parts.add(kj::str(",\"side\":\"", escape_json(side), "\""));
   }
-  KJ_IF_SOME (q, qty) {
+  KJ_IF_SOME(q, qty) {
     parts.add(kj::str(",\"qty\":", q));
   }
-  KJ_IF_SOME (p, price) {
+  KJ_IF_SOME(p, price) {
     parts.add(kj::str(",\"price\":", p));
   }
   if (reason.size() > 0) {

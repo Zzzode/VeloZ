@@ -21,7 +21,8 @@ namespace {
 // Raw pointer is acceptable here because:
 // 1. Signal handlers require async-signal-safe code; complex types like kj::Maybe are not allowed
 // 2. The pointer is set in install_signal_handlers() and points to EngineApp::stop_
-// 3. Lifetime is guaranteed: stop_ outlives signal handler registration (cleared on EngineApp destruction)
+// 3. Lifetime is guaranteed: stop_ outlives signal handler registration (cleared on EngineApp
+// destruction)
 // 4. Only accessed atomically via store() in handle_signal()
 kj::MutexGuarded<bool>* g_stop_ptr = nullptr;
 
@@ -49,8 +50,8 @@ int EngineApp::run() {
 
   // Create logger with appropriate output
   // Logger still uses std::unique_ptr for compatibility
-  auto console_output = std::make_unique<veloz::core::ConsoleOutput>(config_.stdio_mode);
-  veloz::core::Logger local_logger(std::make_unique<veloz::core::TextFormatter>(), kj::mv(console_output));
+  auto console_output = kj::heap<veloz::core::ConsoleOutput>(config_.stdio_mode);
+  veloz::core::Logger local_logger(kj::heap<veloz::core::TextFormatter>(), kj::mv(console_output));
   local_logger.set_level(veloz::core::LogLevel::Info);
 
   // Store logger reference for potential use

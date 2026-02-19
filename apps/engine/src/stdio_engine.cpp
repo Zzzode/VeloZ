@@ -15,7 +15,7 @@ namespace {
 // Helper to extract value from kj::Maybe with a default
 template <typename T> T maybe_or(const kj::Maybe<T>& maybe, T default_value) {
   T result = default_value;
-  KJ_IF_SOME (val, maybe) {
+  KJ_IF_SOME(val, maybe) {
     result = val;
   }
   return result;
@@ -63,11 +63,9 @@ void StdioEngine::emit_error(kj::StringPtr error_msg) {
 
 int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
   // Write startup messages
-  kj::String banner = kj::str(
-      "VeloZ StdioEngine started - press Ctrl+C to stop\n",
-      "Commands: ORDER <SIDE> <SYMBOL> <QTY> <PRICE> <ID> [TYPE] [TIF]\n",
-      "          CANCEL <ID>\n",
-      "          QUERY <TYPE> [PARAMS]\n\n");
+  kj::String banner = kj::str("VeloZ StdioEngine started - press Ctrl+C to stop\n",
+                              "Commands: ORDER <SIDE> <SYMBOL> <QTY> <PRICE> <ID> [TYPE] [TIF]\n",
+                              "          CANCEL <ID>\n", "          QUERY <TYPE> [PARAMS]\n\n");
   out_.write(banner.asBytes());
 
   // Send startup event
@@ -75,7 +73,7 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
 
   while (!*stop_flag.lockShared()) {
     auto maybe_line = read_line(in_);
-    KJ_IF_SOME (line, maybe_line) {
+    KJ_IF_SOME(line, maybe_line) {
       // Skip empty lines and comments
       if (line.size() == 0 || line[0] == '#') {
         continue;
@@ -88,58 +86,59 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
 
       switch (command.type) {
       case CommandType::Order:
-        KJ_IF_SOME (order, command.order) {
+        KJ_IF_SOME(order, command.order) {
           // Emit order received event
           kj::String json = kj::str(
               R"({"type":"order_received","command_id":)", command_count_,
-              R"(,"client_order_id":")", order.request.client_order_id,
-              R"(","symbol":")", order.request.symbol.value,
-              R"(","side":")", (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"),
-              R"(","type":")", (order.request.type == veloz::exec::OrderType::Market ? "market" : "limit"),
-              R"(","quantity":)", order.request.qty,
-              R"(,"price":)", maybe_or(order.request.price, 0.0), "}");
+              R"(,"client_order_id":")", order.request.client_order_id, R"(","symbol":")",
+              order.request.symbol.value, R"(","side":")",
+              (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"), R"(","type":")",
+              (order.request.type == veloz::exec::OrderType::Market ? "market" : "limit"),
+              R"(","quantity":)", order.request.qty, R"(,"price":)",
+              maybe_or(order.request.price, 0.0), "}");
           emit_event(json);
 
           // Call handler if registered
-          KJ_IF_SOME (handler, order_handler_) {
+          KJ_IF_SOME(handler, order_handler_) {
             handler(order);
           }
-        } else {
+        }
+        else {
           emit_error(kj::str("Failed to parse ORDER command: ", command.error));
         }
         break;
 
       case CommandType::Cancel:
-        KJ_IF_SOME (cancel, command.cancel) {
+        KJ_IF_SOME(cancel, command.cancel) {
           // Emit cancel received event
-          kj::String json = kj::str(
-              R"({"type":"cancel_received","command_id":)", command_count_,
-              R"(,"client_order_id":")", cancel.client_order_id, R"("})");
+          kj::String json = kj::str(R"({"type":"cancel_received","command_id":)", command_count_,
+                                    R"(,"client_order_id":")", cancel.client_order_id, R"("})");
           emit_event(json);
 
           // Call handler if registered
-          KJ_IF_SOME (handler, cancel_handler_) {
+          KJ_IF_SOME(handler, cancel_handler_) {
             handler(cancel);
           }
-        } else {
+        }
+        else {
           emit_error(kj::str("Failed to parse CANCEL command: ", command.error));
         }
         break;
 
       case CommandType::Query:
-        KJ_IF_SOME (query, command.query) {
+        KJ_IF_SOME(query, command.query) {
           // Emit query received event
-          kj::String json = kj::str(
-              R"({"type":"query_received","command_id":)", command_count_,
-              R"(,"query_type":")", query.query_type,
-              R"(","params":")", query.params, R"("})");
+          kj::String json = kj::str(R"({"type":"query_received","command_id":)", command_count_,
+                                    R"(,"query_type":")", query.query_type, R"(","params":")",
+                                    query.params, R"("})");
           emit_event(json);
 
           // Call handler if registered
-          KJ_IF_SOME (handler, query_handler_) {
+          KJ_IF_SOME(handler, query_handler_) {
             handler(query);
           }
-        } else {
+        }
+        else {
           emit_error(kj::str("Failed to parse QUERY command: ", command.error));
         }
         break;
@@ -150,15 +149,16 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
         }
         break;
       }
-    } else {
+    }
+    else {
       // EOF reached
       break;
     }
   }
 
   // Send shutdown event
-  kj::String shutdown_json = kj::str(
-      R"({"type":"engine_stopped","commands_processed":)", command_count_, "}");
+  kj::String shutdown_json =
+      kj::str(R"({"type":"engine_stopped","commands_processed":)", command_count_, "}");
   emit_event(shutdown_json);
 
   return 0;

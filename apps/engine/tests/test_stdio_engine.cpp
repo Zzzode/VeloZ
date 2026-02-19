@@ -30,7 +30,9 @@ public:
     return kj::String(copy.releaseAsArray());
   }
 
-  void clear() { data_.clear(); }
+  void clear() {
+    data_.clear();
+  }
 
 private:
   kj::Vector<char> data_;
