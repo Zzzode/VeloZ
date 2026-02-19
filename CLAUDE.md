@@ -179,7 +179,25 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 - `docs/crypto_quant_framework_design.md`: design series index
 - `docs/kjdoc/`: KJ library documentation (tour.md, style-guide.md, library_usage_guide.md)
 - `docs/kj/library_usage_guide.md`: KJ library usage patterns for VeloZ
-- `docs/kj/skill.md`: KJ skill for Claude Code recognition
+- `docs/kj/SKILL.md`: KJ skill (name: `kj-library`) for Claude Code recognition
+
+## Available Skills
+
+The following skills are automatically available to guide development:
+
+| Skill | When Used |
+|-------|-----------|
+| `architecture` | Cross-module design, contracts, system structure |
+| `cpp-engine` | C++ code in apps/engine or libs/* |
+| `kj-library` | KJ types (kj::Own, kj::Maybe, kj::Promise), async I/O |
+| `market-data` | Market module, order book, WebSocket patterns |
+| `testing` | KJ Test framework and test conventions |
+| `build-ci` | CMake presets, build configs, CI workflow |
+| `encoding-style` | Code style, naming, formatting conventions |
+| `gateway` | Python gateway, HTTP/SSE API behavior |
+| `ui` | Static UI and gateway integration |
+
+Skills are automatically invoked when relevant. Use `/skill-name` to invoke manually.
 
 ## KJ Library Usage (CRITICAL - DEFAULT CHOICE)
 
@@ -187,7 +205,7 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 
 ### KJ Skill for Detailed Reference
 
-**For comprehensive KJ library guidance, invoke the KJ skill at `docs/kj/skill.md`**. The skill contains:
+**For comprehensive KJ library guidance, invoke the `kj-library` skill defined in `docs/kj/SKILL.md`**. The skill contains:
 
 - Complete type mappings (std → KJ)
 - Event loop and async I/O patterns
@@ -212,11 +230,37 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 ### Mandatory Rule
 
 **ALWAYS check KJ first before considering std library types.** Only use std types when:
+
 1. KJ does not provide equivalent functionality
 2. External API compatibility requires std types
 3. Third-party library integration requires std types
 
 When using std types, add a comment explaining why KJ was not suitable.
+
+### Known std Library Requirements (Cannot Migrate)
+
+Based on the KJ migration analysis, the following std library usages are required and cannot be migrated:
+
+| std Type | Reason | Example Files |
+|----------|--------|---------------|
+| `std::string` | OpenSSL HMAC API | exec/binance_adapter.cpp, hmac_wrapper.cpp |
+| `std::string` | yyjson C API | core/json.cpp |
+| `std::string` | Copyable structs (kj::String not copyable) | market/market_quality.h (Anomaly) |
+| `std::format` | Width specifiers ({:04d}, {:02d}) | core/logger.cpp, core/time.cpp |
+| `std::filesystem` | File path operations | core/config_manager.cpp, backtest/data_source.cpp |
+| `std::unique_ptr` | Custom deleters (kj::Own lacks support) | core/memory.h (ObjectPool) |
+| `std::unique_ptr` | Polymorphic ownership | core/config_manager.h, core/logger.h |
+| `std::function` | STL container compatibility | core/event_loop.h |
+| `std::function` | Recursive lambdas | backtest/optimizer.cpp |
+| `std::map` | Ordered iteration | core/metrics.h (Prometheus export) |
+| `std::vector` | API return types | core/json.h, core/metrics.h |
+
+### KJ Limitations
+
+- `kj::str()` does not support width/precision specifiers (use `std::format` for `{:04d}`, `{:.2f}`)
+- `kj::Own` does not support custom deleters or `.release()` method
+- `kj::String` is not copyable (use `std::string` for copyable structs)
+- `kj::Function` is not copyable (structs containing it must be move-only)
 
 ## Documentation conventions
 
