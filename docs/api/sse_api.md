@@ -354,5 +354,6 @@ curl -N http://127.0.0.1:8080/api/stream | \
 
 ## Related
 
-- [HTTP API Reference](http-api.md) - REST API endpoints
-- [Engine Protocol](engine-protocol.md) - Engine stdio command format
+- [HTTP API Reference](http_api.md) - REST API endpoints
+- [Engine Protocol](engine_protocol.md) - Engine stdio command format
+- [Backtest API](backtest_api.md) - Backtest configuration and reporting

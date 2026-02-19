@@ -262,5 +262,6 @@ The engine maintains order state internally. Sending the same command multiple t
 
 ## Related
 
-- [HTTP API Reference](http-api.md) - REST API endpoints
-- [SSE API](sse-api.md) - Server-Sent Events stream
+- [HTTP API Reference](http_api.md) - REST API endpoints
+- [SSE API](sse_api.md) - Server-Sent Events stream
+- [Backtest API](backtest_api.md) - Backtest configuration and reporting
