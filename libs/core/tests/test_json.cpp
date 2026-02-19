@@ -25,17 +25,20 @@ KJ_TEST("JSON: Parse simple object") {
 
   KJ_IF_SOME(name, root.get("name")) {
     KJ_EXPECT(name.get_string() == "test");
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("name not found");
   }
   KJ_IF_SOME(value, root.get("value")) {
     KJ_EXPECT(value.get_int() == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("value not found");
   }
   KJ_IF_SOME(flag, root.get("flag")) {
     KJ_EXPECT(flag.get_bool());
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("flag not found");
   }
 }
@@ -70,7 +73,8 @@ KJ_TEST("JSON: Parse nested object") {
 
   KJ_IF_SOME(user, root.get("user")) {
     KJ_EXPECT(user.is_object());
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("user not found");
   }
   KJ_EXPECT(root["user"]["name"].get_string() == "Alice");
@@ -205,11 +209,13 @@ KJ_TEST("JSON: Validation") {
 
 // Test JSON errors
 KJ_TEST("JSON: Parse error handling") {
-  // Parse errors throw exceptions
+  // Parse errors throw kj::Exception
   bool threw = false;
-  try {
-    auto doc = JsonDocument::parse("{ invalid json }");
-  } catch (const std::runtime_error&) {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto doc = JsonDocument::parse("{ invalid json }");
+               (void)doc;
+             })) {
+    (void)exception;
     threw = true;
   }
   KJ_EXPECT(threw);
@@ -287,12 +293,14 @@ KJ_TEST("JSON: Value equality") {
 
   KJ_IF_SOME(val1, val1_opt) {
     KJ_EXPECT(val1.get_int() == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("val1 not found");
   }
   KJ_IF_SOME(val2, val2_opt) {
     KJ_EXPECT(val2.get_int() == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("val2 not found");
   }
 }

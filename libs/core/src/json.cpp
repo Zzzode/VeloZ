@@ -1,14 +1,12 @@
 #include "veloz/core/json.h"
 
-#include "veloz/core/logger.h"
-
-#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/exception.h>
 #include <kj/memory.h>
-#include <sstream>
-#include <stdexcept>
+#include <kj/string.h>
 #include <string>
 
 // Include yyjson C header
@@ -85,8 +83,7 @@ JsonDocument JsonDocument::parse(const std::string& str) {
   yyjson_doc* doc = yyjson_read_opts(const_cast<char*>(str.data()), str.size(), 0, nullptr, &err);
 
   if (!doc) {
-    throw std::runtime_error(std::format("JSON parse error at position {}: {}", err.pos,
-                                         err.msg ? err.msg : "unknown error"));
+    KJ_FAIL_REQUIRE("JSON parse error", err.pos, err.msg ? err.msg : "unknown error");
   }
 
   return JsonDocument(doc);
@@ -95,17 +92,16 @@ JsonDocument JsonDocument::parse(const std::string& str) {
 JsonDocument JsonDocument::parse_file(const std::string& path) {
   // Read file content
   std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    throw std::runtime_error(std::format("Failed to open file: {}", path));
-  }
+  // Convert std::string to c_str() for KJ_REQUIRE compatibility
+  KJ_REQUIRE(file.is_open(), "Failed to open file", path.c_str());
 
   std::streamsize size = file.tellg();
   file.seekg(0, std::ios::beg);
 
   std::string content(size, '\0');
-  if (!file.read(content.data(), size)) {
-    throw std::runtime_error(std::format("Failed to read file: {}", path));
-  }
+  // file.read() returns istream&, check with .good() instead
+  file.read(content.data(), size);
+  KJ_REQUIRE(file.good(), "Failed to read file", path.c_str());
 
   return parse(content);
 }
@@ -320,8 +316,8 @@ std::vector<std::string> JsonValue::keys() const {
 // ============================================================================
 
 struct JsonBuilder::Impl {
-  YyJsonMutDoc doc;           // RAII wrapper for yyjson_mut_doc*
-  YyJsonMutValView current;   // Non-owning view of current value
+  YyJsonMutDoc doc;         // RAII wrapper for yyjson_mut_doc*
+  YyJsonMutValView current; // Non-owning view of current value
   Type type;
   bool is_object; // true for object, false for array
 
@@ -369,7 +365,8 @@ JsonBuilder& JsonBuilder::put(const std::string& key, const std::string& value) 
 
 JsonBuilder& JsonBuilder::put(const std::string& key, std::string_view value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strncpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value.data(), value.size());
+    yyjson_mut_obj_add_strncpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value.data(),
+                               value.size());
   }
   return *this;
 }
@@ -616,12 +613,10 @@ std::string unescape_string(std::string_view str) {
 }
 
 bool is_valid_json(std::string_view str) {
-  try {
+  kj::Maybe<kj::Exception> maybeException = kj::runCatchingExceptions([&]() {
     JsonDocument::parse(std::string(str));
-    return true;
-  } catch (...) {
-    return false;
-  }
+  });
+  return maybeException == kj::none;
 }
 
 } // namespace json_utils

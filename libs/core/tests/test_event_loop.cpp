@@ -190,11 +190,13 @@ KJ_TEST("EventLoop: Post delayed with priority") {
 KJ_TEST("EventLoop: Post with tags") {
   auto loop = kj::heap<EventLoop>();
 
+  std::vector<EventTag> tags;
+  tags.push_back(kj::str("market"));
+  tags.push_back(kj::str("binance"));
   loop->post_with_tags(
       [&] {
-        // Task with tags
       },
-      {"market", "binance"});
+      kj::mv(tags));
 
   EventLoop* loop_ptr = loop.get();
   std::thread worker([loop_ptr] { loop_ptr->run(); });
@@ -272,10 +274,16 @@ KJ_TEST("EventLoop: Tag filter") {
   std::atomic<int> filtered_executed{0};
 
   // Filter out tasks with tag "debug"
-  (void)loop->add_tag_filter("debug.*");
+  (void)loop->add_tag_filter("debug.*"_kj);
 
-  loop->post_with_tags([&] { ++allowed_executed; }, {"market", "trade"});
-  loop->post_with_tags([&] { ++filtered_executed; }, {"debug", "trace"});
+  std::vector<EventTag> allowed_tags;
+  allowed_tags.push_back(kj::str("market"));
+  allowed_tags.push_back(kj::str("trade"));
+  loop->post_with_tags([&] { ++allowed_executed; }, kj::mv(allowed_tags));
+  std::vector<EventTag> filtered_tags;
+  filtered_tags.push_back(kj::str("debug"));
+  filtered_tags.push_back(kj::str("trace"));
+  loop->post_with_tags([&] { ++filtered_executed; }, kj::mv(filtered_tags));
 
   EventLoop* loop_ptr = loop.get();
   std::thread worker([loop_ptr] { loop_ptr->run(); });
@@ -326,9 +334,19 @@ KJ_TEST("EventLoop: Statistics tracking") {
 
 KJ_TEST("EventLoop: Stats to string") {
   auto loop = kj::heap<EventLoop>();
-  std::string stats = loop->stats_to_string(); // Returns std::string for compatibility
+  kj::String stats = loop->stats_to_string();
   KJ_EXPECT(stats.size() > 0);
-  KJ_EXPECT(stats.find("EventLoop Statistics") != std::string::npos);
+  kj::StringPtr stats_ptr = stats;
+  kj::StringPtr prefix = "(\nEventLoop Statistics:\n"_kj;
+  KJ_EXPECT(stats_ptr.size() >= prefix.size());
+  bool matches = true;
+  for (size_t i = 0; i < prefix.size(); ++i) {
+    if (stats_ptr[i] != prefix[i]) {
+      matches = false;
+      break;
+    }
+  }
+  KJ_EXPECT(matches);
 }
 
 // ============================================================================
@@ -382,14 +400,18 @@ KJ_TEST("EventLoop: Set router") {
     std::lock_guard<std::mutex> lock(routes_mutex);
     kj::String tag_str = kj::str("");
     for (const auto& tag : tags) {
-      tag_str = kj::str(tag_str, tag.c_str(), ",");
+      tag_str = kj::str(tag_str, tag.cStr(), ",");
     }
     routes.add(kj::mv(tag_str));
     task();
   });
 
-  loop->post_with_tags([] {}, EventPriority::Normal, {"route1"});
-  loop->post_with_tags([] {}, EventPriority::Normal, {"route2"});
+  std::vector<EventTag> route1_tags;
+  route1_tags.push_back(kj::str("route1"));
+  loop->post_with_tags([] {}, EventPriority::Normal, kj::mv(route1_tags));
+  std::vector<EventTag> route2_tags;
+  route2_tags.push_back(kj::str("route2"));
+  loop->post_with_tags([] {}, EventPriority::Normal, kj::mv(route2_tags));
 
   EventLoop* loop_ptr = loop.get();
   std::thread worker([loop_ptr] { loop_ptr->run(); });
@@ -412,10 +434,10 @@ KJ_TEST("EventLoop: Set router") {
 // ============================================================================
 
 KJ_TEST("ToEventPriorityString: All levels") {
-  KJ_EXPECT(to_string(EventPriority::Low) == "Low");
-  KJ_EXPECT(to_string(EventPriority::Normal) == "Normal");
-  KJ_EXPECT(to_string(EventPriority::High) == "High");
-  KJ_EXPECT(to_string(EventPriority::Critical) == "Critical");
+  KJ_EXPECT(to_string(EventPriority::Low) == "Low"_kj);
+  KJ_EXPECT(to_string(EventPriority::Normal) == "Normal"_kj);
+  KJ_EXPECT(to_string(EventPriority::High) == "High"_kj);
+  KJ_EXPECT(to_string(EventPriority::Critical) == "Critical"_kj);
 }
 
 } // namespace

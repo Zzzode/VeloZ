@@ -8,46 +8,53 @@
 
 namespace veloz::core {
 
-std::string MetricsRegistry::to_prometheus() const {
+kj::String MetricsRegistry::to_prometheus() const {
   auto lock = guarded_.lockExclusive();
 
+  // std::ostringstream used for Prometheus text format generation
   std::ostringstream oss;
 
   // Export counters
-  for (const auto& [name, counter] : lock->counters) {
-    if (!counter->description().empty()) {
-      oss << "# HELP " << name << " " << counter->description() << "\n";
+  for (const auto& entry : lock->counters) {
+    const auto& name = entry.key;
+    const auto& counter = entry.value;
+    if (counter->description().size() > 0) {
+      oss << "# HELP " << name.cStr() << " " << counter->description().cStr() << "\n";
     }
-    oss << "# TYPE " << name << " counter\n";
-    oss << name << " " << counter->value() << "\n";
+    oss << "# TYPE " << name.cStr() << " counter\n";
+    oss << name.cStr() << " " << counter->value() << "\n";
   }
 
   // Export gauges
-  for (const auto& [name, gauge] : lock->gauges) {
-    if (!gauge->description().empty()) {
-      oss << "# HELP " << name << " " << gauge->description() << "\n";
+  for (const auto& entry : lock->gauges) {
+    const auto& name = entry.key;
+    const auto& gauge = entry.value;
+    if (gauge->description().size() > 0) {
+      oss << "# HELP " << name.cStr() << " " << gauge->description().cStr() << "\n";
     }
-    oss << "# TYPE " << name << " gauge\n";
-    oss << name << " " << gauge->value() << "\n";
+    oss << "# TYPE " << name.cStr() << " gauge\n";
+    oss << name.cStr() << " " << gauge->value() << "\n";
   }
 
   // Export histograms
-  for (const auto& [name, histogram] : lock->histograms) {
-    if (!histogram->description().empty()) {
-      oss << "# HELP " << name << " " << histogram->description() << "\n";
+  for (const auto& entry : lock->histograms) {
+    const auto& name = entry.key;
+    const auto& histogram = entry.value;
+    if (histogram->description().size() > 0) {
+      oss << "# HELP " << name.cStr() << " " << histogram->description().cStr() << "\n";
     }
-    oss << "# TYPE " << name << " histogram\n";
+    oss << "# TYPE " << name.cStr() << " histogram\n";
     auto bucket_counts = histogram->bucket_counts();
     for (size_t i = 0; i < histogram->buckets().size(); ++i) {
-      oss << name << "_bucket{le=\"" << histogram->buckets()[i] << "\"} " << bucket_counts[i]
-          << "\n";
+      oss << name.cStr() << "_bucket{le=\"" << histogram->buckets()[i] << "\"} "
+          << bucket_counts[i] << "\n";
     }
-    oss << name << "_bucket{le=\"+Inf\"} " << histogram->count() << "\n";
-    oss << name << "_sum " << histogram->sum() << "\n";
-    oss << name << "_count " << histogram->count() << "\n";
+    oss << name.cStr() << "_bucket{le=\"+Inf\"} " << histogram->count() << "\n";
+    oss << name.cStr() << "_sum " << histogram->sum() << "\n";
+    oss << name.cStr() << "_count " << histogram->count() << "\n";
   }
 
-  return oss.str();
+  return kj::str(oss.str().c_str());
 }
 
 // Thread-safe global metrics registry using KJ MutexGuarded (no bare pointers)
@@ -59,18 +66,18 @@ static kj::MutexGuarded<GlobalMetricsState> g_metrics_registry;
 MetricsRegistry& global_metrics() {
   auto lock = g_metrics_registry.lockExclusive();
   KJ_IF_SOME(registry, lock->registry) {
-    return *registry;  // Dereference kj::Own<MetricsRegistry> to get MetricsRegistry reference
+    return *registry; // Dereference kj::Own<MetricsRegistry> to get MetricsRegistry reference
   }
   // Create new registry and store it
   auto newRegistry = kj::heap<MetricsRegistry>();
 
-  // Register some system metrics
-  newRegistry->register_counter("veloz_system_start_time", "System start time");
-  newRegistry->register_gauge("veloz_system_uptime", "System uptime in seconds");
-  newRegistry->register_gauge("veloz_event_loop_pending_tasks",
-                              "Number of pending tasks in event loop");
-  newRegistry->register_histogram("veloz_event_loop_task_latency",
-                                  "Event loop task execution latency in seconds");
+  // Register some system metrics using kj::StringPtr literals
+  newRegistry->register_counter("veloz_system_start_time"_kj, "System start time"_kj);
+  newRegistry->register_gauge("veloz_system_uptime"_kj, "System uptime in seconds"_kj);
+  newRegistry->register_gauge("veloz_event_loop_pending_tasks"_kj,
+                              "Number of pending tasks in event loop"_kj);
+  newRegistry->register_histogram("veloz_event_loop_task_latency"_kj,
+                                  "Event loop task execution latency in seconds"_kj);
 
   MetricsRegistry& ref = *newRegistry;
   lock->registry = kj::mv(newRegistry);

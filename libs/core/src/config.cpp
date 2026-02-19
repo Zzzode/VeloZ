@@ -4,6 +4,9 @@
 
 #include <fstream>
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/exception.h>
+#include <kj/filesystem.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 
@@ -43,7 +46,7 @@ Config::Value json_to_value(const JsonValue& j) {
       return result;
     }
   }
-  throw ConfigException("Unsupported JSON type");
+  KJ_FAIL_REQUIRE("Unsupported JSON type");
 }
 
 JsonBuilder value_to_json_builder(const Config::Value& v) {
@@ -86,7 +89,7 @@ JsonBuilder value_to_json_builder(const Config::Value& v) {
 
 } // namespace
 
-Config::Config(const std::filesystem::path& file_path) {
+Config::Config(const std::string& file_path) {
   load_from_file(file_path);
 }
 
@@ -94,57 +97,64 @@ Config::Config(std::string_view json_content) {
   load_from_string(json_content);
 }
 
-bool Config::load_from_file(const std::filesystem::path& file_path) {
-  try {
-    auto doc = JsonDocument::parse_file(std::string(file_path));
-    auto root = doc.root();
+bool Config::load_from_file(const std::string& file_path) {
+  bool success = false;
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto doc = JsonDocument::parse_file(file_path);
+               auto root = doc.root();
 
-    config_.clear();
-    root.for_each_object([this](const std::string& key, const JsonValue& value) {
-      config_[key] = json_to_value(value);
-    });
-    return true;
-  } catch (...) {
+               config_.clear();
+               root.for_each_object([this](const std::string& key, const JsonValue& value) {
+                 config_[key] = json_to_value(value);
+               });
+               success = true;
+             })) {
+    (void)exception;
     return false;
   }
+  return success;
 }
 
 bool Config::load_from_string(std::string_view json_content) {
-  try {
-    auto doc = JsonDocument::parse(std::string(json_content));
-    auto root = doc.root();
+  bool success = false;
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto doc = JsonDocument::parse(std::string(json_content));
+               auto root = doc.root();
 
-    config_.clear();
-    root.for_each_object([this](const std::string& key, const JsonValue& value) {
-      config_[key] = json_to_value(value);
-    });
-    return true;
-  } catch (...) {
+               config_.clear();
+               root.for_each_object([this](const std::string& key, const JsonValue& value) {
+                 config_[key] = json_to_value(value);
+               });
+               success = true;
+             })) {
+    (void)exception;
     return false;
   }
+  return success;
 }
 
-bool Config::save_to_file(const std::filesystem::path& file_path) const {
-  try {
-    auto builder = JsonBuilder::object();
-    for (const auto& [key, value] : config_) {
-      auto nested = value_to_json_builder(value);
-      // Build the nested value and add to main builder
-      // Since JsonBuilder::put_array takes a function, we need to work around this
-      // For now, let's use a simpler approach
-      // Actually, let's create the JSON string differently
-    }
-    std::string json_str = builder.build();
+bool Config::save_to_file(const std::string& file_path) const {
+  bool success = false;
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto builder = JsonBuilder::object();
+               for (const auto& [key, value] : config_) {
+                 auto nested = value_to_json_builder(value);
+                 // Build the nested value and add to main builder
+                 // Since JsonBuilder::put_array takes a function, we need to work around this
+                 // For now, let's use a simpler approach
+                 // Actually, let's create the JSON string differently
+               }
+               std::string json_str = builder.build();
 
-    std::ofstream ofs(file_path);
-    if (!ofs.is_open()) {
-      throw ConfigException("Failed to open file for writing: " + file_path.string());
-    }
-    ofs << json_str;
-    return true;
-  } catch (...) {
+               std::ofstream ofs(file_path);
+               KJ_REQUIRE(ofs.is_open(), "Failed to open file for writing", file_path.c_str());
+               ofs << json_str;
+               success = true;
+             })) {
+    (void)exception;
     return false;
   }
+  return success;
 }
 
 std::string Config::to_string() const {
@@ -232,7 +242,7 @@ static kj::MutexGuarded<GlobalConfigState> g_global_config;
 Config& global_config() {
   auto lock = g_global_config.lockExclusive();
   KJ_IF_SOME(config, lock->config) {
-    return *config;  // Dereference kj::Own<Config> to get Config reference
+    return *config; // Dereference kj::Own<Config> to get Config reference
   }
   // Create new config and store it
   auto newConfig = kj::heap<Config>();
@@ -241,7 +251,7 @@ Config& global_config() {
   return ref;
 }
 
-bool load_global_config(const std::filesystem::path& file_path) {
+bool load_global_config(const std::string& file_path) {
   return global_config().load_from_file(file_path);
 }
 

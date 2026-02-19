@@ -1,15 +1,17 @@
 #pragma once
 
-#include <filesystem>
+#include "veloz/core/error.h" // VeloZException base class
+
 #include <kj/common.h>
-#include <kj/memory.h> // kj::Maybe used for nullable config values
+#include <kj/filesystem.h> // kj::Path for file paths
+#include <kj/memory.h>     // kj::Maybe used for nullable config values
 #include <kj/string.h>
-#include <map> // std::map used for ordered key iteration
-#include <stdexcept>
-#include <string> // std::string used for std::map key and std::variant compatibility
+#include <map>        // std::map used for ordered key iteration
+#include <string>      // std::string used for std::map key and std::variant compatibility
 #include <string_view>
 #include <variant>
 #include <vector> // std::vector used for array config values in std::variant
+#include <source_location> // std::source_location for exception tracking
 
 namespace veloz::core {
 
@@ -19,12 +21,12 @@ public:
                              std::vector<int64_t>, std::vector<double>, std::vector<std::string>>;
 
   Config() = default;
-  explicit Config(const std::filesystem::path& file_path);
+  explicit Config(const std::string& file_path);
   explicit Config(std::string_view json_content);
 
-  bool load_from_file(const std::filesystem::path& file_path);
+  bool load_from_file(const std::string& file_path);
   bool load_from_string(std::string_view json_content);
-  bool save_to_file(const std::filesystem::path& file_path) const;
+  bool save_to_file(const std::string& file_path) const;
   std::string to_string() const;
 
   // Basic access methods
@@ -93,14 +95,19 @@ private:
   std::map<std::string, Value> config_;
 };
 
-class ConfigException : public std::runtime_error {
+/**
+ * @brief Configuration-related exception using KJ exception infrastructure
+ */
+class ConfigException : public VeloZException {
 public:
-  using std::runtime_error::runtime_error;
+  explicit ConfigException(kj::StringPtr message,
+                           const std::source_location& location = std::source_location::current())
+      : VeloZException(message, kj::Exception::Type::FAILED, location) {}
 };
 
 // Global configuration accessor
 [[nodiscard]] Config& global_config();
-bool load_global_config(const std::filesystem::path& file_path);
+bool load_global_config(const std::string& file_path);
 bool load_global_config(std::string_view json_content);
 
 } // namespace veloz::core

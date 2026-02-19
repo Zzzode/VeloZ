@@ -13,11 +13,11 @@ OptimizedEventLoop::~OptimizedEventLoop() {
   stop();
 }
 
-void OptimizedEventLoop::post(std::function<void()> task) {
+void OptimizedEventLoop::post(kj::Function<void()> task) {
   post(kj::mv(task), EventPriority::Normal);
 }
 
-void OptimizedEventLoop::post(std::function<void()> task, EventPriority priority) {
+void OptimizedEventLoop::post(kj::Function<void()> task, EventPriority priority) {
   QueuedTask qt{
       .task = kj::mv(task), .priority = priority, .enqueue_time = std::chrono::steady_clock::now()};
 
@@ -38,11 +38,11 @@ void OptimizedEventLoop::post(std::function<void()> task, EventPriority priority
   }
 }
 
-void OptimizedEventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay) {
+void OptimizedEventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay) {
   post_delayed(kj::mv(task), delay, EventPriority::Normal);
 }
 
-void OptimizedEventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+void OptimizedEventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
                                       EventPriority priority) {
   // Capture priority and enqueue time for the delayed task
   auto enqueue_time = std::chrono::steady_clock::now();
@@ -81,13 +81,14 @@ void OptimizedEventLoop::execute_task(QueuedTask& task) {
     // Retry if another thread updated it
   }
 
-  // Execute task with timing
+  // Execute task with timing using KJ exception handling
   auto start = std::chrono::steady_clock::now();
-  try {
-    task.task();
-    stats_.events_processed++;
-  } catch (...) {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() { task.task(); })) {
     stats_.events_failed++;
+    KJ_LOG(WARNING, "Task execution failed", exception.getDescription());
+  }
+  else {
+    stats_.events_processed++;
   }
   auto end = std::chrono::steady_clock::now();
 
@@ -115,7 +116,8 @@ size_t OptimizedEventLoop::drain_queue() {
 
       execute_task(task);
       processed++;
-    } else {
+    }
+    else {
       break;
     }
   }

@@ -6,11 +6,11 @@
 #include <functional> // std::function used for custom deleter in std::unique_ptr
 #include <kj/arena.h>
 #include <kj/common.h>
+#include <kj/debug.h> // KJ_FAIL_REQUIRE for exception handling
 #include <kj/function.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <memory> // std::unique_ptr used for custom deleter support in acquire()
-#include <stdexcept>
 #include <vector> // std::vector used for internal pool storage
 
 namespace veloz::core {
@@ -86,24 +86,169 @@ template <typename T> [[nodiscard]] kj::Own<T> wrapNonOwning(T* ptr) {
   return kj::Own<T>(ptr, kj::NullDisposer::instance);
 }
 
+// =======================================================================================
+// VeloZArena - Arena-based memory allocator wrapper around kj::Arena
+// =======================================================================================
+
+/**
+ * @brief Arena-based memory allocator for fast temporary allocations
+ *
+ * VeloZArena wraps kj::Arena to provide fast allocation with bulk deallocation.
+ * All objects allocated from an arena are freed together when the arena is
+ * destroyed or reset. This is ideal for:
+ * - Per-request/per-event allocations
+ * - Temporary objects with similar lifetimes
+ * - Avoiding memory fragmentation in hot paths
+ *
+ * Example:
+ * @code
+ * VeloZArena arena;
+ * auto* event = arena.allocate<MarketEvent>(symbol, price, qty);
+ * auto* order = arena.allocate<Order>(orderId, side, price);
+ * // All allocations freed when arena goes out of scope or reset() is called
+ * @endcode
+ */
+class VeloZArena final {
+public:
+  /**
+   * @brief Construct an arena with default chunk size
+   */
+  VeloZArena() : arena_() {}
+
+  /**
+   * @brief Construct an arena with specified initial chunk size
+   * @param chunk_size_hint Hint for initial chunk allocation size in bytes
+   */
+  explicit VeloZArena(size_t chunk_size_hint) : arena_(chunk_size_hint) {}
+
+  ~VeloZArena() = default;
+
+  // Non-copyable, non-movable (arena memory is not relocatable)
+  VeloZArena(const VeloZArena&) = delete;
+  VeloZArena& operator=(const VeloZArena&) = delete;
+  VeloZArena(VeloZArena&&) = delete;
+  VeloZArena& operator=(VeloZArena&&) = delete;
+
+  /**
+   * @brief Allocate and construct an object in the arena
+   * @tparam T Type to allocate
+   * @tparam Args Constructor argument types
+   * @param args Constructor arguments
+   * @return Pointer to the constructed object (valid until arena reset/destruction)
+   *
+   * The returned pointer is NOT owned - the arena manages the memory.
+   * Do NOT delete the returned pointer.
+   */
+  template <typename T, typename... Args> [[nodiscard]] T* allocate(Args&&... args) {
+    return &arena_.allocate<T>(kj::fwd<Args>(args)...);
+  }
+
+  /**
+   * @brief Allocate an array of objects in the arena
+   * @tparam T Element type
+   * @param count Number of elements
+   * @return ArrayPtr to the allocated array (valid until arena reset/destruction)
+   */
+  template <typename T> [[nodiscard]] kj::ArrayPtr<T> allocateArray(size_t count) {
+    return arena_.allocateArray<T>(count);
+  }
+
+  /**
+   * @brief Allocate raw bytes in the arena
+   * @param size Number of bytes to allocate
+   * @param alignment Alignment requirement (default: max alignment)
+   * @return Pointer to allocated memory
+   */
+  [[nodiscard]] void* allocateBytes(size_t size, size_t alignment = alignof(std::max_align_t)) {
+    // kj::Arena doesn't have a direct allocateBytes, use allocateArray<byte>
+    auto arr = arena_.allocateArray<kj::byte>(size);
+    return arr.begin();
+  }
+
+  /**
+   * @brief Copy a string into the arena
+   * @param str String to copy
+   * @return StringPtr to the arena-allocated copy
+   */
+  [[nodiscard]] kj::StringPtr copyString(kj::StringPtr str) {
+    return arena_.copyString(str);
+  }
+
+  /**
+   * @brief Get the underlying kj::Arena for advanced usage
+   * @return Reference to the underlying arena
+   */
+  [[nodiscard]] kj::Arena& underlying() noexcept {
+    return arena_;
+  }
+
+  [[nodiscard]] const kj::Arena& underlying() const noexcept {
+    return arena_;
+  }
+
+private:
+  kj::Arena arena_;
+};
+
+/**
+ * @brief Thread-safe arena wrapper for concurrent allocations
+ *
+ * Wraps VeloZArena with mutex protection for thread-safe access.
+ * Use this when multiple threads need to allocate from the same arena.
+ * For single-threaded hot paths, prefer plain VeloZArena.
+ */
+class ThreadSafeArena final {
+public:
+  ThreadSafeArena() : guarded_() {}
+  explicit ThreadSafeArena(size_t chunk_size_hint) : guarded_(chunk_size_hint) {}
+
+  ~ThreadSafeArena() = default;
+
+  ThreadSafeArena(const ThreadSafeArena&) = delete;
+  ThreadSafeArena& operator=(const ThreadSafeArena&) = delete;
+
+  /**
+   * @brief Allocate and construct an object in the arena (thread-safe)
+   */
+  template <typename T, typename... Args> [[nodiscard]] T* allocate(Args&&... args) {
+    auto lock = guarded_.lockExclusive();
+    return lock->allocate<T>(kj::fwd<Args>(args)...);
+  }
+
+  /**
+   * @brief Allocate an array in the arena (thread-safe)
+   */
+  template <typename T> [[nodiscard]] kj::ArrayPtr<T> allocateArray(size_t count) {
+    auto lock = guarded_.lockExclusive();
+    return lock->allocateArray<T>(count);
+  }
+
+  /**
+   * @brief Copy a string into the arena (thread-safe)
+   */
+  [[nodiscard]] kj::StringPtr copyString(kj::StringPtr str) {
+    auto lock = guarded_.lockExclusive();
+    return lock->copyString(str);
+  }
+
+private:
+  kj::MutexGuarded<VeloZArena> guarded_;
+};
+
 // Memory alignment utilities
 [[nodiscard]] void* aligned_alloc(size_t size, size_t alignment);
 void aligned_free(void* ptr);
 
 template <typename T> [[nodiscard]] T* aligned_new(size_t alignment = alignof(T)) {
   void* ptr = aligned_alloc(sizeof(T), alignment);
-  if (ptr == nullptr) {
-    throw std::bad_alloc();
-  }
+  KJ_REQUIRE(ptr != nullptr, "aligned_alloc failed: out of memory", sizeof(T), alignment);
   return new (ptr) T();
 }
 
 template <typename T, typename... Args>
 [[nodiscard]] T* aligned_new(size_t alignment, Args&&... args) {
   void* ptr = aligned_alloc(sizeof(T), alignment);
-  if (ptr == nullptr) {
-    throw std::bad_alloc();
-  }
+  KJ_REQUIRE(ptr != nullptr, "aligned_alloc failed: out of memory", sizeof(T), alignment);
   return new (ptr) T(std::forward<Args>(args)...);
 }
 
@@ -124,7 +269,9 @@ public:
   ~ObjectPool() = default;
 
   // Acquire object from pool
-  template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
+  // Uses std::unique_ptr with custom deleter since kj::Own doesn't support release() or custom deleters
+  template <typename... Args>
+  std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     auto lock = guarded_.lockExclusive();
     if (!lock->pool.empty()) {
       // Release ownership from the pool's unique_ptr and take the raw pointer
@@ -144,7 +291,7 @@ public:
       return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
-    throw std::runtime_error("Object pool exhausted");
+    KJ_FAIL_REQUIRE("Object pool exhausted", max_size_);
   }
 
   // Release object back to pool
@@ -183,7 +330,6 @@ public:
       if (max_size_ > 0 && lock->size >= max_size_) {
         break;
       }
-      // Uses std::make_unique for pool storage (kj::Own lacks release())
       lock->pool.push_back(std::make_unique<T>());
       ++(lock->size);
     }
@@ -198,6 +344,7 @@ public:
 
 private:
   // Internal state for the pool
+  // Uses std::unique_ptr because kj::Own doesn't support release() method
   struct PoolState {
     std::vector<std::unique_ptr<T>> pool;
     size_t size;
@@ -205,7 +352,6 @@ private:
     explicit PoolState(size_t initial_size) : size(initial_size) {
       pool.reserve(initial_size);
       for (size_t i = 0; i < initial_size; ++i) {
-        // Uses std::make_unique for pool storage (kj::Own lacks release())
         pool.push_back(std::make_unique<T>());
       }
     }
@@ -216,6 +362,7 @@ private:
 };
 
 // Thread-local object pool (no synchronization needed)
+// Note: Uses std::unique_ptr because kj::Own doesn't support custom deleters or release()
 template <typename T> class ThreadLocalObjectPool final {
 public:
   explicit ThreadLocalObjectPool(size_t initial_size = 0, size_t max_size = 0)
@@ -224,7 +371,9 @@ public:
   ~ThreadLocalObjectPool() = default;
 
   // Acquire object from pool
-  template <typename... Args> std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
+  // Returns std::unique_ptr with custom deleter (kj::Own doesn't support custom deleters)
+  template <typename... Args>
+  std::unique_ptr<T, std::function<void(T*)>> acquire(Args&&... args) {
     auto& pool = pool_;
 
     if (!pool.empty()) {
@@ -240,7 +389,7 @@ public:
       return std::unique_ptr<T, std::function<void(T*)>>(ptr, [this](T* p) { release(p); });
     }
 
-    throw std::runtime_error("Thread local object pool exhausted");
+    KJ_FAIL_REQUIRE("Thread local object pool exhausted", max_size_);
   }
 
   // Release object back to pool
@@ -258,6 +407,7 @@ public:
   }
 
 private:
+  // std::unique_ptr used because kj::Own doesn't support release() method
   static thread_local std::vector<std::unique_ptr<T>> pool_;
   const size_t initial_size_;
   const size_t max_size_;

@@ -16,7 +16,6 @@
 #include <kj/vector.h>
 #include <queue>
 #include <regex>
-#include <string> // std::string used for EventTag
 #include <vector> // std::vector used for EventTag containers
 
 namespace veloz::core {
@@ -37,16 +36,16 @@ enum class EventPriority : uint8_t {
 /**
  * @brief Convert EventPriority to string
  */
-[[nodiscard]] std::string_view to_string(EventPriority priority);
+[[nodiscard]] kj::StringPtr to_string(EventPriority priority);
 
 /**
  * @brief Event tag for filtering and routing
  *
  * Events can be tagged with strings to enable filtering and routing
  * based on event types, categories, or sources.
- * Note: Using std::string for STL container compatibility (priority_queue)
+ * Note: Using std::vector for STL container compatibility (priority_queue)
  */
-using EventTag = std::string;
+using EventTag = kj::String;
 
 /**
  * @brief Event filter predicate
@@ -138,7 +137,7 @@ public:
   void reset_stats() {
     stats_.reset();
   }
-  [[nodiscard]] std::string stats_to_string() const;
+  [[nodiscard]] kj::String stats_to_string() const;
 
   // Filtering
   /**
@@ -159,7 +158,7 @@ public:
    * @param tag_pattern Regex pattern for tag matching
    * @return Filter ID for removal
    */
-  [[nodiscard]] uint64_t add_tag_filter(const std::string& tag_pattern);
+  [[nodiscard]] uint64_t add_tag_filter(kj::StringPtr tag_pattern);
   void remove_tag_filter(uint64_t filter_id);
 
   // Event routing
@@ -176,6 +175,29 @@ private:
     EventPriority priority;
     std::vector<EventTag> tags;
     std::chrono::steady_clock::time_point enqueue_time;
+
+    Task() = default;
+    Task(const Task& other)
+        : task(other.task), priority(other.priority), tags(), enqueue_time(other.enqueue_time) {
+      tags.reserve(other.tags.size());
+      for (const auto& tag : other.tags) {
+        tags.emplace_back(kj::heapString(tag));
+      }
+    }
+    Task& operator=(const Task& other) {
+      if (this == &other) {
+        return *this;
+      }
+      task = other.task;
+      priority = other.priority;
+      enqueue_time = other.enqueue_time;
+      tags.clear();
+      tags.reserve(other.tags.size());
+      for (const auto& tag : other.tags) {
+        tags.emplace_back(kj::heapString(tag));
+      }
+      return *this;
+    }
 
     bool operator>(const Task& other) const {
       if (priority != other.priority) {

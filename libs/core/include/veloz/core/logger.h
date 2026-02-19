@@ -15,14 +15,13 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <filesystem>
 #include <format>
 #include <fstream>
 #include <kj/common.h>
+#include <kj/filesystem.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
-#include <memory> // std::unique_ptr used for polymorphic ownership (LogFormatter, LogOutput)
 #include <source_location>
 #include <string> // std::string used for external API compatibility (std::format, std::filesystem)
 #include <string_view>
@@ -221,11 +220,11 @@ public:
    * @param max_files Maximum number of backup files to keep
    * @param interval Time interval for rotation (for Time rotation)
    */
-  explicit FileOutput(const std::filesystem::path& file_path, Rotation rotation = Rotation::Size,
+  explicit FileOutput(const kj::Path& file_path, Rotation rotation = Rotation::Size,
                       size_t max_size = 10 * 1024 * 1024, // 10MB default
                       size_t max_files = 5, RotationInterval interval = RotationInterval::Daily);
 
-  ~FileOutput() override;
+  ~FileOutput() noexcept override;
 
   void write(const std::string& formatted, const LogEntry& entry) override;
   void flush() override;
@@ -239,7 +238,7 @@ public:
   /**
    * @brief Get current file path
    */
-  [[nodiscard]] std::filesystem::path current_path() const;
+  [[nodiscard]] kj::Path current_path() const;
 
   /**
    * @brief Get rotation settings
@@ -257,7 +256,7 @@ public:
 private:
   // Internal state for FileOutput
   struct FileOutputState {
-    std::filesystem::path file_path;
+    kj::Path file_path;
     std::ofstream file_stream;
     size_t current_size;
     std::chrono::system_clock::time_point last_rotation;
@@ -265,17 +264,17 @@ private:
     const Rotation rotation;
     const RotationInterval interval;
 
-    FileOutputState(const std::filesystem::path& path, size_t max_sz, Rotation rot,
+    FileOutputState(const kj::Path& path, size_t max_sz, Rotation rot,
                     RotationInterval interv)
-        : file_path(path), current_size(0), last_rotation(std::chrono::system_clock::now()),
+        : file_path(path.clone()), current_size(0), last_rotation(std::chrono::system_clock::now()),
           max_size(max_sz), rotation(rot), interval(interv) {}
   };
 
   void writeImpl(FileOutputState& state, const std::string& formatted);
   void check_rotation();
-  [[nodiscard]] std::filesystem::path get_rotated_path(size_t index) const;
-  void perform_rotation();
-  [[nodiscard]] bool should_rotate_by_time() const;
+  [[nodiscard]] kj::Path get_rotated_path(size_t index) const;
+  void perform_rotation(FileOutputState& state);
+  [[nodiscard]] bool should_rotate_by_time(const FileOutputState& state) const;
   [[nodiscard]] std::string get_rotation_suffix() const;
 
   kj::MutexGuarded<FileOutputState> guarded_;
@@ -291,7 +290,7 @@ class MultiOutput final : public LogOutput {
 public:
   explicit MultiOutput() = default;
 
-  void add_output(std::unique_ptr<LogOutput> output);
+  void add_output(kj::Own<LogOutput> output);
   void remove_output(size_t index);
   void clear_outputs();
 
@@ -304,7 +303,7 @@ public:
 private:
   // Internal state for MultiOutput
   struct MultiOutputState {
-    std::vector<std::unique_ptr<LogOutput>> outputs;
+    std::vector<kj::Own<LogOutput>> outputs;
   };
 
   kj::MutexGuarded<MultiOutputState> guarded_;
@@ -322,10 +321,9 @@ public:
    * @brief Constructor
    * @param formatter Log formatter to use
    * @param output Log output destination
-   * Note: Uses std::make_unique for polymorphic ownership (kj::Own lacks release())
    */
-  Logger(std::unique_ptr<LogFormatter> formatter = std::make_unique<TextFormatter>(),
-         std::unique_ptr<LogOutput> output = std::make_unique<ConsoleOutput>());
+  Logger(kj::Own<LogFormatter> formatter = kj::heap<TextFormatter>(),
+         kj::Own<LogOutput> output = kj::heap<ConsoleOutput>());
 
   ~Logger();
 
@@ -345,19 +343,19 @@ public:
    * @brief Set log formatter
    * @param formatter Formatter to use
    */
-  void set_formatter(std::unique_ptr<LogFormatter> formatter);
+  void set_formatter(kj::Own<LogFormatter> formatter);
 
   /**
    * @brief Set log output destination
    * @param output Output destination
    */
-  void set_output(std::unique_ptr<LogOutput> output);
+  void set_output(kj::Own<LogOutput> output);
 
   /**
    * @brief Add additional output destination
    * @param output Output destination to add
    */
-  void add_output(std::unique_ptr<LogOutput> output);
+  void add_output(kj::Own<LogOutput> output);
 
   /**
    * @brief General log recording method
@@ -516,13 +514,12 @@ public:
 private:
   // Internal state for Logger
   struct LoggerState {
-    std::unique_ptr<LogFormatter> formatter;
-    std::unique_ptr<MultiOutput> multi_output;
+    kj::Own<LogFormatter> formatter;
+    kj::Own<MultiOutput> multi_output;
     LogLevel level;
 
-    LoggerState(std::unique_ptr<LogFormatter> fmt, std::unique_ptr<LogOutput> out)
-        // Uses std::make_unique for polymorphic ownership (kj::Own lacks release())
-        : formatter(kj::mv(fmt)), multi_output(std::make_unique<MultiOutput>()),
+    LoggerState(kj::Own<LogFormatter> fmt, kj::Own<LogOutput> out)
+        : formatter(kj::mv(fmt)), multi_output(kj::heap<MultiOutput>()),
           level(LogLevel::Info) {
       multi_output->add_output(kj::mv(out));
     }

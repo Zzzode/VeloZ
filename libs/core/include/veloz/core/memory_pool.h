@@ -23,10 +23,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
-#include <format>
 #include <functional> // std::function used for custom deleter in std::unique_ptr
+#include <iomanip>
 #include <kj/arena.h>
 #include <kj/common.h>
+#include <kj/debug.h> // KJ_FAIL_REQUIRE for exception handling
 #include <kj/function.h>
 #include <kj/map.h>
 #include <kj/memory.h>
@@ -146,7 +147,7 @@ public:
       return ptr;
     }
 
-    throw std::bad_alloc();
+    KJ_FAIL_REQUIRE("Memory pool exhausted: no free blocks available", max_blocks_);
   }
 
   /**
@@ -391,8 +392,7 @@ struct MemoryAllocationSite {
   size_t object_count{0};
 
   MemoryAllocationSite() : name(kj::str("")) {}
-  explicit MemoryAllocationSite(kj::StringPtr site_name)
-      : name(kj::str(site_name)) {}
+  explicit MemoryAllocationSite(kj::StringPtr site_name) : name(kj::str(site_name)) {}
 };
 
 /**
@@ -420,7 +420,7 @@ public:
     auto lock = guarded_.lockExclusive();
     auto& site = lock->sites.findOrCreate(site_name, [&]() {
       return kj::HashMap<kj::String, MemoryAllocationSite>::Entry{kj::str(site_name),
-                                                                   MemoryAllocationSite(site_name)};
+                                                                  MemoryAllocationSite(site_name)};
     });
     site.current_bytes += size;
     site.peak_bytes = kj::max(site.peak_bytes, site.current_bytes);
@@ -457,7 +457,8 @@ public:
    * @param site_name Name of allocation site
    * @return Statistics wrapped in kj::Maybe, kj::none if not found
    */
-  [[nodiscard]] kj::Maybe<const MemoryAllocationSite&> get_site_stats(kj::StringPtr site_name) const {
+  [[nodiscard]] kj::Maybe<const MemoryAllocationSite&>
+  get_site_stats(kj::StringPtr site_name) const {
     auto lock = guarded_.lockExclusive();
     return lock->sites.find(site_name);
   }
@@ -535,13 +536,14 @@ public:
     std::ostringstream oss;
     oss << "Memory Usage Report\n";
     oss << "==================\n";
-    oss << std::format("Total Allocated: {} bytes ({:.2f} MB)\n", total_allocated_bytes,
-                       total_allocated_bytes / 1024.0 / 1024.0);
-    oss << std::format("Peak Allocated: {} bytes ({:.2f} MB)\n", peak_allocated_bytes,
-                       peak_allocated_bytes / 1024.0 / 1024.0);
-    oss << std::format("Total Allocations: {}\n", total_allocation_count);
-    oss << std::format("Total Deallocations: {}\n", total_deallocation_count);
-    oss << std::format("Active Sites: {}\n\n", active_sites_count);
+    oss << std::fixed << std::setprecision(2);
+    oss << "Total Allocated: " << total_allocated_bytes << " bytes ("
+        << (total_allocated_bytes / 1024.0 / 1024.0) << " MB)\n";
+    oss << "Peak Allocated: " << peak_allocated_bytes << " bytes ("
+        << (peak_allocated_bytes / 1024.0 / 1024.0) << " MB)\n";
+    oss << "Total Allocations: " << total_allocation_count << "\n";
+    oss << "Total Deallocations: " << total_deallocation_count << "\n";
+    oss << "Active Sites: " << active_sites_count << "\n\n";
 
     oss << "Top Sites by Peak Usage:\n";
 
@@ -554,9 +556,8 @@ public:
     };
     std::vector<SiteInfo> site_infos;
     for (const auto& entry : lock->sites) {
-      site_infos.push_back(SiteInfo{
-          std::string(entry.key.cStr()), entry.value.peak_bytes, entry.value.allocation_count,
-          entry.value.object_count});
+      site_infos.push_back(SiteInfo{std::string(entry.key.cStr()), entry.value.peak_bytes,
+                                    entry.value.allocation_count, entry.value.object_count});
     }
     std::sort(site_infos.begin(), site_infos.end(),
               [](const auto& a, const auto& b) { return a.peak_bytes > b.peak_bytes; });
@@ -564,8 +565,9 @@ public:
     const size_t count = kj::min(site_infos.size(), size_t(10));
     for (size_t i = 0; i < count; ++i) {
       const auto& info = site_infos[i];
-      oss << std::format("  {:<30} {:>12} bytes ({:>6} allocs, {:>6} objects)\n", info.name,
-                         info.peak_bytes, info.allocation_count, info.object_count);
+      oss << "  " << std::left << std::setw(30) << info.name << " " << std::right << std::setw(12)
+          << info.peak_bytes << " bytes (" << std::setw(6) << info.allocation_count << " allocs, "
+          << std::setw(6) << info.object_count << " objects)\n";
     }
 
     return oss.str();

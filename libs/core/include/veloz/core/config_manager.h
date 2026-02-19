@@ -17,15 +17,15 @@
 #include "veloz/core/json.h"
 
 #include <atomic>
-#include <filesystem>  // std::filesystem::path for file paths
 #include <kj/common.h>
+#include <kj/filesystem.h> // kj::Path for file paths
 #include <kj/function.h>
 #include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <memory>   // std::unique_ptr used for polymorphic ownership (ConfigItemBase)
-#include <mutex>    // std::mutex kept for simple synchronization (not guarding specific values)
+#include <memory> // std::unique_ptr used for polymorphic ownership (ConfigItemBase)
+#include <mutex>  // std::mutex kept for simple synchronization (not guarding specific values)
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -61,6 +61,9 @@ enum class ConfigItemType {
  * @brief Configuration value type
  *
  * Variant type that can hold any supported configuration value.
+ * Note: Uses std::variant because KJ library does not provide an equivalent variant type.
+ * KJ's approach to variants is using inheritance or Maybe patterns, but for this
+ * config system, std::variant provides the best type safety and ergonomics.
  */
 using ConfigValue =
     std::variant<bool, int, int64_t, double, std::string, std::vector<bool>, std::vector<int>,
@@ -91,17 +94,17 @@ public:
   virtual ~ConfigItemBase() = default;
 
   /**
-   * @brief Get the key/name of this configuration item
+   * @brief Get key/name of this configuration item
    */
-  [[nodiscard]] virtual std::string_view key() const noexcept = 0;
+  [[nodiscard]] virtual kj::StringPtr key() const noexcept = 0;
 
   /**
-   * @brief Get the description of this configuration item
+   * @brief Get description of this configuration item
    */
-  [[nodiscard]] virtual std::string_view description() const noexcept = 0;
+  [[nodiscard]] virtual kj::StringPtr description() const noexcept = 0;
 
   /**
-   * @brief Get the type of this configuration item
+   * @brief Get type of this configuration item
    */
   [[nodiscard]] virtual ConfigItemType type() const noexcept = 0;
 
@@ -128,17 +131,17 @@ public:
   /**
    * @brief Get value as a string
    */
-  [[nodiscard]] virtual std::string to_string() const = 0;
+  [[nodiscard]] virtual kj::String to_string() const = 0;
 
   /**
    * @brief Set value from a string
    */
-  virtual bool from_string(std::string_view value) = 0;
+  virtual bool from_string(kj::StringPtr value) = 0;
 
   /**
    * @brief Convert item value to JSON value string (for serialization)
    */
-  [[nodiscard]] virtual std::string to_json_string() const = 0;
+  [[nodiscard]] virtual kj::String to_json_string() const = 0;
 };
 
 /**
@@ -147,7 +150,7 @@ public:
  * Represents a single configuration value with type safety,
  * validation, and change notification support.
  *
- * @tparam T The type of the configuration value
+ * @tparam T The type of configuration value
  */
 template <typename T> class ConfigItem : public ConfigItemBase {
 public:
@@ -158,11 +161,11 @@ public:
    */
   class Builder {
   public:
-    Builder(std::string key, std::string description)
-        : key_(kj::mv(key)), description_(kj::mv(description)) {}
+    Builder(kj::StringPtr key, kj::StringPtr description)
+        : key_(kj::str(key)), description_(kj::str(description)) {}
 
     /**
-     * @brief Set the default value
+     * @brief Set default value
      */
     Builder& default_value(T value) {
       default_ = kj::mv(value);
@@ -195,13 +198,13 @@ public:
     }
 
     /**
-     * @brief Build the ConfigItem
+     * @brief Build ConfigItem
      * Note: Uses std::make_unique because ConfigItemBase requires std::unique_ptr for
      * polymorphic ownership (kj::Own does not support release() for this pattern)
      */
-    std::unique_ptr<ConfigItem<T>> build() {
-      auto item = std::make_unique<ConfigItem<T>>(kj::mv(key_), kj::mv(description_), required_,
-                                                  has_default_);
+    kj::Own<ConfigItem<T>> build() {
+      auto item =
+          kj::heap<ConfigItem<T>>(kj::mv(key_), kj::mv(description_), required_, has_default_);
 
       if (has_default_) {
         item->default_value_ = kj::mv(default_);
@@ -215,8 +218,8 @@ public:
     }
 
   private:
-    std::string key_;
-    std::string description_;
+    kj::String key_;
+    kj::String description_;
     T default_{};
     bool has_default_{false};
     bool required_{false};
@@ -227,17 +230,17 @@ public:
   /**
    * @brief Constructor (use Builder instead)
    */
-  ConfigItem(std::string key, std::string description, bool required, bool has_default)
+  ConfigItem(kj::String key, kj::String description, bool required, bool has_default)
       : key_(kj::mv(key)), description_(kj::mv(description)), required_(required),
         has_default_(has_default) {
     is_set_.store(has_default);
   }
 
   // Getters
-  [[nodiscard]] std::string_view key() const noexcept override {
+  [[nodiscard]] kj::StringPtr key() const noexcept override {
     return key_;
   }
-  [[nodiscard]] std::string_view description() const noexcept override {
+  [[nodiscard]] kj::StringPtr description() const noexcept override {
     return description_;
   }
   [[nodiscard]] ConfigItemType type() const noexcept override;
@@ -252,44 +255,44 @@ public:
   }
 
   /**
-   * @brief Get the current value
+   * @brief Get current value
    * @return kj::Maybe value, kj::none if not set
    */
   [[nodiscard]] kj::Maybe<T> get() const {
-    std::lock_guard<std::mutex> lock(mu_);
+    std::scoped_lock lock(mu_);
     return is_set_ ? kj::Maybe<T>(value_) : kj::none;
   }
 
   /**
-   * @brief Get the value or a default
+   * @brief Get value or a default
    * @param default_value Default to return if not set
    */
   [[nodiscard]] T get_or(T default_value) const {
-    std::lock_guard<std::mutex> lock(mu_);
+    std::scoped_lock lock(mu_);
     return is_set_ ? value_ : kj::mv(default_value);
   }
 
   /**
-   * @brief Get the value or throw if not set
+   * @brief Get value or throw if not set
    */
   [[nodiscard]] const T& value() const {
-    std::lock_guard<std::mutex> lock(mu_);
+    std::scoped_lock lock(mu_);
     if (!is_set_) {
-      throw std::runtime_error("Config item '" + key_ + "' is not set and has no default");
+      KJ_FAIL_REQUIRE("Config item not set and has no default", kj::str(key_, " (value() called)"));
     }
     return value_;
   }
 
   /**
-   * @brief Get the default value
+   * @brief Get default value
    */
   [[nodiscard]] kj::Maybe<T> default_value() const {
-    std::lock_guard<std::mutex> lock(mu_);
+    std::scoped_lock lock(mu_);
     return has_default_ ? kj::Maybe<T>(default_value_) : kj::none;
   }
 
   /**
-   * @brief Set the value
+   * @brief Set value
    * @param value New value to set
    * @return true if successful, false if validation fails
    */
@@ -299,7 +302,7 @@ public:
   }
 
   /**
-   * @brief Set the value (move version)
+   * @brief Set value (move version)
    */
   bool set(T&& value) {
     std::scoped_lock lock(mu_);
@@ -316,59 +319,61 @@ public:
     }
   }
 
-  [[nodiscard]] std::string to_string() const override {
+  [[nodiscard]] kj::String to_string() const override {
     std::scoped_lock lock(mu_);
     if constexpr (std::is_same_v<T, bool>) {
-      return is_set_ ? (value_ ? "true" : "false") : "not set";
+      return is_set_ ? (value_ ? kj::str("true"_kj) : kj::str("false"_kj)) : kj::str("not set"_kj);
     } else if constexpr (std::is_same_v<T, std::string>) {
-      return is_set_ ? "\"" + value_ + "\"" : "not set";
+      // Convert std::string to c_str() for kj::str() compatibility
+      return is_set_ ? kj::str("\"", value_.c_str(), "\"") : kj::str("not set"_kj);
     } else if constexpr (std::is_same_v<T, std::vector<bool>> ||
                          std::is_same_v<T, std::vector<int>> ||
                          std::is_same_v<T, std::vector<int64_t>> ||
                          std::is_same_v<T, std::vector<double>> ||
                          std::is_same_v<T, std::vector<std::string>>) {
       if (!is_set_)
-        return "not set";
+        return kj::str("not set"_kj);
       return array_to_string(value_);
     } else {
-      return is_set_ ? std::to_string(value_) : "not set";
+      // std::to_string returns std::string, convert to c_str() for kj::str()
+      return is_set_ ? kj::heapString(std::to_string(value_).c_str()) : kj::str("not set"_kj);
     }
   }
 
-  bool from_string(std::string_view value) override {
+  bool from_string(kj::StringPtr value) override {
     if constexpr (std::is_same_v<T, bool>) {
-      if (value == "true" || value == "1")
+      if (value == "true"_kj || value == "1"_kj)
         return set(true);
-      if (value == "false" || value == "0")
+      if (value == "false"_kj || value == "0"_kj)
         return set(false);
       return false;
     } else if constexpr (std::is_same_v<T, int>) {
       try {
-        return set(std::stoi(std::string(value)));
+        return set(std::stoi(std::string(value.cStr())));
       } catch (...) {
         return false;
       }
     } else if constexpr (std::is_same_v<T, int64_t>) {
       try {
-        return set(std::stoll(std::string(value)));
+        return set(std::stoll(std::string(value.cStr())));
       } catch (...) {
         return false;
       }
     } else if constexpr (std::is_same_v<T, double>) {
       try {
-        return set(std::stod(std::string(value)));
+        return set(std::stod(std::string(value.cStr())));
       } catch (...) {
         return false;
       }
     } else if constexpr (std::is_same_v<T, std::string>) {
-      return set(std::string(value));
+      return set(std::string(value.cStr()));
     } else if constexpr (std::is_same_v<T, std::vector<bool>> ||
                          std::is_same_v<T, std::vector<int>> ||
                          std::is_same_v<T, std::vector<int64_t>> ||
                          std::is_same_v<T, std::vector<double>> ||
                          std::is_same_v<T, std::vector<std::string>>) {
       try {
-        auto j = veloz::core::JsonDocument::parse(std::string(value));
+        auto j = veloz::core::JsonDocument::parse(std::string(value.cStr()));
         if (j.root().is_array()) {
           // Parse array type
           if constexpr (std::is_same_v<T, std::vector<bool>>) {
@@ -419,42 +424,48 @@ public:
   /**
    * @brief Convert item value to JSON value string (for serialization)
    */
-  [[nodiscard]] std::string to_json_string() const override {
+  [[nodiscard]] kj::String to_json_string() const override {
     if (!is_set_) {
-      return "null";
+      return kj::str("null"_kj);
     }
 
-    std::lock_guard<std::mutex> lock(mu_);
+    std::scoped_lock lock(mu_);
     if constexpr (std::is_same_v<T, std::vector<bool>>) {
       veloz::core::JsonBuilder arr_builder = veloz::core::JsonBuilder::array();
       for (bool item : value_) {
         arr_builder.add(item);
       }
-      return arr_builder.build();
+      std::string built = arr_builder.build();
+      // Convert std::string to kj::String via c_str() for kj::heapString compatibility
+      return kj::heapString(built.c_str());
     } else if constexpr (std::is_same_v<T, std::vector<int>>) {
       veloz::core::JsonBuilder arr_builder = veloz::core::JsonBuilder::array();
       for (int item : value_) {
         arr_builder.add(item);
       }
-      return arr_builder.build();
+      std::string built = arr_builder.build();
+      return kj::heapString(built.c_str());
     } else if constexpr (std::is_same_v<T, std::vector<int64_t>>) {
       veloz::core::JsonBuilder arr_builder = veloz::core::JsonBuilder::array();
       for (int64_t item : value_) {
         arr_builder.add(item);
       }
-      return arr_builder.build();
+      std::string built = arr_builder.build();
+      return kj::heapString(built.c_str());
     } else if constexpr (std::is_same_v<T, std::vector<double>>) {
       veloz::core::JsonBuilder arr_builder = veloz::core::JsonBuilder::array();
       for (double item : value_) {
         arr_builder.add(item);
       }
-      return arr_builder.build();
+      std::string built = arr_builder.build();
+      return kj::heapString(built.c_str());
     } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
       veloz::core::JsonBuilder arr_builder = veloz::core::JsonBuilder::array();
       for (const std::string& item : value_) {
         arr_builder.add(item);
       }
-      return arr_builder.build();
+      std::string built = arr_builder.build();
+      return kj::heapString(built.c_str());
     } else {
       veloz::core::JsonBuilder builder = veloz::core::JsonBuilder::object();
       builder.put("value", value_);
@@ -462,22 +473,26 @@ public:
       auto root = doc.root();
 
       if constexpr (std::is_same_v<T, bool>) {
-        return root["value"].get_bool() ? "true" : "false";
+        return root["value"].get_bool() ? kj::str("true"_kj) : kj::str("false"_kj);
       } else if constexpr (std::is_integral_v<T>) {
-        return std::to_string(root["value"].get_int());
+        // std::to_string returns std::string, convert to c_str() for kj::str()
+        return kj::heapString(std::to_string(root["value"].get_int()).c_str());
       } else if constexpr (std::is_floating_point_v<T>) {
-        return std::to_string(root["value"].get_double());
+        // std::to_string returns std::string, convert to c_str() for kj::str()
+        return kj::heapString(std::to_string(root["value"].get_double()).c_str());
       } else if constexpr (std::is_same_v<T, std::string>) {
-        return "\"" + root["value"].get_string() + "\"";
+        // get_string() returns std::string, convert to c_str() for kj::str()
+        std::string str_val = root["value"].get_string();
+        return kj::str("\"", str_val.c_str(), "\"");
       }
     }
 
-    return "null";
+    return kj::str("null"_kj);
   }
 
 private:
   template <typename U> bool set_locked(U&& value) {
-    KJ_IF_SOME (v, validator_) {
+    KJ_IF_SOME(v, validator_) {
       if (!v(value)) {
         return false;
       }
@@ -498,34 +513,53 @@ private:
     return true;
   }
 
-  [[nodiscard]] static std::string array_to_string(const std::vector<bool>& v) {
-    std::string s = "[";
+  [[nodiscard]] static kj::String array_to_string(const std::vector<bool>& v) {
+    kj::Vector<kj::String> parts;
+    parts.reserve(v.size());
     for (size_t i = 0; i < v.size(); ++i) {
-      s += v[i] ? "true" : "false";
-      if (i < v.size() - 1)
-        s += ", ";
+      parts.add(kj::str(v[i] ? "true"_kj : "false"_kj));
     }
-    s += "]";
-    return s;
+    if (parts.size() == 0) {
+      return kj::str("[]"_kj);
+    }
+    kj::String result = kj::str("["_kj);
+    for (size_t i = 0; i < parts.size(); ++i) {
+      if (i > 0) {
+        result = kj::str(result, ", "_kj, parts[i]);
+      } else {
+        result = kj::str(result, parts[i]);
+      }
+    }
+    return kj::str(result, "]"_kj);
   }
 
-  template <typename V> [[nodiscard]] static std::string array_to_string(const std::vector<V>& v) {
-    std::string s = "[";
+  template <typename V> [[nodiscard]] static kj::String array_to_string(const std::vector<V>& v) {
+    kj::Vector<kj::String> parts;
+    parts.reserve(v.size());
     for (size_t i = 0; i < v.size(); ++i) {
       if constexpr (std::is_same_v<V, std::string>) {
-        s += "\"" + v[i] + "\"";
+        parts.add(kj::str("\"", v[i].c_str(), "\""));
       } else {
-        s += std::to_string(v[i]);
+        // std::to_string returns std::string, convert to c_str() for kj::str()
+        parts.add(kj::heapString(std::to_string(v[i]).c_str()));
       }
-      if (i < v.size() - 1)
-        s += ", ";
     }
-    s += "]";
-    return s;
+    if (parts.size() == 0) {
+      return kj::str("[]"_kj);
+    }
+    kj::String result = kj::str("["_kj);
+    for (size_t i = 0; i < parts.size(); ++i) {
+      if (i > 0) {
+        result = kj::str(result, ", "_kj, parts[i]);
+      } else {
+        result = kj::str(result, parts[i]);
+      }
+    }
+    return kj::str(result, "]"_kj);
   }
 
-  std::string key_;
-  std::string description_;
+  kj::String key_;
+  kj::String description_;
   T default_value_;
   T value_;
   bool required_;
@@ -533,7 +567,7 @@ private:
   std::atomic<bool> is_set_{false};
   kj::Maybe<ConfigValidator<T>> validator_;
   kj::Vector<ConfigChangeCallback<T>> on_change_callbacks_;
-  mutable std::mutex mu_;  // std::mutex for compatibility with std::scoped_lock
+  mutable std::mutex mu_; // std::mutex for compatibility with std::scoped_lock
 };
 
 /**
@@ -593,32 +627,30 @@ template <typename T> ConfigItemType ConfigItem<T>::type() const noexcept {
  */
 class ConfigGroup final {
 public:
-  explicit ConfigGroup(std::string name, std::string description = "")
-      : name_(kj::mv(name)), description_(kj::mv(description)) {}
+  explicit ConfigGroup(kj::StringPtr name, kj::StringPtr description = ""_kj)
+      : name_(kj::str(name)), description_(kj::str(description)) {}
 
   /**
    * @brief Add a config item to this group
    * @param item Config item to add (takes ownership)
    */
-  void add_item(std::unique_ptr<ConfigItemBase> item) {
+  void add_item(kj::Own<ConfigItemBase> item) {
     std::scoped_lock lock(mu_);
     auto key_view = item->key();
-    kj::String key_str = kj::str(kj::StringPtr(key_view.data(), key_view.size()));
-    items_.upsert(kj::mv(key_str), kj::mv(item), [](auto& existing, auto&& newVal) {
-      existing = kj::mv(newVal);
-    });
+    kj::String key_str = kj::heapString(key_view);
+    items_.upsert(kj::mv(key_str), kj::mv(item),
+                  [](auto& existing, auto&& newVal) { existing = kj::mv(newVal); });
   }
 
   /**
    * @brief Add a sub-group
    * @param group Group to add (takes ownership)
    */
-  void add_group(std::unique_ptr<ConfigGroup> group) {
+  void add_group(kj::Own<ConfigGroup> group) {
     std::scoped_lock lock(mu_);
-    kj::String name_str = kj::str(group->name_.c_str());
-    groups_.upsert(kj::mv(name_str), kj::mv(group), [](auto& existing, auto&& newVal) {
-      existing = kj::mv(newVal);
-    });
+    kj::String name_str = kj::heapString(group->name_);
+    groups_.upsert(kj::mv(name_str), kj::mv(group),
+                   [](auto& existing, auto&& newVal) { existing = kj::mv(newVal); });
   }
 
   /**
@@ -626,12 +658,12 @@ public:
    * @tparam T Expected type
    * @param key Item key
    */
-  template <typename T> [[nodiscard]] ConfigItem<T>* get_item(std::string_view key) {
+  template <typename T> [[nodiscard]] ConfigItem<T>* get_item(kj::StringPtr key) {
     std::scoped_lock lock(mu_);
-    KJ_IF_SOME(item, items_.find(kj::StringPtr(key.data(), key.size()))) {
+    KJ_IF_SOME(item, items_.find(key)) {
       // Check type using type traits
       if (item->type() == ConfigTypeTraits<T>::type) {
-        return static_cast<ConfigItem<T>*>(item.get());
+        return static_cast<ConfigItem<T>*>(const_cast<ConfigItemBase*>(item.get()));
       }
     }
     return nullptr;
@@ -640,9 +672,20 @@ public:
   /**
    * @brief Get a sub-group by name
    */
-  [[nodiscard]] ConfigGroup* get_group(std::string_view name) {
+  [[nodiscard]] ConfigGroup* get_group(kj::StringPtr name) {
     std::scoped_lock lock(mu_);
-    KJ_IF_SOME(group, groups_.find(kj::StringPtr(name.data(), name.size()))) {
+    KJ_IF_SOME(group, groups_.find(name)) {
+      return const_cast<ConfigGroup*>(group.get());
+    }
+    return nullptr;
+  }
+
+  /**
+   * @brief Get a sub-group by name (const version)
+   */
+  [[nodiscard]] const ConfigGroup* get_group(kj::StringPtr name) const {
+    std::scoped_lock lock(mu_);
+    KJ_IF_SOME(group, groups_.find(name)) {
       return group.get();
     }
     return nullptr;
@@ -651,12 +694,12 @@ public:
   /**
    * @brief Get all items
    */
-  [[nodiscard]] std::vector<ConfigItemBase*> get_items() const {
+  [[nodiscard]] kj::Vector<ConfigItemBase*> get_items() const {
     std::scoped_lock lock(mu_);
-    std::vector<ConfigItemBase*> result;
+    kj::Vector<ConfigItemBase*> result;
     result.reserve(items_.size());
     for (const auto& entry : items_) {
-      result.push_back(entry.value.get());
+      result.add(const_cast<ConfigItemBase*>(entry.value.get()));
     }
     return result;
   }
@@ -664,12 +707,12 @@ public:
   /**
    * @brief Get all groups
    */
-  [[nodiscard]] std::vector<ConfigGroup*> get_groups() const {
+  [[nodiscard]] kj::Vector<ConfigGroup*> get_groups() const {
     std::scoped_lock lock(mu_);
-    std::vector<ConfigGroup*> result;
+    kj::Vector<ConfigGroup*> result;
     result.reserve(groups_.size());
     for (const auto& entry : groups_) {
-      result.push_back(entry.value.get());
+      result.add(const_cast<ConfigGroup*>(entry.value.get()));
     }
     return result;
   }
@@ -691,30 +734,30 @@ public:
   /**
    * @brief Get validation errors
    */
-  [[nodiscard]] std::vector<std::string> validation_errors() const {
+  [[nodiscard]] kj::Vector<kj::String> validation_errors() const {
     std::scoped_lock lock(mu_);
-    std::vector<std::string> errors;
+    kj::Vector<kj::String> errors;
     for (const auto& entry : items_) {
       if (entry.value->is_required() && !entry.value->is_set()) {
-        errors.push_back("Required config item '" + std::string(entry.value->key()) + "' is not set");
+        errors.add(kj::str("Required config item '"_kj, entry.value->key(), "' is not set"_kj));
       }
     }
     return errors;
   }
 
-  [[nodiscard]] std::string_view name() const noexcept {
+  [[nodiscard]] kj::StringPtr name() const noexcept {
     return name_;
   }
-  [[nodiscard]] std::string_view description() const noexcept {
+  [[nodiscard]] kj::StringPtr description() const noexcept {
     return description_;
   }
 
 private:
-  std::string name_;
-  std::string description_;
-  kj::HashMap<kj::String, std::unique_ptr<ConfigItemBase>> items_;
-  kj::HashMap<kj::String, std::unique_ptr<ConfigGroup>> groups_;
-  mutable std::mutex mu_;  // std::mutex for compatibility with std::scoped_lock
+  kj::String name_;
+  kj::String description_;
+  kj::HashMap<kj::String, kj::Own<ConfigItemBase>> items_;
+  kj::HashMap<kj::String, kj::Own<ConfigGroup>> groups_;
+  mutable std::mutex mu_; // std::mutex for compatibility with std::scoped_lock
 };
 
 /**
@@ -730,9 +773,9 @@ using HotReloadCallback = kj::Function<void()>;
  */
 class ConfigManager final {
 public:
-  explicit ConfigManager(std::string name = "default") : name_(kj::mv(name)) {
-    // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-    root_group_ = std::make_unique<ConfigGroup>("root", "Root configuration group");
+  explicit ConfigManager(kj::StringPtr name = "default"_kj) : name_(kj::str(name)) {
+    // Uses kj::heap for ownership
+    root_group_ = kj::heap<ConfigGroup>("root"_kj, "Root configuration group"_kj);
   }
 
   ~ConfigManager() = default;
@@ -742,9 +785,16 @@ public:
   ConfigManager& operator=(const ConfigManager&) = delete;
 
   /**
-   * @brief Get the root configuration group
+   * @brief Get root configuration group (const)
    */
-  [[nodiscard]] ConfigGroup* root_group() const {
+  [[nodiscard]] const ConfigGroup* root_group() const {
+    return root_group_.get();
+  }
+
+  /**
+   * @brief Get root configuration group (mutable)
+   */
+  [[nodiscard]] ConfigGroup* root_group() {
     return root_group_.get();
   }
 
@@ -767,7 +817,7 @@ public:
    * @param file_path Path to JSON file
    * @param reload Whether this is a reload (triggers callbacks)
    */
-  bool load_from_json(const std::filesystem::path& file_path, bool reload = false);
+  bool load_from_json(const kj::Path& file_path, bool reload = false);
 
   /**
    * @brief Load configuration from JSON string
@@ -778,27 +828,28 @@ public:
    * @brief Load configuration from YAML file
    * @param file_path Path to YAML file
    */
-  bool load_from_yaml(const std::filesystem::path& file_path, bool reload = false);
+  bool load_from_yaml(const kj::Path& file_path, bool reload = false);
 
   /**
    * @brief Save configuration to JSON file
+   * @param file_path Path to save JSON file
    */
-  bool save_to_json(const std::filesystem::path& file_path) const;
+  bool save_to_json(const kj::Path& file_path) const;
 
   /**
    * @brief Export configuration to JSON string
    */
-  [[nodiscard]] std::string to_json() const;
+  [[nodiscard]] kj::String to_json() const;
 
   /**
    * @brief Find a config item by path (e.g., "group.subgroup.item")
    */
-  [[nodiscard]] ConfigItemBase* find_item(std::string_view path) const;
+  [[nodiscard]] ConfigItemBase* find_item(kj::StringPtr path) const;
 
   /**
    * @brief Find a config item by path (templated, type-safe without dynamic_cast)
    */
-  template <typename T> [[nodiscard]] ConfigItem<T>* find_item(std::string_view path) {
+  template <typename T> [[nodiscard]] ConfigItem<T>* find_item(kj::StringPtr path) {
     ConfigItemBase* base = find_item(path);
     if (base && base->type() == ConfigTypeTraits<T>::type) {
       return static_cast<ConfigItem<T>*>(base);
@@ -814,7 +865,7 @@ public:
   /**
    * @brief Get validation errors
    */
-  [[nodiscard]] std::vector<std::string> validation_errors() const;
+  [[nodiscard]] kj::Vector<kj::String> validation_errors() const;
 
   /**
    * @brief Add hot reload callback
@@ -829,24 +880,24 @@ public:
   /**
    * @brief Get configuration file path being monitored
    */
-  [[nodiscard]] std::filesystem::path config_file() const {
+  [[nodiscard]] kj::Maybe<kj::Path> config_file() const {
     std::scoped_lock lock(mu_);
-    return config_file_;
+    return config_file_.map([](const kj::Path& p) { return p.clone(); });
   }
 
   /**
    * @brief Set configuration file for monitoring
    */
-  void set_config_file(const std::filesystem::path& file_path);
+  void set_config_file(const kj::Path& file_path);
 
 private:
-  void apply_json_value(const std::string& key, const veloz::core::JsonValue& value);
+  void apply_json_value(kj::StringPtr key, const veloz::core::JsonValue& value);
   static std::string item_to_json(const ConfigItemBase* item);
   static void group_to_json(const ConfigGroup* group, veloz::core::JsonBuilder& builder);
 
-  std::string name_;
-  std::unique_ptr<ConfigGroup> root_group_;
-  std::filesystem::path config_file_;
+  kj::String name_;
+  kj::Own<ConfigGroup> root_group_;
+  kj::Maybe<kj::Path> config_file_; // kj::Path for file path representation
   std::atomic<bool> hot_reload_enabled_{false};
   kj::Vector<HotReloadCallback> hot_reload_callbacks_;
   mutable std::mutex mu_;

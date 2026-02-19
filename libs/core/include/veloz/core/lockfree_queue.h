@@ -3,9 +3,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <utility> // std::move, std::forward
 #include <kj/common.h>
 #include <kj/memory.h>
+#include <utility> // std::move, std::forward
 
 namespace veloz::core {
 

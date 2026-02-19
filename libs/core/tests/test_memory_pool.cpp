@@ -2,7 +2,6 @@
 #include "veloz/core/memory.h"
 #include "veloz/core/memory_pool.h"
 
-#include <format>
 #include <future> // Kept for std::async/std::future in concurrent tests
 #include <kj/string.h>
 #include <kj/vector.h>
@@ -89,11 +88,11 @@ KJ_TEST("MemoryPool: Pool exhaustion") {
 
   KJ_EXPECT(pool.total_blocks() == 4); // At max
 
-  // Pool exhaustion should throw std::bad_alloc
+  // Pool exhaustion should throw kj::Exception (via KJ_FAIL_REQUIRE)
   bool threw = false;
   try {
     auto obj5 = pool.create(5);
-  } catch (const std::bad_alloc&) {
+  } catch (const kj::Exception&) {
     threw = true;
   }
   KJ_EXPECT(threw);
@@ -183,14 +182,16 @@ KJ_TEST("MemoryMonitor: Site statistics") {
   KJ_IF_SOME(stats1, monitor.get_site_stats("site1"_kj)) {
     KJ_EXPECT(stats1.current_bytes == 100);
     KJ_EXPECT(stats1.object_count == 1);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("site1 not found");
   }
 
   KJ_IF_SOME(stats2, monitor.get_site_stats("site2"_kj)) {
     KJ_EXPECT(stats2.current_bytes == 200);
     KJ_EXPECT(stats2.object_count == 2);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("site2 not found");
   }
 }
@@ -251,9 +252,12 @@ KJ_TEST("MemoryMonitor: All sites") {
   // Verify sites exist by checking names
   bool found_site1 = false, found_site2 = false, found_site3 = false;
   for (const auto& site : sites) {
-    if (site.name == "site1"_kj) found_site1 = true;
-    if (site.name == "site2"_kj) found_site2 = true;
-    if (site.name == "site3"_kj) found_site3 = true;
+    if (site.name == "site1"_kj)
+      found_site1 = true;
+    if (site.name == "site2"_kj)
+      found_site2 = true;
+    if (site.name == "site3"_kj)
+      found_site3 = true;
   }
   KJ_EXPECT(found_site1);
   KJ_EXPECT(found_site2);
@@ -582,6 +586,128 @@ KJ_TEST("wrapNonOwning: Basic") {
 
   // wrapped goes out of scope but obj is NOT deleted
   // because wrapNonOwning uses NullDisposer
+}
+
+// ============================================================================
+// VeloZArena Tests
+// ============================================================================
+
+KJ_TEST("VeloZArena: Basic allocation") {
+  VeloZArena arena;
+
+  auto* obj = arena.allocate<TestObject>(42);
+  KJ_EXPECT(obj != nullptr);
+  KJ_EXPECT(obj->value_ == 42);
+  KJ_EXPECT(obj->allocated);
+}
+
+KJ_TEST("VeloZArena: Multiple allocations") {
+  VeloZArena arena;
+
+  auto* obj1 = arena.allocate<TestObject>(1);
+  auto* obj2 = arena.allocate<TestObject>(2);
+  auto* obj3 = arena.allocate<TestObject>(3);
+
+  KJ_EXPECT(obj1->value_ == 1);
+  KJ_EXPECT(obj2->value_ == 2);
+  KJ_EXPECT(obj3->value_ == 3);
+
+  // All objects are different
+  KJ_EXPECT(obj1 != obj2);
+  KJ_EXPECT(obj2 != obj3);
+  KJ_EXPECT(obj1 != obj3);
+}
+
+KJ_TEST("VeloZArena: Array allocation") {
+  VeloZArena arena;
+
+  auto arr = arena.allocateArray<int>(10);
+  KJ_EXPECT(arr.size() == 10);
+
+  for (size_t i = 0; i < arr.size(); ++i) {
+    arr[i] = static_cast<int>(i * 2);
+  }
+
+  for (size_t i = 0; i < arr.size(); ++i) {
+    KJ_EXPECT(arr[i] == static_cast<int>(i * 2));
+  }
+}
+
+KJ_TEST("VeloZArena: String copy") {
+  VeloZArena arena;
+
+  kj::StringPtr original = "Hello, VeloZ!"_kj;
+  kj::StringPtr copied = arena.copyString(original);
+
+  KJ_EXPECT(copied == original);
+  KJ_EXPECT(copied.begin() != original.begin()); // Different memory location
+}
+
+KJ_TEST("VeloZArena: With chunk size hint") {
+  VeloZArena arena(8192);
+
+  // Allocate multiple objects
+  for (int i = 0; i < 100; ++i) {
+    auto* obj = arena.allocate<TestObject>(i);
+    KJ_EXPECT(obj->value_ == i);
+  }
+}
+
+KJ_TEST("VeloZArena: Underlying arena access") {
+  VeloZArena arena;
+
+  kj::Arena& underlying = arena.underlying();
+  // Just verify we can access it
+  (void)underlying;
+}
+
+KJ_TEST("ThreadSafeArena: Basic allocation") {
+  ThreadSafeArena arena;
+
+  auto* obj = arena.allocate<TestObject>(42);
+  KJ_EXPECT(obj != nullptr);
+  KJ_EXPECT(obj->value_ == 42);
+}
+
+KJ_TEST("ThreadSafeArena: Concurrent allocations") {
+  ThreadSafeArena arena;
+  std::atomic<int> success_count{0};
+  constexpr int num_threads = 4;
+  constexpr int allocations_per_thread = 100;
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < num_threads; ++t) {
+    threads.emplace_back([&arena, &success_count, t]() {
+      for (int i = 0; i < allocations_per_thread; ++i) {
+        auto* obj = arena.allocate<TestObject>(t * 1000 + i);
+        if (obj != nullptr && obj->value_ == t * 1000 + i) {
+          success_count++;
+        }
+      }
+    });
+  }
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  KJ_EXPECT(success_count.load() == num_threads * allocations_per_thread);
+}
+
+KJ_TEST("ThreadSafeArena: Array allocation") {
+  ThreadSafeArena arena;
+
+  auto arr = arena.allocateArray<int>(10);
+  KJ_EXPECT(arr.size() == 10);
+}
+
+KJ_TEST("ThreadSafeArena: String copy") {
+  ThreadSafeArena arena;
+
+  kj::StringPtr original = "Thread-safe string"_kj;
+  kj::StringPtr copied = arena.copyString(original);
+
+  KJ_EXPECT(copied == original);
 }
 
 } // namespace

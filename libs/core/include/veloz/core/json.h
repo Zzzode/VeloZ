@@ -54,7 +54,9 @@ public:
   ~YyJsonDoc() noexcept;
 
   // Move-only semantics
-  YyJsonDoc(YyJsonDoc&& other) noexcept : doc_(other.doc_) { other.doc_ = nullptr; }
+  YyJsonDoc(YyJsonDoc&& other) noexcept : doc_(other.doc_) {
+    other.doc_ = nullptr;
+  }
 
   YyJsonDoc& operator=(YyJsonDoc&& other) noexcept {
     if (this != &other) {
@@ -72,7 +74,9 @@ public:
   /**
    * @brief Get the underlying yyjson_doc pointer
    */
-  [[nodiscard]] yyjson_doc* get() const noexcept { return doc_; }
+  [[nodiscard]] yyjson_doc* get() const noexcept {
+    return doc_;
+  }
 
   /**
    * @brief Release ownership and return the pointer
@@ -91,7 +95,9 @@ public:
   /**
    * @brief Check if the wrapper holds a valid document
    */
-  [[nodiscard]] explicit operator bool() const noexcept { return doc_ != nullptr; }
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return doc_ != nullptr;
+  }
 
 private:
   yyjson_doc* doc_;
@@ -111,7 +117,9 @@ public:
   ~YyJsonMutDoc() noexcept;
 
   // Move-only semantics
-  YyJsonMutDoc(YyJsonMutDoc&& other) noexcept : doc_(other.doc_) { other.doc_ = nullptr; }
+  YyJsonMutDoc(YyJsonMutDoc&& other) noexcept : doc_(other.doc_) {
+    other.doc_ = nullptr;
+  }
 
   YyJsonMutDoc& operator=(YyJsonMutDoc&& other) noexcept {
     if (this != &other) {
@@ -129,7 +137,9 @@ public:
   /**
    * @brief Get the underlying yyjson_mut_doc pointer
    */
-  [[nodiscard]] yyjson_mut_doc* get() const noexcept { return doc_; }
+  [[nodiscard]] yyjson_mut_doc* get() const noexcept {
+    return doc_;
+  }
 
   /**
    * @brief Release ownership and return the pointer
@@ -148,7 +158,9 @@ public:
   /**
    * @brief Check if the wrapper holds a valid document
    */
-  [[nodiscard]] explicit operator bool() const noexcept { return doc_ != nullptr; }
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return doc_ != nullptr;
+  }
 
 private:
   yyjson_mut_doc* doc_;
@@ -172,17 +184,23 @@ public:
   /**
    * @brief Get the underlying yyjson_val pointer
    */
-  [[nodiscard]] yyjson_val* get() const noexcept { return val_; }
+  [[nodiscard]] yyjson_val* get() const noexcept {
+    return val_;
+  }
 
   /**
    * @brief Check if the view holds a valid value
    */
-  [[nodiscard]] explicit operator bool() const noexcept { return val_ != nullptr; }
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return val_ != nullptr;
+  }
 
   /**
    * @brief Check if the view is valid
    */
-  [[nodiscard]] bool is_valid() const noexcept { return val_ != nullptr; }
+  [[nodiscard]] bool is_valid() const noexcept {
+    return val_ != nullptr;
+  }
 
 private:
   yyjson_val* val_;
@@ -206,17 +224,23 @@ public:
   /**
    * @brief Get the underlying yyjson_mut_val pointer
    */
-  [[nodiscard]] yyjson_mut_val* get() const noexcept { return val_; }
+  [[nodiscard]] yyjson_mut_val* get() const noexcept {
+    return val_;
+  }
 
   /**
    * @brief Check if the view holds a valid value
    */
-  [[nodiscard]] explicit operator bool() const noexcept { return val_ != nullptr; }
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return val_ != nullptr;
+  }
 
   /**
    * @brief Check if the view is valid
    */
-  [[nodiscard]] bool is_valid() const noexcept { return val_ != nullptr; }
+  [[nodiscard]] bool is_valid() const noexcept {
+    return val_ != nullptr;
+  }
 
 private:
   yyjson_mut_val* val_;

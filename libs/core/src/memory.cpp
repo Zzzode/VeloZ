@@ -1,3 +1,5 @@
+#include "veloz/core/memory.h"
+
 #include "veloz/core/memory_pool.h"
 
 #include <cstdlib>
@@ -51,6 +53,14 @@ static kj::Lazy<MemoryMonitor> g_memory_monitor;
 MemoryMonitor& global_memory_monitor() {
   return g_memory_monitor.get(
       [](kj::SpaceFor<MemoryMonitor>& space) { return kj::heap<MemoryMonitor>(); });
+}
+
+// Global memory statistics instance using KJ Lazy for thread-safe lazy initialization
+static kj::Lazy<MemoryStats> g_memory_stats;
+
+MemoryStats& global_memory_stats() {
+  return g_memory_stats.get(
+      [](kj::SpaceFor<MemoryStats>& space) { return kj::heap<MemoryStats>(); });
 }
 
 } // namespace veloz::core

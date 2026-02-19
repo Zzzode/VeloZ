@@ -2,6 +2,7 @@
 #include "veloz/core/retry.h"
 
 #include <atomic>
+#include <cstring>
 #include <kj/memory.h>
 #include <kj/string.h>
 
@@ -29,7 +30,7 @@ KJ_TEST("RetryHandler: Retry on network error") {
   config.max_attempts = 3;
   config.initial_delay = std::chrono::milliseconds(10);
   config.retry_on_network_error = true;
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> attempt_count{0};
 
@@ -54,7 +55,7 @@ KJ_TEST("RetryHandler: Retry on timeout") {
   config.max_attempts = 3;
   config.initial_delay = std::chrono::milliseconds(10);
   config.retry_on_timeout = true;
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> attempt_count{0};
 
@@ -78,7 +79,7 @@ KJ_TEST("RetryHandler: Retry on rate limit") {
   config.max_attempts = 3;
   config.initial_delay = std::chrono::milliseconds(10);
   config.retry_on_rate_limit = true;
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> attempt_count{0};
 
@@ -100,7 +101,7 @@ KJ_TEST("RetryHandler: Retry on rate limit") {
 KJ_TEST("RetryHandler: No retry on circuit breaker") {
   RetryConfig config;
   config.max_attempts = 3;
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   bool caught_exception = false;
   try {
@@ -116,7 +117,7 @@ KJ_TEST("RetryHandler: Exhausted retries throws original exception") {
   RetryConfig config;
   config.max_attempts = 3;
   config.initial_delay = std::chrono::milliseconds(10);
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   bool caught_exception = false;
   try {
@@ -131,7 +132,7 @@ KJ_TEST("RetryHandler: Void operation") {
   RetryConfig config;
   config.max_attempts = 3;
   config.initial_delay = std::chrono::milliseconds(10);
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> call_count{0};
 
@@ -154,11 +155,14 @@ KJ_TEST("RetryHandler: Custom retry predicate") {
   RetryConfig config;
   config.max_attempts = 3;
   config.initial_delay = std::chrono::milliseconds(10);
-  config.should_retry = [](const std::exception& e) {
-    // Only retry if the message contains "retry"
-    return std::string(e.what()).find("retry") != std::string::npos;
-  };
-  RetryHandler handler(config);
+  config.should_retry = kj::Maybe<kj::Function<bool(const kj::Exception&)>>(
+      kj::Function<bool(const kj::Exception&)>([](const kj::Exception& e) {
+        // Only retry if the message contains "retry"
+        kj::StringPtr desc = e.getDescription();
+        // Simple substring check using C-string operations
+        return strstr(desc.cStr(), "retry") != nullptr;
+      }));
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> attempt_count{0};
 
@@ -166,7 +170,7 @@ KJ_TEST("RetryHandler: Custom retry predicate") {
       [&]() {
         attempt_count++;
         if (attempt_count < 2) {
-          throw std::runtime_error("Please retry this operation");
+          KJ_FAIL_REQUIRE("Please retry this operation");
         }
         return 400;
       },
@@ -181,7 +185,7 @@ KJ_TEST("RetryHandler: No retry when disabled") {
   RetryConfig config;
   config.max_attempts = 3;
   config.retry_on_network_error = false;
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   bool caught_exception = false;
   try {
@@ -198,7 +202,7 @@ KJ_TEST("RetryHandler: Exponential backoff timing") {
   config.initial_delay = std::chrono::milliseconds(100);
   config.backoff_multiplier = 2.0;
   config.jitter_factor = 0.0; // No jitter for predictable testing
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> attempt_count{0};
 
@@ -227,7 +231,7 @@ KJ_TEST("RetryHandler: Max delay limit") {
   config.max_delay = std::chrono::milliseconds(150);
   config.backoff_multiplier = 2.0;
   config.jitter_factor = 0.0;
-  RetryHandler handler(config);
+  RetryHandler handler(kj::mv(config));
 
   std::atomic<int> attempt_count{0};
 

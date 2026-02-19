@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <ctime>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <kj/common.h>
@@ -207,15 +208,54 @@ void ConsoleOutput::flush() {
 // FileOutput Implementation
 // ============================================================================
 
-FileOutput::FileOutput(const std::filesystem::path& file_path, Rotation rotation, size_t max_size,
+namespace {
+
+kj::Path getRotatedPath(const kj::Path& basePath, std::string_view suffix, size_t index) {
+  auto parent = basePath.parent();
+  const auto& basename = basePath.basename()[0];
+  std::string name(basename.cStr());
+
+  std::string stem;
+  std::string ext;
+  auto dotPos = name.rfind('.');
+  if (dotPos == std::string::npos || dotPos == 0) {
+    stem = name;
+    ext = "";
+  } else {
+    stem = name.substr(0, dotPos);
+    ext = name.substr(dotPos);
+  }
+
+  std::string rotatedName;
+  if (index == 0) {
+    rotatedName = std::format("{}_{}{}", stem, suffix, ext);
+  } else {
+    rotatedName = std::format("{}_{}.{}{}", stem, suffix, index, ext);
+  }
+
+  kj::String rotatedNameKj = kj::heapString(rotatedName.c_str(), rotatedName.size());
+  if (parent.size() == 0) {
+    return kj::Path(kj::mv(rotatedNameKj));
+  }
+  return parent.append(kj::mv(rotatedNameKj));
+}
+
+std::string toStdString(const kj::String& s) {
+  return std::string(s.cStr(), s.size());
+}
+
+} // namespace
+
+FileOutput::FileOutput(const kj::Path& file_path, Rotation rotation, size_t max_size,
                        size_t max_files, RotationInterval interval)
     : guarded_(FileOutputState(file_path, max_size, rotation, interval)), max_files_(max_files) {
 
   // Open the initial file
   auto lock = guarded_.lockExclusive();
-  lock->file_stream.open(lock->file_path, std::ios::out | std::ios::app);
+  auto pathStr = lock->file_path.toString();
+  lock->file_stream.open(pathStr.cStr(), std::ios::out | std::ios::app);
   if (!lock->file_stream.is_open()) {
-    throw std::runtime_error("Failed to open log file: " + lock->file_path.string());
+    throw std::runtime_error("Failed to open log file: " + toStdString(pathStr));
   }
 
   // Get current file size
@@ -223,10 +263,13 @@ FileOutput::FileOutput(const std::filesystem::path& file_path, Rotation rotation
   lock->current_size = lock->file_stream.tellp();
 }
 
-FileOutput::~FileOutput() {
-  auto lock = guarded_.lockExclusive();
-  if (lock->file_stream.is_open()) {
-    lock->file_stream.close();
+FileOutput::~FileOutput() noexcept {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+    auto lock = guarded_.lockExclusive();
+    if (lock->file_stream.is_open()) {
+      lock->file_stream.close();
+    }
+  })) {
   }
 }
 
@@ -271,22 +314,21 @@ void FileOutput::check_rotation() {
 
   // Check time-based rotation
   if ((lock->rotation == Rotation::Time || lock->rotation == Rotation::Both) && !should_rotate) {
-    if (should_rotate_by_time()) {
+    if (should_rotate_by_time(*lock)) {
       should_rotate = true;
     }
   }
 
   if (should_rotate) {
-    perform_rotation();
+    perform_rotation(*lock);
   }
 }
 
-bool FileOutput::should_rotate_by_time() const {
-  auto lock = guarded_.lockExclusive();
+bool FileOutput::should_rotate_by_time(const FileOutputState& state) const {
   auto now = std::chrono::system_clock::now();
-  auto elapsed = std::chrono::duration_cast<std::chrono::hours>(now - lock->last_rotation);
+  auto elapsed = std::chrono::duration_cast<std::chrono::hours>(now - state.last_rotation);
 
-  switch (lock->interval) {
+  switch (state.interval) {
   case RotationInterval::Hourly:
     return elapsed >= std::chrono::hours(1);
   case RotationInterval::Daily:
@@ -313,72 +355,63 @@ std::string FileOutput::get_rotation_suffix() const {
                      tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
-std::filesystem::path FileOutput::get_rotated_path(size_t index) const {
+kj::Path FileOutput::get_rotated_path(size_t index) const {
   auto lock = guarded_.lockExclusive();
   std::string suffix = get_rotation_suffix();
-
-  if (index == 0) {
-    return lock->file_path.parent_path() / std::format("{}_{}{}", lock->file_path.stem().string(),
-                                                       suffix,
-                                                       lock->file_path.extension().string());
-  }
-
-  return lock->file_path.parent_path() / std::format("{}_{}.{}{}", lock->file_path.stem().string(),
-                                                     suffix, index,
-                                                     lock->file_path.extension().string());
+  return getRotatedPath(lock->file_path, suffix, index);
 }
 
-void FileOutput::perform_rotation() {
-  auto lock = guarded_.lockExclusive();
-  lock->file_stream.close();
+void FileOutput::perform_rotation(FileOutputState& state) {
+  state.file_stream.close();
+  std::string suffix = get_rotation_suffix();
 
   // Rename existing backup files
   for (int i = static_cast<int>(max_files_) - 1; i >= 1; --i) {
-    auto old_path = get_rotated_path(i - 1);
-    auto new_path = get_rotated_path(i);
+    auto oldPath = getRotatedPath(state.file_path, suffix, static_cast<size_t>(i - 1));
+    auto newPath = getRotatedPath(state.file_path, suffix, static_cast<size_t>(i));
 
-    if (std::filesystem::exists(old_path)) {
-      std::filesystem::rename(old_path, new_path);
+    if (std::filesystem::exists(oldPath.toString().cStr())) {
+      std::filesystem::rename(oldPath.toString().cStr(), newPath.toString().cStr());
     }
   }
 
   // Rotate current file
-  auto rotated_path = get_rotated_path(0);
-  std::filesystem::rename(lock->file_path, rotated_path);
+  auto rotatedPath = getRotatedPath(state.file_path, suffix, 0);
+  std::filesystem::rename(state.file_path.toString().cStr(), rotatedPath.toString().cStr());
 
   // Open new file
-  lock->file_stream.open(lock->file_path, std::ios::out | std::ios::app);
-  if (!lock->file_stream.is_open()) {
-    throw std::runtime_error("Failed to open new log file after rotation: " +
-                             lock->file_path.string());
+  auto pathStr = state.file_path.toString();
+  state.file_stream.open(pathStr.cStr(), std::ios::out | std::ios::app);
+  if (!state.file_stream.is_open()) {
+    throw std::runtime_error("Failed to open new log file after rotation: " + toStdString(pathStr));
   }
 
-  lock->current_size = 0;
-  lock->last_rotation = std::chrono::system_clock::now();
+  state.current_size = 0;
+  state.last_rotation = std::chrono::system_clock::now();
 
   // Remove old backup files
   for (size_t i = max_files_; i <= max_files_ + 10; ++i) {
-    auto path = get_rotated_path(i);
-    if (std::filesystem::exists(path)) {
-      std::filesystem::remove(path);
+    auto path = getRotatedPath(state.file_path, suffix, i);
+    if (std::filesystem::exists(path.toString().cStr())) {
+      std::filesystem::remove(path.toString().cStr());
     }
   }
 }
 
 void FileOutput::rotate() {
   auto lock = guarded_.lockExclusive();
-  perform_rotation();
+  perform_rotation(*lock);
 }
 
-std::filesystem::path FileOutput::current_path() const {
-  return guarded_.lockExclusive()->file_path;
+kj::Path FileOutput::current_path() const {
+  return guarded_.lockExclusive()->file_path.clone();
 }
 
 // ============================================================================
 // MultiOutput Implementation
 // ============================================================================
 
-void MultiOutput::add_output(std::unique_ptr<LogOutput> output) {
+void MultiOutput::add_output(kj::Own<LogOutput> output) {
   auto lock = guarded_.lockExclusive();
   lock->outputs.push_back(kj::mv(output));
 }
@@ -421,7 +454,7 @@ size_t MultiOutput::output_count() const {
 // Logger Implementation
 // ============================================================================
 
-Logger::Logger(std::unique_ptr<LogFormatter> formatter, std::unique_ptr<LogOutput> output)
+Logger::Logger(kj::Own<LogFormatter> formatter, kj::Own<LogOutput> output)
     : guarded_(LoggerState(kj::mv(formatter), kj::mv(output))) {}
 
 Logger::~Logger() = default;
@@ -435,19 +468,18 @@ LogLevel Logger::level() const {
   return guarded_.lockExclusive()->level;
 }
 
-void Logger::set_formatter(std::unique_ptr<LogFormatter> formatter) {
+void Logger::set_formatter(kj::Own<LogFormatter> formatter) {
   auto lock = guarded_.lockExclusive();
   lock->formatter = kj::mv(formatter);
 }
 
-void Logger::set_output(std::unique_ptr<LogOutput> output) {
+void Logger::set_output(kj::Own<LogOutput> output) {
   auto lock = guarded_.lockExclusive();
-  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-  lock->multi_output = std::make_unique<MultiOutput>();
+  lock->multi_output = kj::heap<MultiOutput>();
   lock->multi_output->add_output(kj::mv(output));
 }
 
-void Logger::add_output(std::unique_ptr<LogOutput> output) {
+void Logger::add_output(kj::Own<LogOutput> output) {
   auto lock = guarded_.lockExclusive();
   lock->multi_output->add_output(kj::mv(output));
 }
@@ -525,9 +557,8 @@ Logger& global_logger() {
     return *logger;  // Dereference kj::Own<Logger> to get Logger reference
   }
   // Create new logger and store it
-  // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-  auto newLogger = kj::heap<Logger>(std::make_unique<TextFormatter>(false, false),
-                                    std::make_unique<ConsoleOutput>());
+  auto newLogger = kj::heap<Logger>(kj::heap<TextFormatter>(false, false),
+                                    kj::heap<ConsoleOutput>());
   Logger& ref = *newLogger;
   lock->logger = kj::mv(newLogger);
   return ref;

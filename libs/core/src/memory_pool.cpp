@@ -15,7 +15,7 @@ static kj::MutexGuarded<GlobalMemoryMonitorState> g_memory_monitor;
 MemoryMonitor& global_memory_monitor() {
   auto lock = g_memory_monitor.lockExclusive();
   KJ_IF_SOME(monitor, lock->monitor) {
-    return *monitor;  // Dereference kj::Own<MemoryMonitor> to get MemoryMonitor reference
+    return *monitor; // Dereference kj::Own<MemoryMonitor> to get MemoryMonitor reference
   }
   // Create new monitor and store it
   auto newMonitor = kj::heap<MemoryMonitor>();

@@ -1,12 +1,11 @@
 #include "kj/test.h"
 #include "veloz/core/logger.h"
 
-#include <filesystem>
-#include <format>
+#include <filesystem> // Required for test cleanup - std::filesystem is more convenient for test setup
 #include <fstream>
+#include <kj/filesystem.h>
 #include <kj/memory.h>
 #include <kj/string.h>
-#include <memory> // Kept for Logger API compatibility (std::unique_ptr)
 #include <sstream>
 #include <string> // Kept for Logger API compatibility
 
@@ -131,7 +130,7 @@ KJ_TEST("JsonFormatter: Escape") {
 // ============================================================================
 
 KJ_TEST("Logger: Basic logging") {
-  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
+  Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
 
   // This should not throw
   logger.info("Test info message");
@@ -140,7 +139,7 @@ KJ_TEST("Logger: Basic logging") {
 }
 
 KJ_TEST("Logger: Level filtering") {
-  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
+  Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
   logger.set_level(LogLevel::Warn);
 
   // These should be filtered out
@@ -154,18 +153,18 @@ KJ_TEST("Logger: Level filtering") {
 }
 
 KJ_TEST("Logger: Formatted message") {
-  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
+  Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
 
-  logger.info(std::format("Hello {}", "World"));
-  logger.info(std::format("Value: {}, Name: {}", 42, "Test"));
+  logger.info(kj::str("Hello ", "World").cStr());
+  logger.info(kj::str("Value: ", 42, ", Name: ", "Test").cStr());
 }
 
 KJ_TEST("Logger: Change formatter") {
-  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
+  Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
 
   logger.info("Text formatted message");
 
-  logger.set_formatter(std::make_unique<JsonFormatter>());
+  logger.set_formatter(kj::heap<JsonFormatter>());
 
   logger.info("JSON formatted message");
 }
@@ -177,7 +176,7 @@ KJ_TEST("Logger: Change formatter") {
 KJ_TEST("FileOutput: Basic") {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output("test_logs/test.log", FileOutput::Rotation::None,
+  FileOutput output(kj::Path::parse("test_logs/test.log"), FileOutput::Rotation::None,
                     1024 * 1024, // 1MB
                     3);
 
@@ -209,7 +208,7 @@ KJ_TEST("FileOutput: Basic") {
 KJ_TEST("FileOutput: Rotation by size") {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output("test_logs/rotate.log", FileOutput::Rotation::Size,
+  FileOutput output(kj::Path::parse("test_logs/rotate.log"), FileOutput::Rotation::Size,
                     100, // 100 bytes
                     3);
 
@@ -242,7 +241,7 @@ KJ_TEST("FileOutput: Rotation by size") {
 KJ_TEST("FileOutput: Rotation by time") {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output("test_logs/time_rotate.log", FileOutput::Rotation::Time,
+  FileOutput output(kj::Path::parse("test_logs/time_rotate.log"), FileOutput::Rotation::Time,
                     1024 * 1024, // 1MB
                     3, FileOutput::RotationInterval::Hourly);
 
@@ -256,10 +255,10 @@ KJ_TEST("FileOutput: Rotation by time") {
 KJ_TEST("FileOutput: Get current path") {
   std::filesystem::create_directories("test_logs");
 
-  FileOutput output("test_logs/path_test.log");
+  FileOutput output(kj::Path::parse("test_logs/path_test.log"));
 
   auto path = output.current_path();
-  KJ_EXPECT(path == "test_logs/path_test.log");
+  KJ_EXPECT(path.toString(false) == kj::str("test_logs/path_test.log"));
 
   // Cleanup
   std::filesystem::remove_all("test_logs");
@@ -270,9 +269,9 @@ KJ_TEST("FileOutput: Get current path") {
 // ============================================================================
 
 KJ_TEST("MultiOutput: Basic") {
-  auto multi_output = std::make_unique<MultiOutput>();
+  auto multi_output = kj::heap<MultiOutput>();
 
-  multi_output->add_output(std::make_unique<ConsoleOutput>());
+  multi_output->add_output(kj::heap<ConsoleOutput>());
 
   KJ_EXPECT(multi_output->output_count() == 1);
 
@@ -291,10 +290,10 @@ KJ_TEST("MultiOutput: Basic") {
 }
 
 KJ_TEST("MultiOutput: Multiple destinations") {
-  auto multi_output = std::make_unique<MultiOutput>();
+  auto multi_output = kj::heap<MultiOutput>();
 
-  multi_output->add_output(std::make_unique<ConsoleOutput>());
-  multi_output->add_output(std::make_unique<ConsoleOutput>());
+  multi_output->add_output(kj::heap<ConsoleOutput>());
+  multi_output->add_output(kj::heap<ConsoleOutput>());
 
   KJ_EXPECT(multi_output->output_count() == 2);
 
@@ -313,11 +312,11 @@ KJ_TEST("MultiOutput: Multiple destinations") {
 KJ_TEST("Logger: With multiple outputs") {
   std::filesystem::create_directories("test_logs");
 
-  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
+  Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
 
   // Add file output
   logger.add_output(
-      std::make_unique<FileOutput>("test_logs/multi.log", FileOutput::Rotation::None));
+      kj::heap<FileOutput>(kj::Path::parse("test_logs/multi.log"), FileOutput::Rotation::None));
 
   logger.info("Message to both console and file");
 
@@ -347,7 +346,7 @@ KJ_TEST("Global Logger: Convenience functions") {
   error_global("Error message");
   critical_global("Critical message");
 
-  info_global(std::format("Formatted: {}", 42));
+  info_global(kj::str("Formatted: ", 42).cStr());
 }
 
 // ============================================================================
@@ -357,8 +356,8 @@ KJ_TEST("Global Logger: Convenience functions") {
 KJ_TEST("Logger: Flush") {
   std::filesystem::create_directories("test_logs");
 
-  Logger logger(std::make_unique<TextFormatter>(),
-                std::make_unique<FileOutput>("test_logs/flush.log"));
+  Logger logger(kj::heap<TextFormatter>(),
+                kj::heap<FileOutput>(kj::Path::parse("test_logs/flush.log")));
 
   logger.info("Message before flush");
   logger.flush();
@@ -377,14 +376,14 @@ KJ_TEST("Logger: Flush") {
 // ============================================================================
 
 KJ_TEST("Logger: Formatted logging at all levels") {
-  Logger logger(std::make_unique<TextFormatter>(), std::make_unique<ConsoleOutput>());
+  Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
 
-  logger.trace(std::format("Trace: {}", 1));
-  logger.debug(std::format("Debug: {}", 2));
-  logger.info(std::format("Info: {}", 3));
-  logger.warn(std::format("Warn: {}", 4));
-  logger.error(std::format("Error: {}", 5));
-  logger.critical(std::format("Critical: {}", 6));
+  logger.trace(kj::str("Trace: ", 1).cStr());
+  logger.debug(kj::str("Debug: ", 2).cStr());
+  logger.info(kj::str("Info: ", 3).cStr());
+  logger.warn(kj::str("Warn: ", 4).cStr());
+  logger.error(kj::str("Error: ", 5).cStr());
+  logger.critical(kj::str("Critical: ", 6).cStr());
 }
 
 // ============================================================================

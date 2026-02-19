@@ -131,7 +131,8 @@ KJ_TEST("LockFreeQueue: Push and pop single element") {
   auto maybe_value = queue.pop();
   KJ_IF_SOME(value, maybe_value) {
     KJ_EXPECT(value == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("value not found");
   }
   KJ_EXPECT(queue.empty());
@@ -149,21 +150,24 @@ KJ_TEST("LockFreeQueue: FIFO order") {
   auto maybe_v1 = queue.pop();
   KJ_IF_SOME(v1, maybe_v1) {
     KJ_EXPECT(v1 == 1);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("v1 not found");
   }
 
   auto maybe_v2 = queue.pop();
   KJ_IF_SOME(v2, maybe_v2) {
     KJ_EXPECT(v2 == 2);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("v2 not found");
   }
 
   auto maybe_v3 = queue.pop();
   KJ_IF_SOME(v3, maybe_v3) {
     KJ_EXPECT(v3 == 3);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("v3 not found");
   }
 
@@ -179,7 +183,8 @@ KJ_TEST("LockFreeQueue: Move semantics") {
   auto maybe_result = queue.pop();
   KJ_IF_SOME(result, maybe_result) {
     KJ_EXPECT(result == "Hello");
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("result not found");
   }
 }
@@ -198,7 +203,8 @@ KJ_TEST("LockFreeQueue: Many elements") {
     auto maybe_value = queue.pop();
     KJ_IF_SOME(value, maybe_value) {
       KJ_EXPECT(value == i);
-    } else {
+    }
+    else {
       KJ_FAIL_EXPECT("value not found");
     }
   }
