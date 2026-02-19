@@ -88,7 +88,8 @@ void KlineAggregator::process_trade(const TradeData& trade, int64_t timestamp_ms
         updated.kline.close_time = candle_start + interval_ms - 1;
         emit_update(interval, updated, false);
       }
-    } else {
+    }
+    else {
       // Start first candle
       AggregatedKline new_candle;
       new_candle.kline.start_time = candle_start;

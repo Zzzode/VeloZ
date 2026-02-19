@@ -408,7 +408,8 @@ bool DataSampler::should_sample(int64_t timestamp_ns, kj::Maybe<double> price) {
           last_price_ = p;
         }
       }
-    } else {
+    }
+    else {
       // No price provided, fall back to time-based
       int64_t interval_ns = config_.time_interval_ms * 1000000LL;
       if (last_sample_time_ns_ == 0 || (timestamp_ns - last_sample_time_ns_) >= interval_ns) {

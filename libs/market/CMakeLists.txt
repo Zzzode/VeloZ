@@ -5,6 +5,7 @@ project(veloz_market LANGUAGES CXX)
 set(MARKET_SOURCES
     src/market_event.cpp
     src/order_book.cpp
+    src/managed_order_book.cpp
     src/subscription_manager.cpp
     src/metrics.cpp
     src/kline_aggregator.cpp
@@ -54,6 +55,7 @@ if(VELOZ_BUILD_TESTS)
     add_executable(veloz_market_tests
         tests/test_market_event.cpp
         tests/test_order_book.cpp
+        tests/test_managed_order_book.cpp
         tests/test_subscription_manager.cpp
         tests/test_metrics.cpp
         tests/test_market_data_advanced.cpp
@@ -63,6 +65,7 @@ if(VELOZ_BUILD_TESTS)
             veloz_market
             veloz_common
             kj-test
+            kj-async
         )
     add_test(NAME veloz_market_tests COMMAND veloz_market_tests)
 

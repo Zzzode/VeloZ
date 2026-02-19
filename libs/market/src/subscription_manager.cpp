@@ -19,7 +19,8 @@ void SubscriptionManager::subscribe(const veloz::common::SymbolId& symbol,
     if (!subscribers_ref.contains(subscriber_id)) {
       subscribers_ref.insert(kj::str(subscriber_id));
     }
-  } else {
+  }
+  else {
     // Key doesn't exist, create new entry with subscriber
     kj::HashSet<kj::String> new_set;
     new_set.insert(kj::str(subscriber_id));

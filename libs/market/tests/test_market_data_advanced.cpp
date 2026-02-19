@@ -61,7 +61,8 @@ KJ_TEST("KlineAggregator: Process single trade") {
     KJ_EXPECT(kline.buy_volume == 1.0);
     KJ_EXPECT(kline.sell_volume == 0.0);
     KJ_EXPECT(!kline.is_closed);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 }
@@ -104,7 +105,8 @@ KJ_TEST("KlineAggregator: OHLC calculation") {
     KJ_EXPECT(kline.kline.close == 50200.0);
     KJ_EXPECT(kline.kline.volume == 3.0);
     KJ_EXPECT(kline.trade_count == 4);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 }
@@ -139,7 +141,8 @@ KJ_TEST("KlineAggregator: Candle close on new interval") {
   KJ_IF_SOME(kline, current) {
     KJ_EXPECT(kline.kline.open == 51000.0);
     KJ_EXPECT(!kline.is_closed);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 
@@ -187,7 +190,8 @@ KJ_TEST("KlineAggregator: Buy/sell volume tracking") {
   KJ_IF_SOME(kline, current) {
     KJ_EXPECT(kline.buy_volume == 2.0);
     KJ_EXPECT(kline.sell_volume == 1.0);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 }

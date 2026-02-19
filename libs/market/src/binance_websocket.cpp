@@ -2,7 +2,7 @@
 
 // KJ library includes for async I/O and networking
 // Note: std::stod used for string-to-double conversion (no KJ equivalent)
-#include <chrono>  // std::chrono - KJ timer uses different time representation
+#include <chrono> // std::chrono - KJ timer uses different time representation
 #include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/debug.h>
@@ -11,7 +11,7 @@
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/timer.h>
-#include <random>  // std::random_device, std::mt19937 - KJ doesn't provide RNG
+#include <random> // std::random_device, std::mt19937 - KJ doesn't provide RNG
 
 namespace veloz::market {
 
@@ -235,13 +235,13 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
     return false;
 
   // Helper lambda to convert char to lowercase
-  auto toLower = [](char c) -> char {
-    return (c >= 'A' && c <= 'Z') ? (c + ('a' - 'A')) : c;
-  };
+  auto toLower = [](char c) -> char { return (c >= 'A' && c <= 'Z') ? (c + ('a' - 'A')) : c; };
 
   // Helper lambda to find substring (case-insensitive)
-  auto findCaseInsensitive = [&](kj::StringPtr haystack, kj::StringPtr needle) -> kj::Maybe<size_t> {
-    if (needle.size() > haystack.size()) return kj::none;
+  auto findCaseInsensitive = [&](kj::StringPtr haystack,
+                                 kj::StringPtr needle) -> kj::Maybe<size_t> {
+    if (needle.size() > haystack.size())
+      return kj::none;
     for (size_t i = 0; i <= haystack.size() - needle.size(); ++i) {
       bool match = true;
       for (size_t j = 0; j < needle.size(); ++j) {
@@ -250,14 +250,16 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
           break;
         }
       }
-      if (match) return i;
+      if (match)
+        return i;
     }
     return kj::none;
   };
 
   // Helper lambda to find substring (case-sensitive)
   auto findSubstring = [](kj::StringPtr haystack, kj::StringPtr needle) -> kj::Maybe<size_t> {
-    if (needle.size() > haystack.size()) return kj::none;
+    if (needle.size() > haystack.size())
+      return kj::none;
     for (size_t i = 0; i <= haystack.size() - needle.size(); ++i) {
       bool match = true;
       for (size_t j = 0; j < needle.size(); ++j) {
@@ -266,7 +268,8 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
           break;
         }
       }
-      if (match) return i;
+      if (match)
+        return i;
     }
     return kj::none;
   };
@@ -291,7 +294,8 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
   // Check for Upgrade: websocket header (case-insensitive)
   KJ_IF_SOME(pos, findCaseInsensitive(response, "upgrade: websocket"_kj)) {
     (void)pos;
-  } else {
+  }
+  else {
     KJ_LOG(ERROR, "WebSocket handshake failed: missing Upgrade header");
     return false;
   }
@@ -299,7 +303,8 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
   // Check for Connection: Upgrade header (case-insensitive)
   KJ_IF_SOME(pos, findCaseInsensitive(response, "connection: upgrade"_kj)) {
     (void)pos;
-  } else {
+  }
+  else {
     KJ_LOG(ERROR, "WebSocket handshake failed: missing Connection header");
     return false;
   }
@@ -346,7 +351,8 @@ bool BinanceWebSocket::validate_handshake_response(kj::StringPtr response,
     }
 
     return true;
-  } else {
+  }
+  else {
     KJ_LOG(ERROR, "WebSocket handshake failed: missing Sec-WebSocket-Accept header");
     return false;
   }
@@ -439,7 +445,8 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_websocket_frame() {
             return read_frame_payload(kj::mv(frame), payload_len);
           }
         });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket not connected");
   }
 }
@@ -458,7 +465,8 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_extended_length_16(WebSocketF
           uint64_t len = (static_cast<uint64_t>(extBuf[0]) << 8) | static_cast<uint64_t>(extBuf[1]);
           return read_frame_payload(kj::mv(frame), len);
         });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket not connected");
   }
 }
@@ -480,7 +488,8 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_extended_length_64(WebSocketF
           }
           return read_frame_payload(kj::mv(frame), len);
         });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket not connected");
   }
 }
@@ -520,7 +529,8 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_mask_key(WebSocketFrame frame
             return kj::mv(frame);
           }
         });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket stream not available");
   }
 }
@@ -545,7 +555,8 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_masked_payload(WebSocketFrame
           frame.payload = kj::mv(payloadBuf);
           return kj::mv(frame);
         });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket stream not available");
   }
 }
@@ -569,7 +580,8 @@ kj::Promise<WebSocketFrame> BinanceWebSocket::read_unmasked_payload(WebSocketFra
           frame.payload = kj::mv(payloadBuf);
           return kj::mv(frame);
         });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket stream not available");
   }
 }
@@ -582,7 +594,8 @@ kj::Promise<void> BinanceWebSocket::send_websocket_frame(kj::ArrayPtr<const kj::
     return stream.write(frame.asPtr()).then([frame = kj::mv(frame)]() {
       // Frame sent successfully
     });
-  } else {
+  }
+  else {
     return KJ_EXCEPTION(DISCONNECTED, "WebSocket not connected");
   }
 }
@@ -649,11 +662,13 @@ kj::Promise<void> BinanceWebSocket::connect() {
                         reset_reconnect_state();
                         KJ_LOG(INFO, "WebSocket connected successfully");
                       });
-                } else {
+                }
+                else {
                   KJ_FAIL_REQUIRE("Stream became unavailable during handshake");
                 }
               });
-        } else {
+        }
+        else {
           KJ_FAIL_REQUIRE("Stream became unavailable after TLS wrap");
         }
       });
@@ -818,7 +833,8 @@ kj::StringPtr BinanceWebSocket::event_type_to_stream_name(MarketEventType event_
 MarketEventType BinanceWebSocket::parse_stream_name(kj::StringPtr stream_name) {
   // Helper lambda to check if stream_name contains a substring
   auto contains = [&stream_name](kj::StringPtr needle) -> bool {
-    if (needle.size() > stream_name.size()) return false;
+    if (needle.size() > stream_name.size())
+      return false;
     for (size_t i = 0; i <= stream_name.size() - needle.size(); ++i) {
       bool match = true;
       for (size_t j = 0; j < needle.size(); ++j) {
@@ -827,7 +843,8 @@ MarketEventType BinanceWebSocket::parse_stream_name(kj::StringPtr stream_name) {
           break;
         }
       }
-      if (match) return true;
+      if (match)
+        return true;
     }
     return false;
   };
@@ -878,7 +895,8 @@ kj::Promise<bool> BinanceWebSocket::subscribe(const veloz::common::SymbolId& sym
       }
       // Add event type to existing subscription
       event_types_ref.add(event_type);
-    } else {
+    }
+    else {
       // Create new subscription entry
       kj::Vector<MarketEventType> event_types;
       event_types.add(event_type);
@@ -931,7 +949,8 @@ kj::Promise<bool> BinanceWebSocket::unsubscribe(const veloz::common::SymbolId& s
           event_types_ref.add(t);
         }
       }
-    } else {
+    }
+    else {
       return kj::Promise<bool>(false); // Not subscribed
     }
   }
@@ -979,7 +998,8 @@ kj::Promise<void> BinanceWebSocket::resubscribe_all() {
     }
 
     return kj::joinPromises(promises.releaseAsArray());
-  } else {
+  }
+  else {
     return kj::READY_NOW;
   }
 }
@@ -1021,77 +1041,78 @@ void BinanceWebSocket::reset_reconnect_state() {
 }
 
 void BinanceWebSocket::handle_message(kj::StringPtr message) {
-  try {
-    auto doc = JsonDocument::parse(std::string(message.cStr()));
-    auto root = doc.root();
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto doc = JsonDocument::parse(std::string(message.cStr()));
+               auto root = doc.root();
 
-    auto stream = root["stream"];
-    auto data = root["data"];
+               auto stream = root["stream"];
+               auto data = root["data"];
 
-    if (!stream.is_string() || !data.is_valid()) {
-      return;
-    }
+               if (!stream.is_string() || !data.is_valid()) {
+                 return;
+               }
 
-    kj::String stream_str = kj::heapString(stream.get_string().c_str());
+               kj::String stream_str = kj::heapString(stream.get_string().c_str());
 
-    // Parse symbol and event type from stream name - find '@' separator
-    kj::Maybe<size_t> separator_pos = kj::none;
-    for (size_t i = 0; i < stream_str.size(); ++i) {
-      if (stream_str[i] == '@') {
-        separator_pos = i;
-        break;
-      }
-    }
+               // Parse symbol and event type from stream name - find '@' separator
+               kj::Maybe<size_t> separator_pos = kj::none;
+               for (size_t i = 0; i < stream_str.size(); ++i) {
+                 if (stream_str[i] == '@') {
+                   separator_pos = i;
+                   break;
+                 }
+               }
 
-    KJ_IF_SOME(pos, separator_pos) {
-      // Extract symbol and convert to uppercase
-      kj::Vector<char> symbol_chars;
-      for (size_t i = 0; i < pos; ++i) {
-        char c = stream_str[i];
-        symbol_chars.add((c >= 'a' && c <= 'z') ? (c - ('a' - 'A')) : c);
-      }
-      symbol_chars.add('\0');
-      veloz::common::SymbolId symbol(kj::StringPtr(symbol_chars.begin()));
+               KJ_IF_SOME(pos, separator_pos) {
+                 // Extract symbol and convert to uppercase
+                 kj::Vector<char> symbol_chars;
+                 for (size_t i = 0; i < pos; ++i) {
+                   char c = stream_str[i];
+                   symbol_chars.add((c >= 'a' && c <= 'z') ? (c - ('a' - 'A')) : c);
+                 }
+                 symbol_chars.add('\0');
+                 veloz::common::SymbolId symbol(kj::StringPtr(symbol_chars.begin()));
 
-      MarketEventType event_type = parse_stream_name(stream_str);
+                 MarketEventType event_type = parse_stream_name(stream_str);
 
-      // Parse message based on event type
-      MarketEvent market_event;
-      switch (event_type) {
-      case MarketEventType::Trade:
-        market_event = parse_trade_message(data, symbol);
-        break;
-      case MarketEventType::BookTop:
-        market_event = parse_book_message(data, symbol, true);
-        break;
-      case MarketEventType::BookDelta:
-        market_event = parse_book_message(data, symbol, false);
-        break;
-      case MarketEventType::Kline:
-        market_event = parse_kline_message(data, symbol);
-        break;
-      case MarketEventType::Ticker:
-        market_event = parse_ticker_message(data, symbol);
-        break;
-      default:
-        return;
-      }
+                 // Parse message based on event type
+                 MarketEvent market_event;
+                 switch (event_type) {
+                 case MarketEventType::Trade:
+                   market_event = parse_trade_message(data, symbol);
+                   break;
+                 case MarketEventType::BookTop:
+                   market_event = parse_book_message(data, symbol, true);
+                   break;
+                 case MarketEventType::BookDelta:
+                   market_event = parse_book_message(data, symbol, false);
+                   break;
+                 case MarketEventType::Kline:
+                   market_event = parse_kline_message(data, symbol);
+                   break;
+                 case MarketEventType::Ticker:
+                   market_event = parse_ticker_message(data, symbol);
+                   break;
+                 default:
+                   return;
+                 }
 
-      // Call callback if set
-      {
-        auto lock = callback_state_.lockExclusive();
-        KJ_IF_SOME(cb, lock->callback) {
-          cb(market_event);
-        }
-      }
+                 // Call callback if set
+                 {
+                   auto lock = callback_state_.lockExclusive();
+                   KJ_IF_SOME(cb, lock->callback) {
+                     cb(market_event);
+                   }
+                 }
 
-      message_count_++;
-      last_message_time_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                               std::chrono::system_clock::now().time_since_epoch())
-                               .count();
-    }
-  } catch (const std::exception& e) {
-    KJ_LOG(ERROR, "Error parsing WebSocket message", e.what());
+                 message_count_++;
+                 last_message_time_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count();
+               }
+             })) {
+    // JSON parsing or other error - log the exception details
+    KJ_LOG(ERROR, "Error parsing WebSocket message", exception.getDescription());
   }
 }
 
@@ -1148,6 +1169,11 @@ MarketEvent BinanceWebSocket::parse_book_message(const veloz::core::JsonValue& d
 
     book_data.sequence = data["u"].get_int(0LL);
   } else {
+    // Depth delta stream format:
+    // U: First update ID in event
+    // u: Final update ID in event
+    // b: Bids to be updated
+    // a: Asks to be updated
     auto bids = data["b"];
     if (bids.is_array()) {
       bids.for_each_array([&](const JsonValue& bid) {
@@ -1172,7 +1198,10 @@ MarketEvent BinanceWebSocket::parse_book_message(const veloz::core::JsonValue& d
       });
     }
 
+    // Extract both first (U) and final (u) update IDs for proper sequence validation
+    book_data.first_update_id = data["U"].get_int(0LL);
     book_data.sequence = data["u"].get_int(0LL);
+    book_data.is_snapshot = false;
   }
 
   event.data = kj::mv(book_data);

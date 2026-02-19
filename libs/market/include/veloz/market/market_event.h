@@ -28,7 +28,9 @@ namespace veloz::market {
  * @brief Empty state for kj::OneOf (replaces std::monostate)
  */
 struct EmptyData {
-  bool operator==(const EmptyData&) const { return true; }
+  bool operator==(const EmptyData&) const {
+    return true;
+  }
 };
 
 /**
@@ -78,15 +80,24 @@ struct BookLevel {
  * @brief Order book data structure
  *
  * Contains complete or incremental order book data, including bid and ask levels.
+ * For Binance depth streams:
+ * - Snapshot: lastUpdateId is the sequence number
+ * - Delta: first_update_id (U) and sequence (u) define the update range
  */
 struct BookData {
-  kj::Vector<BookLevel> bids; ///< Bid levels list
-  kj::Vector<BookLevel> asks; ///< Ask levels list
-  std::int64_t sequence{0};   ///< Order book sequence number
+  kj::Vector<BookLevel> bids;      ///< Bid levels list
+  kj::Vector<BookLevel> asks;      ///< Ask levels list
+  std::int64_t sequence{0};        ///< Final update ID (u for deltas, lastUpdateId for snapshots)
+  std::int64_t first_update_id{0}; ///< First update ID in this event (U field, deltas only)
+  bool is_snapshot{false};         ///< True if this is a snapshot, false if delta
 
   // Note: kj::Vector doesn't support operator<=> directly, manual comparison needed
   bool operator==(const BookData& other) const {
     if (sequence != other.sequence)
+      return false;
+    if (first_update_id != other.first_update_id)
+      return false;
+    if (is_snapshot != other.is_snapshot)
       return false;
     if (bids.size() != other.bids.size() || asks.size() != other.asks.size())
       return false;
