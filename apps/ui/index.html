@@ -6,11 +6,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VeloZ UI</title>
   <style>
+    :root {
+      --color-bg: #ffffff;
+      --color-bg-secondary: #f9fafb;
+      --color-border: #e5e7eb;
+      --color-border-light: #f1f5f9;
+      --color-text: #111827;
+      --color-text-muted: #6b7280;
+      --color-primary: #111827;
+      --color-success: #059669;
+      --color-warning: #d97706;
+      --color-danger: #dc2626;
+      --color-info: #2563eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
         "Segoe UI Emoji";
-      margin: 24px;
-      max-width: 960px;
+      margin: 0;
+      padding: 24px;
+      background: var(--color-bg);
+      color: var(--color-text);
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
     .row {
@@ -21,31 +47,80 @@
     }
 
     .card {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--color-border);
       border-radius: 10px;
       padding: 16px;
       margin-top: 14px;
+      background: var(--color-bg);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
     }
 
     input,
     select,
-    button {
+    button,
+    textarea {
       padding: 10px 12px;
       border-radius: 8px;
       border: 1px solid #d1d5db;
       font-size: 14px;
+      font-family: inherit;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
     }
 
     button {
-      background: #111827;
+      background: var(--color-primary);
       color: white;
       border: 0;
       cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    button:hover:not(:disabled) {
+      opacity: 0.9;
     }
 
     button:disabled {
       opacity: 0.5;
       cursor: default;
+    }
+
+    button.btn-success {
+      background: var(--color-success);
+    }
+
+    button.btn-danger {
+      background: var(--color-danger);
+    }
+
+    button.btn-warning {
+      background: var(--color-warning);
+    }
+
+    button.btn-secondary {
+      background: var(--color-bg-secondary);
+      color: var(--color-text);
+      border: 1px solid var(--color-border);
+    }
+
+    button.btn-sm {
+      padding: 6px 10px;
+      font-size: 12px;
     }
 
     table {
@@ -55,178 +130,720 @@
 
     th,
     td {
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid var(--color-border-light);
       padding: 8px 6px;
       text-align: left;
       font-size: 13px;
     }
 
+    th {
+      font-weight: 600;
+      color: var(--color-text-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
     .muted {
-      color: #6b7280;
+      color: var(--color-text-muted);
     }
 
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
+
+    /* Navigation Tabs */
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--color-border);
+      margin-bottom: 20px;
+      padding-bottom: 0;
+    }
+
+    .nav-tab {
+      padding: 12px 20px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s;
+      margin-bottom: -1px;
+    }
+
+    .nav-tab:hover {
+      color: var(--color-text);
+    }
+
+    .nav-tab.active {
+      color: var(--color-text);
+      border-bottom-color: var(--color-primary);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Status Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      gap: 6px;
+    }
+
+    .badge-running {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .badge-stopped {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .badge-paused {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .badge-error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .badge::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Strategy Cards */
+    .strategy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .strategy-card {
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      padding: 16px;
+      background: var(--color-bg);
+      transition: box-shadow 0.15s;
+    }
+
+    .strategy-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .strategy-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .strategy-name {
+      font-weight: 600;
+      font-size: 16px;
+      margin: 0 0 4px 0;
+    }
+
+    .strategy-type {
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
+
+    .strategy-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin: 16px 0;
+      padding: 12px;
+      background: var(--color-bg-secondary);
+      border-radius: 8px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .metric-value {
+      font-size: 16px;
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .metric-value.positive {
+      color: var(--color-success);
+    }
+
+    .metric-value.negative {
+      color: var(--color-danger);
+    }
+
+    .strategy-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .strategy-actions button {
+      flex: 1;
+    }
+
+    /* Parameter Form */
+    .param-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .param-group {
+      display: grid;
+      gap: 6px;
+    }
+
+    .param-label {
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .param-label .hot-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-radius: 4px;
+    }
+
+    .param-input {
+      width: 100%;
+    }
+
+    .param-hint {
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
+
+    /* Trade History */
+    .trade-row {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--color-border-light);
+      gap: 12px;
+    }
+
+    .trade-row:last-child {
+      border-bottom: none;
+    }
+
+    .trade-side {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .trade-side.buy {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .trade-side.sell {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .trade-info {
+      flex: 1;
+    }
+
+    .trade-symbol {
+      font-weight: 500;
+    }
+
+    .trade-details {
+      font-size: 12px;
+      color: var(--color-text-muted);
+    }
+
+    .trade-pnl {
+      font-weight: 600;
+      font-family: ui-monospace, monospace;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      background: var(--color-bg);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      transform: scale(0.95);
+      transition: transform 0.2s;
+    }
+
+    .modal-overlay.active .modal {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--color-text-muted);
+      padding: 0;
+      line-height: 1;
+    }
+
+    .modal-footer {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    /* Live indicator */
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--color-success);
+    }
+
+    .live-indicator::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-success);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Flex utilities */
+    .flex-1 {
+      flex: 1;
+    }
+
+    .gap-8 {
+      gap: 8px;
+    }
+
+    .mt-12 {
+      margin-top: 12px;
+    }
+
+    .mb-12 {
+      margin-bottom: 12px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      body {
+        padding: 16px;
+      }
+
+      .strategy-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .nav-tabs {
+        overflow-x: auto;
+      }
+
+      .nav-tab {
+        white-space: nowrap;
+      }
+    }
   </style>
 </head>
 
 <body>
-  <h1>VeloZ</h1>
-  <div class="muted">Minimal UI (gateway HTTP API wired to engine stdio mode)</div>
+  <div class="container">
+    <h1>VeloZ</h1>
+    <div class="muted mb-12">Quantitative Trading Framework</div>
 
-  <div class="card">
-    <div class="row">
-      <div>
-        <div class="muted">API Base</div>
-        <input id="apiBase" style="min-width: 320px" placeholder="e.g. http://127.0.0.1:8080" />
-      </div>
-      <div>
-        <div class="muted">Connection</div>
-        <div class="mono" id="conn">-</div>
-      </div>
-      <div>
-        <div class="muted">Transport</div>
-        <div class="mono" id="transport">-</div>
-      </div>
-      <div>
-        <div class="muted">Execution</div>
-        <div class="mono" id="execMode">-</div>
-      </div>
-      <div>
-        <div class="muted">User Stream</div>
-        <div class="mono" id="userStream">-</div>
-      </div>
-      <div style="flex: 1"></div>
-      <button id="execPing">Ping</button>
-      <button id="saveApi">Apply</button>
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-tab="trading">Trading</button>
+      <button class="nav-tab" data-tab="strategies">Strategies</button>
     </div>
-    <div id="lastError" class="muted" style="margin-top: 10px"></div>
+
+    <!-- Trading Tab -->
+    <div id="trading-tab" class="tab-content active">
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="muted">API Base</div>
+            <input id="apiBase" style="min-width: 320px" placeholder="e.g. http://127.0.0.1:8080" />
+          </div>
+          <div>
+            <div class="muted">Connection</div>
+            <div class="mono" id="conn">-</div>
+          </div>
+          <div>
+            <div class="muted">Transport</div>
+            <div class="mono" id="transport">-</div>
+          </div>
+          <div>
+            <div class="muted">Execution</div>
+            <div class="mono" id="execMode">-</div>
+          </div>
+          <div>
+            <div class="muted">User Stream</div>
+            <div class="mono" id="userStream">-</div>
+          </div>
+          <div style="flex: 1"></div>
+          <button id="execPing">Ping</button>
+          <button id="saveApi">Apply</button>
+        </div>
+        <div id="lastError" class="muted" style="margin-top: 10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="muted">Symbol</div>
+            <div class="mono" id="symbol">-</div>
+          </div>
+          <div>
+            <div class="muted">Source</div>
+            <div class="mono" id="marketSource">-</div>
+          </div>
+          <div>
+            <div class="muted">Price</div>
+            <div class="mono" id="price">-</div>
+          </div>
+          <div>
+            <div class="muted">ts_ns</div>
+            <div class="mono" id="ts">-</div>
+          </div>
+          <div style="flex: 1"></div>
+          <button id="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top: 0">Place Order</h2>
+        <div class="row">
+          <select id="side">
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+          </select>
+          <input id="orderSymbol" value="BTCUSDT" placeholder="symbol" />
+          <input id="qty" value="0.001" placeholder="qty" />
+          <input id="orderPrice" value="42000" placeholder="price" />
+          <input id="clientId" value="" placeholder="client_order_id (optional)" />
+          <button id="submit">Submit</button>
+        </div>
+        <div id="submitResult" class="muted" style="margin-top: 10px"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top: 0">Cancel Order</h2>
+        <div class="row">
+          <input id="cancelClientId" value="" placeholder="client_order_id" />
+          <button id="cancel">Cancel</button>
+        </div>
+        <div id="cancelResult" class="muted" style="margin-top: 10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <h2 style="margin: 0">Account</h2>
+          <div style="flex: 1"></div>
+          <button id="reloadAccount">Refresh</button>
+        </div>
+        <div class="muted" style="margin-top: 6px">Shows /api/account (from user stream in Binance mode)</div>
+        <div style="overflow: auto; margin-top: 10px">
+          <table>
+            <thead>
+              <tr>
+                <th>asset</th>
+                <th>free</th>
+                <th>locked</th>
+              </tr>
+            </thead>
+            <tbody id="accountBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <h2 style="margin: 0">Order State</h2>
+          <div style="flex: 1"></div>
+          <button id="reloadState">Refresh</button>
+        </div>
+        <div class="muted" style="margin-top: 6px">Shows merged order state view from /api/orders_state</div>
+        <div style="overflow: auto; margin-top: 10px">
+          <table>
+            <thead>
+              <tr>
+                <th>client_order_id</th>
+                <th>status</th>
+                <th>symbol</th>
+                <th>side</th>
+                <th>order_qty</th>
+                <th>executed_qty</th>
+                <th>avg_price</th>
+                <th>venue_order_id</th>
+                <th>reason</th>
+              </tr>
+            </thead>
+            <tbody id="stateBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <h2 style="margin: 0">Events</h2>
+          <div style="flex: 1"></div>
+          <button id="reloadOrders">Refresh</button>
+        </div>
+        <div class="muted" style="margin-top: 6px">Shows recent events from /api/orders (order_update/fill/error)</div>
+        <div style="overflow: auto; margin-top: 10px">
+          <table>
+            <thead>
+              <tr>
+                <th>type</th>
+                <th>ts_ns</th>
+                <th>client_order_id</th>
+                <th>status</th>
+                <th>symbol</th>
+                <th>qty</th>
+                <th>price</th>
+                <th>reason</th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strategies Tab -->
+    <div id="strategies-tab" class="tab-content">
+      <!-- Strategy Overview -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Strategy Management</h2>
+          <div class="flex-1"></div>
+          <span class="live-indicator">Live</span>
+          <button id="addStrategy" class="btn-success">+ New Strategy</button>
+        </div>
+        <div class="muted">Manage and monitor your trading strategies in real-time</div>
+
+        <!-- Strategy List -->
+        <div class="strategy-grid" id="strategyGrid">
+          <!-- Strategy cards will be rendered here -->
+        </div>
+      </div>
+
+      <!-- Strategy Performance Summary -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Performance Summary</h2>
+          <div class="flex-1"></div>
+          <button id="refreshPerformance" class="btn-secondary btn-sm">Refresh</button>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <div style="flex: 1; min-width: 150px;">
+            <div class="muted">Total PnL</div>
+            <div class="mono metric-value" id="totalPnl">-</div>
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <div class="muted">Win Rate</div>
+            <div class="mono metric-value" id="winRate">-</div>
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <div class="muted">Total Trades</div>
+            <div class="mono metric-value" id="totalTrades">-</div>
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <div class="muted">Active Strategies</div>
+            <div class="mono metric-value" id="activeStrategies">-</div>
+          </div>
+          <div style="flex: 1; min-width: 150px;">
+            <div class="muted">Sharpe Ratio</div>
+            <div class="mono metric-value" id="sharpeRatio">-</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strategy Trade History -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Strategy Trade History</h2>
+          <div class="flex-1"></div>
+          <select id="tradeHistoryFilter" style="min-width: 150px;">
+            <option value="all">All Strategies</option>
+          </select>
+          <button id="refreshTradeHistory" class="btn-secondary btn-sm">Refresh</button>
+        </div>
+        <div id="tradeHistoryContainer">
+          <!-- Trade history will be rendered here -->
+        </div>
+      </div>
+
+      <!-- Strategy Metrics Table -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Strategy Metrics</h2>
+          <div class="flex-1"></div>
+          <button id="refreshMetrics" class="btn-secondary btn-sm">Refresh</button>
+        </div>
+        <div style="overflow: auto; margin-top: 10px">
+          <table>
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Status</th>
+                <th>PnL</th>
+                <th>Trades</th>
+                <th>Win Rate</th>
+                <th>Max DD</th>
+                <th>Sharpe</th>
+                <th>Uptime</th>
+              </tr>
+            </thead>
+            <tbody id="metricsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="card">
-    <div class="row">
-      <div>
-        <div class="muted">Symbol</div>
-        <div class="mono" id="symbol">-</div>
+  <!-- Strategy Parameter Modal -->
+  <div class="modal-overlay" id="strategyModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Edit Strategy Parameters</h3>
+        <button class="modal-close" id="closeModal">&times;</button>
       </div>
-      <div>
-        <div class="muted">Source</div>
-        <div class="mono" id="marketSource">-</div>
+      <div id="modalContent">
+        <!-- Dynamic content will be inserted here -->
       </div>
-      <div>
-        <div class="muted">Price</div>
-        <div class="mono" id="price">-</div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelModal">Cancel</button>
+        <button class="btn-success" id="saveModal">Save Changes</button>
       </div>
-      <div>
-        <div class="muted">ts_ns</div>
-        <div class="mono" id="ts">-</div>
+    </div>
+  </div>
+
+  <!-- New Strategy Modal -->
+  <div class="modal-overlay" id="newStrategyModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Create New Strategy</h3>
+        <button class="modal-close" id="closeNewModal">&times;</button>
       </div>
-      <div style="flex: 1"></div>
-      <button id="refresh">Refresh</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2 style="margin-top: 0">Place Order</h2>
-    <div class="row">
-      <select id="side">
-        <option value="BUY">BUY</option>
-        <option value="SELL">SELL</option>
-      </select>
-      <input id="orderSymbol" value="BTCUSDT" placeholder="symbol" />
-      <input id="qty" value="0.001" placeholder="qty" />
-      <input id="orderPrice" value="42000" placeholder="price" />
-      <input id="clientId" value="" placeholder="client_order_id (optional)" />
-      <button id="submit">Submit</button>
-    </div>
-    <div id="submitResult" class="muted" style="margin-top: 10px"></div>
-  </div>
-
-  <div class="card">
-    <h2 style="margin-top: 0">Cancel Order</h2>
-    <div class="row">
-      <input id="cancelClientId" value="" placeholder="client_order_id" />
-      <button id="cancel">Cancel</button>
-    </div>
-    <div id="cancelResult" class="muted" style="margin-top: 10px"></div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <h2 style="margin: 0">Account</h2>
-      <div style="flex: 1"></div>
-      <button id="reloadAccount">Refresh</button>
-    </div>
-    <div class="muted" style="margin-top: 6px">Shows /api/account (from user stream in Binance mode)</div>
-    <div style="overflow: auto; margin-top: 10px">
-      <table>
-        <thead>
-          <tr>
-            <th>asset</th>
-            <th>free</th>
-            <th>locked</th>
-          </tr>
-        </thead>
-        <tbody id="accountBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <h2 style="margin: 0">Order State</h2>
-      <div style="flex: 1"></div>
-      <button id="reloadState">Refresh</button>
-    </div>
-    <div class="muted" style="margin-top: 6px">Shows merged order state view from /api/orders_state</div>
-    <div style="overflow: auto; margin-top: 10px">
-      <table>
-        <thead>
-          <tr>
-            <th>client_order_id</th>
-            <th>status</th>
-            <th>symbol</th>
-            <th>side</th>
-            <th>order_qty</th>
-            <th>executed_qty</th>
-            <th>avg_price</th>
-            <th>venue_order_id</th>
-            <th>reason</th>
-          </tr>
-        </thead>
-        <tbody id="stateBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="row">
-      <h2 style="margin: 0">Events</h2>
-      <div style="flex: 1"></div>
-      <button id="reloadOrders">Refresh</button>
-    </div>
-    <div class="muted" style="margin-top: 6px">Shows recent events from /api/orders (order_update/fill/error)</div>
-    <div style="overflow: auto; margin-top: 10px">
-      <table>
-        <thead>
-          <tr>
-            <th>type</th>
-            <th>ts_ns</th>
-            <th>client_order_id</th>
-            <th>status</th>
-            <th>symbol</th>
-            <th>qty</th>
-            <th>price</th>
-            <th>reason</th>
-          </tr>
-        </thead>
-        <tbody id="ordersBody"></tbody>
-      </table>
+      <div class="param-form">
+        <div class="param-group">
+          <label class="param-label">Strategy Name</label>
+          <input type="text" id="newStrategyName" class="param-input" placeholder="e.g., BTC Momentum" />
+        </div>
+        <div class="param-group">
+          <label class="param-label">Strategy Type</label>
+          <select id="newStrategyType" class="param-input">
+            <option value="momentum">Momentum</option>
+            <option value="mean_reversion">Mean Reversion</option>
+            <option value="grid">Grid Trading</option>
+            <option value="arbitrage">Arbitrage</option>
+            <option value="market_making">Market Making</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="param-group">
+          <label class="param-label">Symbol</label>
+          <input type="text" id="newStrategySymbol" class="param-input" value="BTCUSDT" />
+        </div>
+        <div class="param-group">
+          <label class="param-label">Initial Capital</label>
+          <input type="number" id="newStrategyCapital" class="param-input" value="10000" step="100" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelNewModal">Cancel</button>
+        <button class="btn-success" id="createStrategy">Create Strategy</button>
+      </div>
     </div>
   </div>
 
   <script>
+    // ============================================================================
+    // Core API and Connection Management
+    // ============================================================================
     const defaultApiBase = (() => {
       const url = new URL(window.location.href);
       const fromQuery = url.searchParams.get("api");
@@ -251,9 +868,25 @@
     }
 
     function setText(id, v) {
-      document.getElementById(id).textContent = v == null ? "-" : String(v);
+      const el = document.getElementById(id);
+      if (el) el.textContent = v == null ? "-" : String(v);
     }
 
+    // ============================================================================
+    // Tab Navigation
+    // ============================================================================
+    document.querySelectorAll(".nav-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+        tab.classList.add("active");
+        document.getElementById(tab.dataset.tab + "-tab").classList.add("active");
+      });
+    });
+
+    // ============================================================================
+    // Trading Tab Functions (Original)
+    // ============================================================================
     async function refreshMarket() {
       try {
         const m = await fetchJson("/api/market");
@@ -399,6 +1032,8 @@
           setText("symbol", m.symbol);
           setText("price", m.price);
           setText("ts", m.ts_ns);
+          // Update strategy metrics with new market data
+          updateStrategyMetricsFromMarket(m);
         } catch { }
         if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
       });
@@ -407,12 +1042,22 @@
         if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
         refreshOrders().catch(() => { });
         refreshState().catch(() => { });
+        // Update strategy trade history
+        try {
+          const data = JSON.parse(ev.data);
+          addStrategyTrade(data);
+        } catch { }
       });
 
       es.addEventListener("fill", (ev) => {
         if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
         refreshOrders().catch(() => { });
         refreshState().catch(() => { });
+        // Update strategy trade history
+        try {
+          const data = JSON.parse(ev.data);
+          addStrategyTrade(data);
+        } catch { }
       });
 
       es.addEventListener("account", (ev) => {
@@ -422,6 +1067,15 @@
 
       es.addEventListener("error", (ev) => {
         if (ev && ev.data) setConn(false, ev.data);
+        if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
+      });
+
+      // Strategy-specific events
+      es.addEventListener("strategy_update", (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          updateStrategyFromEvent(data);
+        } catch { }
         if (ev.lastEventId) localStorage.setItem("veloz_last_id", ev.lastEventId);
       });
 
@@ -510,6 +1164,509 @@
       }
     }
 
+    // ============================================================================
+    // Strategy Management
+    // ============================================================================
+
+    // Strategy data store (simulated - will be replaced with API calls)
+    let strategies = [
+      {
+        id: "strat-001",
+        name: "BTC Momentum",
+        type: "momentum",
+        symbol: "BTCUSDT",
+        status: "running",
+        capital: 10000,
+        pnl: 523.45,
+        pnlPercent: 5.23,
+        trades: 47,
+        winRate: 63.8,
+        maxDrawdown: 3.2,
+        sharpe: 1.85,
+        startTime: Date.now() - 86400000 * 3,
+        params: {
+          lookback_period: { value: 20, hot: true, min: 5, max: 100, desc: "Number of periods for momentum calculation" },
+          entry_threshold: { value: 0.02, hot: true, min: 0.001, max: 0.1, step: 0.001, desc: "Minimum momentum for entry" },
+          exit_threshold: { value: 0.01, hot: true, min: 0.001, max: 0.05, step: 0.001, desc: "Momentum threshold for exit" },
+          position_size: { value: 0.1, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Position size as fraction of capital" },
+          stop_loss: { value: 0.03, hot: false, min: 0.01, max: 0.1, step: 0.005, desc: "Stop loss percentage" },
+          take_profit: { value: 0.06, hot: false, min: 0.02, max: 0.2, step: 0.01, desc: "Take profit percentage" },
+        }
+      },
+      {
+        id: "strat-002",
+        name: "ETH Grid",
+        type: "grid",
+        symbol: "ETHUSDT",
+        status: "stopped",
+        capital: 5000,
+        pnl: -45.20,
+        pnlPercent: -0.90,
+        trades: 128,
+        winRate: 52.3,
+        maxDrawdown: 5.8,
+        sharpe: 0.42,
+        startTime: Date.now() - 86400000 * 7,
+        params: {
+          grid_levels: { value: 10, hot: false, min: 3, max: 50, desc: "Number of grid levels" },
+          grid_spacing: { value: 0.5, hot: true, min: 0.1, max: 5, step: 0.1, desc: "Spacing between grid levels (%)" },
+          order_size: { value: 0.05, hot: true, min: 0.01, max: 0.5, step: 0.01, desc: "Order size per grid level" },
+          upper_bound: { value: 2500, hot: false, min: 1000, max: 10000, desc: "Upper price bound" },
+          lower_bound: { value: 1500, hot: false, min: 500, max: 5000, desc: "Lower price bound" },
+        }
+      },
+      {
+        id: "strat-003",
+        name: "BTC Mean Reversion",
+        type: "mean_reversion",
+        symbol: "BTCUSDT",
+        status: "paused",
+        capital: 15000,
+        pnl: 1245.80,
+        pnlPercent: 8.31,
+        trades: 23,
+        winRate: 78.3,
+        maxDrawdown: 2.1,
+        sharpe: 2.34,
+        startTime: Date.now() - 86400000 * 14,
+        params: {
+          ma_period: { value: 50, hot: true, min: 10, max: 200, desc: "Moving average period" },
+          std_multiplier: { value: 2.0, hot: true, min: 1, max: 4, step: 0.1, desc: "Standard deviation multiplier for bands" },
+          reversion_target: { value: 0.5, hot: true, min: 0.1, max: 1, step: 0.1, desc: "Target reversion level (0=band, 1=MA)" },
+          position_size: { value: 0.15, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Position size as fraction of capital" },
+        }
+      }
+    ];
+
+    // Trade history store
+    let tradeHistory = [
+      { id: 1, strategyId: "strat-001", strategyName: "BTC Momentum", symbol: "BTCUSDT", side: "BUY", qty: 0.005, price: 42150, pnl: null, ts: Date.now() - 3600000 },
+      { id: 2, strategyId: "strat-001", strategyName: "BTC Momentum", symbol: "BTCUSDT", side: "SELL", qty: 0.005, price: 42380, pnl: 11.50, ts: Date.now() - 1800000 },
+      { id: 3, strategyId: "strat-003", strategyName: "BTC Mean Reversion", symbol: "BTCUSDT", side: "BUY", qty: 0.01, price: 41800, pnl: null, ts: Date.now() - 900000 },
+    ];
+
+    let currentEditStrategy = null;
+
+    // Render strategy cards
+    function renderStrategies() {
+      const grid = document.getElementById("strategyGrid");
+      grid.innerHTML = "";
+
+      for (const strat of strategies) {
+        const card = document.createElement("div");
+        card.className = "strategy-card";
+        card.innerHTML = `
+          <div class="strategy-card-header">
+            <div>
+              <h3 class="strategy-name">${escapeHtml(strat.name)}</h3>
+              <div class="strategy-type">${escapeHtml(strat.type)} | ${escapeHtml(strat.symbol)}</div>
+            </div>
+            <span class="badge badge-${strat.status}">${strat.status}</span>
+          </div>
+          <div class="strategy-metrics">
+            <div class="metric-item">
+              <span class="metric-label">PnL</span>
+              <span class="metric-value ${strat.pnl >= 0 ? 'positive' : 'negative'}">
+                ${strat.pnl >= 0 ? '+' : ''}${strat.pnl.toFixed(2)} (${strat.pnlPercent >= 0 ? '+' : ''}${strat.pnlPercent.toFixed(2)}%)
+              </span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Trades</span>
+              <span class="metric-value">${strat.trades}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Win Rate</span>
+              <span class="metric-value">${strat.winRate.toFixed(1)}%</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Max DD</span>
+              <span class="metric-value negative">-${strat.maxDrawdown.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div class="strategy-actions">
+            ${strat.status === 'running'
+              ? `<button class="btn-warning btn-sm" onclick="pauseStrategy('${strat.id}')">Pause</button>
+                 <button class="btn-danger btn-sm" onclick="stopStrategy('${strat.id}')">Stop</button>`
+              : strat.status === 'paused'
+              ? `<button class="btn-success btn-sm" onclick="startStrategy('${strat.id}')">Resume</button>
+                 <button class="btn-danger btn-sm" onclick="stopStrategy('${strat.id}')">Stop</button>`
+              : `<button class="btn-success btn-sm" onclick="startStrategy('${strat.id}')">Start</button>`
+            }
+            <button class="btn-secondary btn-sm" onclick="editStrategy('${strat.id}')">Edit</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      }
+
+      // Update filter dropdown
+      const filter = document.getElementById("tradeHistoryFilter");
+      const currentValue = filter.value;
+      filter.innerHTML = '<option value="all">All Strategies</option>';
+      for (const strat of strategies) {
+        const opt = document.createElement("option");
+        opt.value = strat.id;
+        opt.textContent = strat.name;
+        filter.appendChild(opt);
+      }
+      filter.value = currentValue;
+    }
+
+    // Render performance summary
+    function renderPerformanceSummary() {
+      const running = strategies.filter(s => s.status === 'running').length;
+      const totalPnl = strategies.reduce((sum, s) => sum + s.pnl, 0);
+      const totalTrades = strategies.reduce((sum, s) => sum + s.trades, 0);
+      const avgWinRate = strategies.length > 0
+        ? strategies.reduce((sum, s) => sum + s.winRate, 0) / strategies.length
+        : 0;
+      const avgSharpe = strategies.length > 0
+        ? strategies.reduce((sum, s) => sum + s.sharpe, 0) / strategies.length
+        : 0;
+
+      const pnlEl = document.getElementById("totalPnl");
+      pnlEl.textContent = `$${totalPnl.toFixed(2)}`;
+      pnlEl.className = `mono metric-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+
+      setText("winRate", `${avgWinRate.toFixed(1)}%`);
+      setText("totalTrades", totalTrades);
+      setText("activeStrategies", `${running}/${strategies.length}`);
+      setText("sharpeRatio", avgSharpe.toFixed(2));
+    }
+
+    // Render trade history
+    function renderTradeHistory(filterId = "all") {
+      const container = document.getElementById("tradeHistoryContainer");
+      const filtered = filterId === "all"
+        ? tradeHistory
+        : tradeHistory.filter(t => t.strategyId === filterId);
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="muted" style="padding: 20px; text-align: center;">No trades yet</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.slice().reverse().slice(0, 50).map(trade => `
+        <div class="trade-row">
+          <span class="trade-side ${trade.side.toLowerCase()}">${trade.side}</span>
+          <div class="trade-info">
+            <div class="trade-symbol">${escapeHtml(trade.symbol)}</div>
+            <div class="trade-details">
+              ${escapeHtml(trade.strategyName)} | ${trade.qty} @ ${trade.price.toFixed(2)} | ${formatTime(trade.ts)}
+            </div>
+          </div>
+          ${trade.pnl !== null
+            ? `<span class="trade-pnl ${trade.pnl >= 0 ? 'positive' : 'negative'}">
+                ${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}
+               </span>`
+            : '<span class="trade-pnl muted">Open</span>'
+          }
+        </div>
+      `).join("");
+    }
+
+    // Render metrics table
+    function renderMetricsTable() {
+      const body = document.getElementById("metricsBody");
+      body.innerHTML = "";
+
+      for (const strat of strategies) {
+        const tr = document.createElement("tr");
+        const uptime = formatUptime(Date.now() - strat.startTime);
+        tr.innerHTML = `
+          <td><strong>${escapeHtml(strat.name)}</strong><br><span class="muted">${escapeHtml(strat.type)}</span></td>
+          <td><span class="badge badge-${strat.status}">${strat.status}</span></td>
+          <td class="mono ${strat.pnl >= 0 ? 'positive' : 'negative'}">${strat.pnl >= 0 ? '+' : ''}$${strat.pnl.toFixed(2)}</td>
+          <td class="mono">${strat.trades}</td>
+          <td class="mono">${strat.winRate.toFixed(1)}%</td>
+          <td class="mono negative">-${strat.maxDrawdown.toFixed(1)}%</td>
+          <td class="mono">${strat.sharpe.toFixed(2)}</td>
+          <td class="mono">${uptime}</td>
+        `;
+        body.appendChild(tr);
+      }
+    }
+
+    // Strategy actions
+    function startStrategy(id) {
+      const strat = strategies.find(s => s.id === id);
+      if (strat) {
+        strat.status = "running";
+        strat.startTime = Date.now();
+        renderStrategies();
+        renderPerformanceSummary();
+        renderMetricsTable();
+        // In production, this would call: POST /api/strategies/{id}/start
+        console.log(`Starting strategy: ${strat.name}`);
+      }
+    }
+
+    function pauseStrategy(id) {
+      const strat = strategies.find(s => s.id === id);
+      if (strat) {
+        strat.status = "paused";
+        renderStrategies();
+        renderPerformanceSummary();
+        renderMetricsTable();
+        // In production, this would call: POST /api/strategies/{id}/pause
+        console.log(`Pausing strategy: ${strat.name}`);
+      }
+    }
+
+    function stopStrategy(id) {
+      const strat = strategies.find(s => s.id === id);
+      if (strat) {
+        strat.status = "stopped";
+        renderStrategies();
+        renderPerformanceSummary();
+        renderMetricsTable();
+        // In production, this would call: POST /api/strategies/{id}/stop
+        console.log(`Stopping strategy: ${strat.name}`);
+      }
+    }
+
+    function editStrategy(id) {
+      const strat = strategies.find(s => s.id === id);
+      if (!strat) return;
+
+      currentEditStrategy = strat;
+      document.getElementById("modalTitle").textContent = `Edit ${strat.name} Parameters`;
+
+      const content = document.getElementById("modalContent");
+      content.innerHTML = `
+        <div class="param-form">
+          ${Object.entries(strat.params).map(([key, param]) => `
+            <div class="param-group">
+              <label class="param-label">
+                ${formatParamName(key)}
+                ${param.hot ? '<span class="hot-badge">HOT</span>' : ''}
+              </label>
+              <input
+                type="number"
+                class="param-input"
+                id="param-${key}"
+                value="${param.value}"
+                min="${param.min || ''}"
+                max="${param.max || ''}"
+                step="${param.step || 1}"
+                ${!param.hot && strat.status === 'running' ? 'disabled' : ''}
+              />
+              <div class="param-hint">${escapeHtml(param.desc)}${!param.hot && strat.status === 'running' ? ' (Stop strategy to modify)' : ''}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+
+      document.getElementById("strategyModal").classList.add("active");
+    }
+
+    function saveStrategyParams() {
+      if (!currentEditStrategy) return;
+
+      const strat = currentEditStrategy;
+      let hasChanges = false;
+
+      for (const [key, param] of Object.entries(strat.params)) {
+        const input = document.getElementById(`param-${key}`);
+        if (input && !input.disabled) {
+          const newValue = parseFloat(input.value);
+          if (!isNaN(newValue) && newValue !== param.value) {
+            param.value = newValue;
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (hasChanges) {
+        // In production, this would call: PUT /api/strategies/{id}/params
+        console.log(`Updated parameters for ${strat.name}:`, strat.params);
+      }
+
+      closeModal();
+      renderStrategies();
+    }
+
+    function closeModal() {
+      document.getElementById("strategyModal").classList.remove("active");
+      currentEditStrategy = null;
+    }
+
+    // New strategy modal
+    function openNewStrategyModal() {
+      document.getElementById("newStrategyModal").classList.add("active");
+    }
+
+    function closeNewStrategyModal() {
+      document.getElementById("newStrategyModal").classList.remove("active");
+    }
+
+    function createNewStrategy() {
+      const name = document.getElementById("newStrategyName").value.trim();
+      const type = document.getElementById("newStrategyType").value;
+      const symbol = document.getElementById("newStrategySymbol").value.trim().toUpperCase();
+      const capital = parseFloat(document.getElementById("newStrategyCapital").value);
+
+      if (!name || !symbol || isNaN(capital) || capital <= 0) {
+        alert("Please fill in all fields correctly");
+        return;
+      }
+
+      const newStrat = {
+        id: `strat-${Date.now()}`,
+        name,
+        type,
+        symbol,
+        status: "stopped",
+        capital,
+        pnl: 0,
+        pnlPercent: 0,
+        trades: 0,
+        winRate: 0,
+        maxDrawdown: 0,
+        sharpe: 0,
+        startTime: Date.now(),
+        params: getDefaultParams(type)
+      };
+
+      strategies.push(newStrat);
+      closeNewStrategyModal();
+      renderStrategies();
+      renderPerformanceSummary();
+      renderMetricsTable();
+
+      // Clear form
+      document.getElementById("newStrategyName").value = "";
+      document.getElementById("newStrategySymbol").value = "BTCUSDT";
+      document.getElementById("newStrategyCapital").value = "10000";
+
+      // In production, this would call: POST /api/strategies
+      console.log("Created new strategy:", newStrat);
+    }
+
+    function getDefaultParams(type) {
+      const defaults = {
+        momentum: {
+          lookback_period: { value: 20, hot: true, min: 5, max: 100, desc: "Number of periods for momentum calculation" },
+          entry_threshold: { value: 0.02, hot: true, min: 0.001, max: 0.1, step: 0.001, desc: "Minimum momentum for entry" },
+          position_size: { value: 0.1, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Position size as fraction of capital" },
+        },
+        mean_reversion: {
+          ma_period: { value: 50, hot: true, min: 10, max: 200, desc: "Moving average period" },
+          std_multiplier: { value: 2.0, hot: true, min: 1, max: 4, step: 0.1, desc: "Standard deviation multiplier" },
+          position_size: { value: 0.1, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Position size as fraction of capital" },
+        },
+        grid: {
+          grid_levels: { value: 10, hot: false, min: 3, max: 50, desc: "Number of grid levels" },
+          grid_spacing: { value: 0.5, hot: true, min: 0.1, max: 5, step: 0.1, desc: "Spacing between grid levels (%)" },
+          order_size: { value: 0.05, hot: true, min: 0.01, max: 0.5, step: 0.01, desc: "Order size per grid level" },
+        },
+        arbitrage: {
+          min_spread: { value: 0.1, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Minimum spread percentage" },
+          position_size: { value: 0.1, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Position size as fraction of capital" },
+        },
+        market_making: {
+          spread: { value: 0.1, hot: true, min: 0.01, max: 1, step: 0.01, desc: "Bid-ask spread percentage" },
+          order_size: { value: 0.01, hot: true, min: 0.001, max: 0.1, step: 0.001, desc: "Order size" },
+          levels: { value: 5, hot: false, min: 1, max: 20, desc: "Number of price levels" },
+        },
+        custom: {
+          param1: { value: 1, hot: true, min: 0, max: 100, desc: "Custom parameter 1" },
+          param2: { value: 1, hot: true, min: 0, max: 100, desc: "Custom parameter 2" },
+        }
+      };
+      return defaults[type] || defaults.custom;
+    }
+
+    // Update strategy from SSE event
+    function updateStrategyFromEvent(data) {
+      const strat = strategies.find(s => s.id === data.strategy_id);
+      if (strat) {
+        if (data.pnl !== undefined) strat.pnl = data.pnl;
+        if (data.pnl_percent !== undefined) strat.pnlPercent = data.pnl_percent;
+        if (data.trades !== undefined) strat.trades = data.trades;
+        if (data.win_rate !== undefined) strat.winRate = data.win_rate;
+        if (data.status !== undefined) strat.status = data.status;
+        renderStrategies();
+        renderPerformanceSummary();
+        renderMetricsTable();
+      }
+    }
+
+    // Update strategy metrics from market data
+    function updateStrategyMetricsFromMarket(marketData) {
+      // Simulate PnL updates based on market movements
+      for (const strat of strategies) {
+        if (strat.status === "running" && strat.symbol === marketData.symbol) {
+          // Simulate small random PnL changes
+          const change = (Math.random() - 0.48) * 10;
+          strat.pnl += change;
+          strat.pnlPercent = (strat.pnl / strat.capital) * 100;
+        }
+      }
+      // Throttle rendering
+      if (!updateStrategyMetricsFromMarket._throttle) {
+        updateStrategyMetricsFromMarket._throttle = setTimeout(() => {
+          renderStrategies();
+          renderPerformanceSummary();
+          updateStrategyMetricsFromMarket._throttle = null;
+        }, 1000);
+      }
+    }
+
+    // Add trade from order event
+    function addStrategyTrade(data) {
+      // Find matching strategy by symbol
+      const strat = strategies.find(s => s.symbol === data.symbol && s.status === "running");
+      if (strat && data.client_order_id && data.client_order_id.startsWith("strat-")) {
+        const trade = {
+          id: Date.now(),
+          strategyId: strat.id,
+          strategyName: strat.name,
+          symbol: data.symbol,
+          side: data.side || "BUY",
+          qty: data.qty || 0,
+          price: data.price || 0,
+          pnl: data.type === "fill" ? (Math.random() - 0.4) * 50 : null,
+          ts: Date.now()
+        };
+        tradeHistory.push(trade);
+        strat.trades++;
+        renderTradeHistory(document.getElementById("tradeHistoryFilter").value);
+      }
+    }
+
+    // Utility functions
+    function escapeHtml(str) {
+      if (str == null) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function formatParamName(key) {
+      return key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function formatTime(ts) {
+      const d = new Date(ts);
+      return d.toLocaleTimeString();
+    }
+
+    function formatUptime(ms) {
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        return `${days}d ${hours % 24}h`;
+      }
+      return `${hours}h ${minutes}m`;
+    }
+
+    // ============================================================================
+    // Event Listeners
+    // ============================================================================
     document.getElementById("refresh").addEventListener("click", () => refreshMarket().catch(console.error));
     document.getElementById("reloadOrders").addEventListener("click", () => refreshOrders().catch(console.error));
     document.getElementById("reloadState").addEventListener("click", () => refreshState().catch(console.error));
@@ -527,6 +1684,35 @@
       refreshOrders().catch(() => { });
     });
 
+    // Strategy event listeners
+    document.getElementById("addStrategy").addEventListener("click", openNewStrategyModal);
+    document.getElementById("closeModal").addEventListener("click", closeModal);
+    document.getElementById("cancelModal").addEventListener("click", closeModal);
+    document.getElementById("saveModal").addEventListener("click", saveStrategyParams);
+    document.getElementById("closeNewModal").addEventListener("click", closeNewStrategyModal);
+    document.getElementById("cancelNewModal").addEventListener("click", closeNewStrategyModal);
+    document.getElementById("createStrategy").addEventListener("click", createNewStrategy);
+
+    document.getElementById("refreshPerformance").addEventListener("click", renderPerformanceSummary);
+    document.getElementById("refreshTradeHistory").addEventListener("click", () => {
+      renderTradeHistory(document.getElementById("tradeHistoryFilter").value);
+    });
+    document.getElementById("refreshMetrics").addEventListener("click", renderMetricsTable);
+    document.getElementById("tradeHistoryFilter").addEventListener("change", (e) => {
+      renderTradeHistory(e.target.value);
+    });
+
+    // Close modals on overlay click
+    document.getElementById("strategyModal").addEventListener("click", (e) => {
+      if (e.target.id === "strategyModal") closeModal();
+    });
+    document.getElementById("newStrategyModal").addEventListener("click", (e) => {
+      if (e.target.id === "newStrategyModal") closeNewStrategyModal();
+    });
+
+    // ============================================================================
+    // Initialization
+    // ============================================================================
     const savedBase = localStorage.getItem("veloz_api_base");
     if (savedBase && !apiBase) {
       apiBase = savedBase;
@@ -556,6 +1742,37 @@
       refreshState().catch(() => { });
       refreshAccount().catch(() => { });
     }
+
+    // Initialize strategy UI
+    renderStrategies();
+    renderPerformanceSummary();
+    renderTradeHistory();
+    renderMetricsTable();
+
+    // Simulate periodic strategy updates (for demo purposes)
+    setInterval(() => {
+      for (const strat of strategies) {
+        if (strat.status === "running") {
+          // Simulate trade activity
+          if (Math.random() < 0.1) {
+            strat.trades++;
+            const pnlChange = (Math.random() - 0.45) * 20;
+            strat.pnl += pnlChange;
+            strat.pnlPercent = (strat.pnl / strat.capital) * 100;
+
+            // Update win rate
+            if (pnlChange > 0) {
+              strat.winRate = Math.min(100, strat.winRate + 0.1);
+            } else {
+              strat.winRate = Math.max(0, strat.winRate - 0.1);
+            }
+          }
+        }
+      }
+      renderStrategies();
+      renderPerformanceSummary();
+      renderMetricsTable();
+    }, 5000);
   </script>
 </body>
 
