@@ -57,9 +57,32 @@ public:
     return kj::Vector<ExecutionReport>();
   }
 
+  kj::Promise<kj::Maybe<ExecutionReport>>
+  cancel_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override {
+    // Find and remove the order from open_orders
+    for (size_t i = 0; i < open_orders.size(); ++i) {
+      if (open_orders[i].client_order_id == client_order_id) {
+        ExecutionReport cancelled;
+        cancelled.symbol = open_orders[i].symbol;
+        cancelled.client_order_id = kj::str(open_orders[i].client_order_id);
+        cancelled.venue_order_id = kj::str(open_orders[i].venue_order_id);
+        cancelled.status = OrderStatus::Canceled;
+        cancelled.last_fill_qty = open_orders[i].last_fill_qty;
+        cancelled.last_fill_price = open_orders[i].last_fill_price;
+        cancelled.ts_exchange_ns = open_orders[i].ts_exchange_ns;
+        cancelled.ts_recv_ns = open_orders[i].ts_recv_ns;
+        cancelled_orders.add(kj::str(client_order_id));
+        return kj::Maybe<ExecutionReport>(kj::mv(cancelled));
+      }
+    }
+    return kj::Maybe<ExecutionReport>(kj::none);
+  }
+
   void add_order(ExecutionReport order) {
     open_orders.add(kj::mv(order));
   }
+
+  kj::Vector<kj::String> cancelled_orders;
 };
 
 KJ_TEST("AccountReconciler: basic construction") {
@@ -138,6 +161,42 @@ KJ_TEST("AccountReconciler: detect orphaned order") {
 
   auto stats = reconciler.get_stats();
   KJ_EXPECT(stats.orphaned_orders_found == 1);
+}
+
+KJ_TEST("AccountReconciler: auto-cancel orphaned order") {
+  auto io = kj::setupAsyncIo();
+  oms::OrderStore order_store;
+
+  ReconciliationConfig config;
+  config.auto_cancel_orphaned = true;
+
+  AccountReconciler reconciler(io, order_store, kj::mv(config));
+  MockQueryInterface mock_query;
+
+  // Add an order on exchange that's not in local state
+  veloz::common::SymbolId symbol("BTCUSDT"_kj);
+
+  ExecutionReport orphaned_order;
+  orphaned_order.symbol = symbol;
+  orphaned_order.client_order_id = kj::str("orphan-auto-cancel-123");
+  orphaned_order.venue_order_id = kj::str("venue-789");
+  orphaned_order.status = OrderStatus::Accepted;
+  orphaned_order.last_fill_qty = 0.0;
+  orphaned_order.last_fill_price = 0.0;
+  mock_query.add_order(kj::mv(orphaned_order));
+
+  reconciler.register_exchange(veloz::common::Venue::Binance, mock_query);
+
+  // Run reconciliation
+  reconciler.reconcile_now().wait(io.waitScope);
+
+  auto stats = reconciler.get_stats();
+  KJ_EXPECT(stats.orphaned_orders_found == 1);
+  KJ_EXPECT(stats.orphaned_orders_cancelled == 1);
+
+  // Verify the order was cancelled via the mock
+  KJ_EXPECT(mock_query.cancelled_orders.size() == 1);
+  KJ_EXPECT(mock_query.cancelled_orders[0] == "orphan-auto-cancel-123"_kj);
 }
 
 KJ_TEST("AccountReconciler: strategy freeze on multiple mismatches") {

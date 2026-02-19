@@ -365,6 +365,18 @@ kj::Promise<void> AccountReconciler::handle_orphaned_orders(veloz::common::Venue
     return kj::READY_NOW;
   }
 
+  // Get query interface for this venue
+  ReconciliationQueryInterface* query_interface = nullptr;
+  {
+    auto lock = guarded_.lockExclusive();
+    KJ_IF_SOME(iface, lock->exchanges.find(venue)) {
+      query_interface = iface;
+    }
+  }
+
+  // Build chain of promises for handling each orphaned order
+  kj::Promise<void> chain = kj::READY_NOW;
+
   for (auto& order : orphaned) {
     {
       auto lock = guarded_.lockExclusive();
@@ -381,27 +393,57 @@ kj::Promise<void> AccountReconciler::handle_orphaned_orders(veloz::common::Venue
     // Add orphaned order to local state
     update_local_state(order);
 
-    if (config_.auto_cancel_orphaned) {
-      // TODO: Cancel orphaned order via exchange adapter
-      // For now, just log the event
-      KJ_LOG(WARNING, "Auto-cancel orphaned order not yet implemented",
-             order.client_order_id.cStr());
+    if (config_.auto_cancel_orphaned && query_interface != nullptr) {
+      // Cancel orphaned order via exchange adapter
+      auto symbol = order.symbol;
+      auto client_order_id = kj::str(order.client_order_id);
 
-      emit_event(ReconciliationEvent{
-          .type = ReconciliationEventType::OrderCancelled,
-          .ts_ns = now_ns(),
-          .message = kj::str("Orphaned order cancelled: ", order.client_order_id),
-          .client_order_id = kj::str(order.client_order_id),
+      chain = chain.then([this, query_interface, symbol, client_order_id = kj::mv(client_order_id)]() mutable {
+        return query_interface->cancel_order_async(symbol, client_order_id)
+            .then([this, client_order_id = kj::mv(client_order_id)](kj::Maybe<ExecutionReport> result) {
+              KJ_IF_SOME(report, result) {
+                if (report.status == OrderStatus::Canceled) {
+                  // Update local state with cancelled status
+                  update_local_state(report);
+
+                  emit_event(ReconciliationEvent{
+                      .type = ReconciliationEventType::OrderCancelled,
+                      .ts_ns = now_ns(),
+                      .message = kj::str("Orphaned order cancelled: ", client_order_id),
+                      .client_order_id = kj::str(client_order_id),
+                  });
+
+                  {
+                    auto lock = guarded_.lockExclusive();
+                    lock->stats.orphaned_orders_cancelled++;
+                  }
+
+                  KJ_LOG(INFO, "Successfully cancelled orphaned order", client_order_id.cStr());
+                } else {
+                  KJ_LOG(WARNING, "Cancel request returned non-cancelled status",
+                         client_order_id.cStr(), static_cast<int>(report.status));
+                }
+              }
+              else {
+                KJ_LOG(WARNING, "Failed to cancel orphaned order", client_order_id.cStr());
+
+                emit_event(ReconciliationEvent{
+                    .type = ReconciliationEventType::Error,
+                    .ts_ns = now_ns(),
+                    .message = kj::str("Failed to cancel orphaned order: ", client_order_id),
+                    .client_order_id = kj::str(client_order_id),
+                    .error_message = kj::str("Cancel request returned no result"),
+                });
+              }
+            });
       });
-
-      {
-        auto lock = guarded_.lockExclusive();
-        lock->stats.orphaned_orders_cancelled++;
-      }
+    } else if (config_.auto_cancel_orphaned && query_interface == nullptr) {
+      KJ_LOG(WARNING, "Cannot cancel orphaned order: no exchange adapter registered",
+             order.client_order_id.cStr());
     }
   }
 
-  return kj::READY_NOW;
+  return chain;
 }
 
 void AccountReconciler::update_local_state(const ExecutionReport& exchange_state) {

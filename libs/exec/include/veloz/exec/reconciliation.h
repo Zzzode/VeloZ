@@ -94,6 +94,10 @@ public:
   virtual kj::Promise<kj::Vector<ExecutionReport>>
   query_orders_async(const veloz::common::SymbolId& symbol, std::int64_t start_time_ms,
                      std::int64_t end_time_ms) = 0;
+
+  // Cancel an order on the exchange (used for orphaned order cleanup)
+  virtual kj::Promise<kj::Maybe<ExecutionReport>>
+  cancel_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) = 0;
 };
 
 // Callback for reconciliation events

@@ -354,7 +354,12 @@ JsonBuilder JsonBuilder::array() {
 
 JsonBuilder& JsonBuilder::put(const std::string& key, const char* value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strcpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    // Create key and value with copying to ensure they remain valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_strcpy(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
@@ -365,72 +370,114 @@ JsonBuilder& JsonBuilder::put(const std::string& key, const std::string& value) 
 
 JsonBuilder& JsonBuilder::put(const std::string& key, std::string_view value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strncpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value.data(),
-                               value.size());
+    // Create key and value with copying to ensure they remain valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_strncpy(impl_->doc.get(), value.data(), value.size());
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, bool value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_bool(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_bool(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, int value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_int(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_int(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, int64_t value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_sint(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_sint(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, uint64_t value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_uint(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_uint(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, double value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_real(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_real(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, std::nullptr_t) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_null(impl_->doc.get(), impl_->current.get(), key.c_str());
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
+    yyjson_mut_val* val_val = yyjson_mut_null(impl_->doc.get());
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<int>& value) {
   if (impl_->is_object) {
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
     yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
     for (int v : value) {
       yyjson_mut_arr_add_int(impl_->doc.get(), arr, v);
     }
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), arr);
+    if (key_val && arr) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, arr);
+    }
   }
   return *this;
 }
 
 JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<std::string>& value) {
   if (impl_->is_object) {
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
     yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
     for (const std::string& v : value) {
       yyjson_mut_arr_add_strcpy(impl_->doc.get(), arr, v.c_str());
     }
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), arr);
+    if (key_val && arr) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, arr);
+    }
   }
   return *this;
 }
@@ -438,6 +485,8 @@ JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<std::str
 JsonBuilder& JsonBuilder::put_object(const std::string& key,
                                      std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
     yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc.get());
     // Save current state
     YyJsonMutValView saved_current = impl_->current;
@@ -449,7 +498,9 @@ JsonBuilder& JsonBuilder::put_object(const std::string& key,
     // Restore state and add nested object to parent
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), nested);
+    if (key_val && nested) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, nested);
+    }
   }
   return *this;
 }
@@ -457,6 +508,8 @@ JsonBuilder& JsonBuilder::put_object(const std::string& key,
 JsonBuilder& JsonBuilder::put_array(const std::string& key,
                                     std::function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
+    // Create key with copying to ensure it remains valid
+    yyjson_mut_val* key_val = yyjson_mut_strcpy(impl_->doc.get(), key.c_str());
     yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc.get());
     // Save current state
     YyJsonMutValView saved_current = impl_->current;
@@ -468,7 +521,9 @@ JsonBuilder& JsonBuilder::put_array(const std::string& key,
     // Restore state and add nested array to parent
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), nested);
+    if (key_val && nested) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, nested);
+    }
   }
   return *this;
 }

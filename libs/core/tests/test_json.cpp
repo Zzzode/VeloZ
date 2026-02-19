@@ -111,22 +111,21 @@ KJ_TEST("JSON: Build array") {
 }
 
 // Test nested building
-// TODO: Fix nested structure building - yyjson integration issue
-// KJ_TEST("JSON: Build nested structure") {
-//   auto builder = JsonBuilder::object();
-//   builder.put("name", "test")
-//       .put_object("nested", [](JsonBuilder& b) { b.put("inner", "value").put("number", 123); })
-//       .put_array("items", [](JsonBuilder& b) { b.add(1).add(2).add(3); });
-//
-//   std::string json = builder.build(true); // pretty print
-//   KJ_EXPECT(!json.empty()); // Check that build() returns non-empty string
-//
-//   auto doc = JsonDocument::parse(json);
-//
-//   KJ_EXPECT(doc.root()["nested"]["inner"].get_string() == "value");
-//   KJ_EXPECT(doc.root()["nested"]["number"].get_int() == 123);
-//   KJ_EXPECT(doc.root()["items"].size() == 3);
-// }
+KJ_TEST("JSON: Build nested structure") {
+  auto builder = JsonBuilder::object();
+  builder.put("name", "test")
+      .put_object("nested", [](JsonBuilder& b) { b.put("inner", "value").put("number", 123); })
+      .put_array("items", [](JsonBuilder& b) { b.add(1).add(2).add(3); });
+
+  std::string json = builder.build(true); // pretty print
+  KJ_EXPECT(!json.empty()); // Check that build() returns non-empty string
+
+  auto doc = JsonDocument::parse(json);
+
+  KJ_EXPECT(doc.root()["nested"]["inner"].get_string() == "value");
+  KJ_EXPECT(doc.root()["nested"]["number"].get_int() == 123);
+  KJ_EXPECT(doc.root()["items"].size() == 3);
+}
 
 // Test type checking
 KJ_TEST("JSON: Type checking") {

@@ -235,6 +235,194 @@ private:
   kj::MutexGuarded<VeloZArena> guarded_;
 };
 
+// =======================================================================================
+// ResettableArenaPool - Arena pool with reset/reuse for batch processing
+// =======================================================================================
+
+/**
+ * @brief Arena pool that supports reset/reuse for batch processing
+ *
+ * Since kj::Arena doesn't support reset, this class manages a pool of arenas
+ * that can be recycled. When an arena is "reset", it's destroyed and a new
+ * one is created. This is efficient for batch processing patterns where
+ * all allocations in a batch have the same lifetime.
+ *
+ * Usage pattern:
+ * @code
+ * ResettableArenaPool pool(4096);  // 4KB chunk size
+ *
+ * // Batch 1
+ * auto* event1 = pool.allocate<MarketEvent>(...);
+ * auto* event2 = pool.allocate<MarketEvent>(...);
+ * // Process batch...
+ * pool.reset();  // Free all allocations
+ *
+ * // Batch 2
+ * auto* event3 = pool.allocate<MarketEvent>(...);
+ * // ...
+ * @endcode
+ */
+class ResettableArenaPool final {
+public:
+  /**
+   * @brief Construct a resettable arena pool
+   * @param chunk_size_hint Hint for arena chunk allocation size in bytes
+   */
+  explicit ResettableArenaPool(size_t chunk_size_hint = 4096)
+      : chunk_size_hint_(chunk_size_hint), arena_(kj::heap<VeloZArena>(chunk_size_hint)),
+        allocation_count_(0), total_allocated_bytes_(0) {}
+
+  ~ResettableArenaPool() = default;
+
+  // Non-copyable, non-movable
+  ResettableArenaPool(const ResettableArenaPool&) = delete;
+  ResettableArenaPool& operator=(const ResettableArenaPool&) = delete;
+  ResettableArenaPool(ResettableArenaPool&&) = delete;
+  ResettableArenaPool& operator=(ResettableArenaPool&&) = delete;
+
+  /**
+   * @brief Allocate and construct an object in the arena
+   * @tparam T Type to allocate
+   * @tparam Args Constructor argument types
+   * @param args Constructor arguments
+   * @return Pointer to the constructed object (valid until reset() is called)
+   */
+  template <typename T, typename... Args> [[nodiscard]] T* allocate(Args&&... args) {
+    ++allocation_count_;
+    total_allocated_bytes_ += sizeof(T);
+    return arena_->allocate<T>(kj::fwd<Args>(args)...);
+  }
+
+  /**
+   * @brief Allocate an array of objects in the arena
+   * @tparam T Element type
+   * @param count Number of elements
+   * @return ArrayPtr to the allocated array (valid until reset() is called)
+   */
+  template <typename T> [[nodiscard]] kj::ArrayPtr<T> allocateArray(size_t count) {
+    ++allocation_count_;
+    total_allocated_bytes_ += sizeof(T) * count;
+    return arena_->allocateArray<T>(count);
+  }
+
+  /**
+   * @brief Copy a string into the arena
+   * @param str String to copy
+   * @return StringPtr to the arena-allocated copy (valid until reset() is called)
+   */
+  [[nodiscard]] kj::StringPtr copyString(kj::StringPtr str) {
+    ++allocation_count_;
+    total_allocated_bytes_ += str.size() + 1;
+    return arena_->copyString(str);
+  }
+
+  /**
+   * @brief Reset the arena, freeing all allocations
+   *
+   * All pointers returned by allocate() become invalid after this call.
+   * A new arena is created for subsequent allocations.
+   */
+  void reset() {
+    arena_ = kj::heap<VeloZArena>(chunk_size_hint_);
+    allocation_count_ = 0;
+    total_allocated_bytes_ = 0;
+  }
+
+  /**
+   * @brief Get the number of allocations since last reset
+   */
+  [[nodiscard]] size_t allocationCount() const noexcept {
+    return allocation_count_;
+  }
+
+  /**
+   * @brief Get the total bytes allocated since last reset (approximate)
+   */
+  [[nodiscard]] size_t totalAllocatedBytes() const noexcept {
+    return total_allocated_bytes_;
+  }
+
+  /**
+   * @brief Get the underlying arena for advanced usage
+   */
+  [[nodiscard]] VeloZArena& underlying() noexcept {
+    return *arena_;
+  }
+
+private:
+  size_t chunk_size_hint_;
+  kj::Own<VeloZArena> arena_;
+  size_t allocation_count_;
+  size_t total_allocated_bytes_;
+};
+
+/**
+ * @brief Thread-safe resettable arena pool
+ *
+ * Wraps ResettableArenaPool with mutex protection for thread-safe access.
+ */
+class ThreadSafeResettableArenaPool final {
+public:
+  explicit ThreadSafeResettableArenaPool(size_t chunk_size_hint = 4096)
+      : guarded_(chunk_size_hint) {}
+
+  ~ThreadSafeResettableArenaPool() = default;
+
+  ThreadSafeResettableArenaPool(const ThreadSafeResettableArenaPool&) = delete;
+  ThreadSafeResettableArenaPool& operator=(const ThreadSafeResettableArenaPool&) = delete;
+
+  /**
+   * @brief Allocate and construct an object (thread-safe)
+   */
+  template <typename T, typename... Args> [[nodiscard]] T* allocate(Args&&... args) {
+    auto lock = guarded_.lockExclusive();
+    return lock->allocate<T>(kj::fwd<Args>(args)...);
+  }
+
+  /**
+   * @brief Allocate an array (thread-safe)
+   */
+  template <typename T> [[nodiscard]] kj::ArrayPtr<T> allocateArray(size_t count) {
+    auto lock = guarded_.lockExclusive();
+    return lock->allocateArray<T>(count);
+  }
+
+  /**
+   * @brief Copy a string (thread-safe)
+   */
+  [[nodiscard]] kj::StringPtr copyString(kj::StringPtr str) {
+    auto lock = guarded_.lockExclusive();
+    return lock->copyString(str);
+  }
+
+  /**
+   * @brief Reset the arena (thread-safe)
+   */
+  void reset() {
+    auto lock = guarded_.lockExclusive();
+    lock->reset();
+  }
+
+  /**
+   * @brief Get allocation count (thread-safe)
+   */
+  [[nodiscard]] size_t allocationCount() const {
+    auto lock = guarded_.lockExclusive();
+    return lock->allocationCount();
+  }
+
+  /**
+   * @brief Get total allocated bytes (thread-safe)
+   */
+  [[nodiscard]] size_t totalAllocatedBytes() const {
+    auto lock = guarded_.lockExclusive();
+    return lock->totalAllocatedBytes();
+  }
+
+private:
+  kj::MutexGuarded<ResettableArenaPool> guarded_;
+};
+
 // Memory alignment utilities
 [[nodiscard]] void* aligned_alloc(size_t size, size_t alignment);
 void aligned_free(void* ptr);

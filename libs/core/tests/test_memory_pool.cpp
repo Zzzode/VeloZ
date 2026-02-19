@@ -710,4 +710,136 @@ KJ_TEST("ThreadSafeArena: String copy") {
   KJ_EXPECT(copied == original);
 }
 
+// =======================================================================================
+// ResettableArenaPool Tests
+// =======================================================================================
+
+KJ_TEST("ResettableArenaPool: Basic allocation") {
+  ResettableArenaPool pool(4096);
+
+  int* value = pool.allocate<int>(42);
+  KJ_EXPECT(*value == 42);
+  KJ_EXPECT(pool.allocationCount() == 1);
+  KJ_EXPECT(pool.totalAllocatedBytes() >= sizeof(int));
+}
+
+KJ_TEST("ResettableArenaPool: Multiple allocations") {
+  ResettableArenaPool pool(4096);
+
+  int* v1 = pool.allocate<int>(1);
+  int* v2 = pool.allocate<int>(2);
+  int* v3 = pool.allocate<int>(3);
+
+  KJ_EXPECT(*v1 == 1);
+  KJ_EXPECT(*v2 == 2);
+  KJ_EXPECT(*v3 == 3);
+  KJ_EXPECT(pool.allocationCount() == 3);
+}
+
+KJ_TEST("ResettableArenaPool: Reset clears allocations") {
+  ResettableArenaPool pool(4096);
+
+  pool.allocate<int>(1);
+  pool.allocate<int>(2);
+  KJ_EXPECT(pool.allocationCount() == 2);
+
+  pool.reset();
+
+  KJ_EXPECT(pool.allocationCount() == 0);
+  KJ_EXPECT(pool.totalAllocatedBytes() == 0);
+
+  // Can allocate again after reset
+  int* v = pool.allocate<int>(42);
+  KJ_EXPECT(*v == 42);
+  KJ_EXPECT(pool.allocationCount() == 1);
+}
+
+KJ_TEST("ResettableArenaPool: Array allocation") {
+  ResettableArenaPool pool(4096);
+
+  auto arr = pool.allocateArray<int>(10);
+  KJ_EXPECT(arr.size() == 10);
+
+  for (size_t i = 0; i < arr.size(); ++i) {
+    arr[i] = static_cast<int>(i);
+  }
+
+  for (size_t i = 0; i < arr.size(); ++i) {
+    KJ_EXPECT(arr[i] == static_cast<int>(i));
+  }
+}
+
+KJ_TEST("ResettableArenaPool: String copy") {
+  ResettableArenaPool pool(4096);
+
+  kj::StringPtr original = "Test string for arena"_kj;
+  kj::StringPtr copied = pool.copyString(original);
+
+  KJ_EXPECT(copied == original);
+  KJ_EXPECT(pool.allocationCount() == 1);
+}
+
+KJ_TEST("ResettableArenaPool: Batch processing pattern") {
+  ResettableArenaPool pool(4096);
+
+  // Simulate batch processing
+  for (int batch = 0; batch < 3; ++batch) {
+    // Allocate batch items
+    for (int i = 0; i < 10; ++i) {
+      int* value = pool.allocate<int>(batch * 10 + i);
+      KJ_EXPECT(*value == batch * 10 + i);
+    }
+    KJ_EXPECT(pool.allocationCount() == 10);
+
+    // Reset for next batch
+    pool.reset();
+    KJ_EXPECT(pool.allocationCount() == 0);
+  }
+}
+
+KJ_TEST("ThreadSafeResettableArenaPool: Basic allocation") {
+  ThreadSafeResettableArenaPool pool(4096);
+
+  int* value = pool.allocate<int>(42);
+  KJ_EXPECT(*value == 42);
+  KJ_EXPECT(pool.allocationCount() == 1);
+}
+
+KJ_TEST("ThreadSafeResettableArenaPool: Concurrent allocations") {
+  ThreadSafeResettableArenaPool pool(4096);
+  constexpr int num_threads = 4;
+  constexpr int allocations_per_thread = 100;
+
+  std::vector<std::thread> threads;
+  threads.reserve(num_threads);
+
+  for (int t = 0; t < num_threads; ++t) {
+    threads.emplace_back([&pool, t]() {
+      for (int i = 0; i < allocations_per_thread; ++i) {
+        int* value = pool.allocate<int>(t * allocations_per_thread + i);
+        KJ_EXPECT(*value == t * allocations_per_thread + i);
+      }
+    });
+  }
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  KJ_EXPECT(pool.allocationCount() == num_threads * allocations_per_thread);
+}
+
+KJ_TEST("ThreadSafeResettableArenaPool: Reset") {
+  ThreadSafeResettableArenaPool pool(4096);
+
+  pool.allocate<int>(1);
+  pool.allocate<int>(2);
+  KJ_EXPECT(pool.allocationCount() == 2);
+
+  pool.reset();
+
+  KJ_EXPECT(pool.allocationCount() == 0);
+  KJ_EXPECT(pool.totalAllocatedBytes() == 0);
+}
+
 } // namespace

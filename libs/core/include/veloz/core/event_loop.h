@@ -1,24 +1,61 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
+#include <chrono>  // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
 #include <cstdint>
-#include <functional> // std::function used for task callbacks, EventFilter, EventRouter
+#include <functional>  // std::function - kj::Function is not copyable, std::priority_queue requires copyable elements
 #include <kj/async.h>
+#include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/function.h>
 #include <kj/map.h>
-#include <kj/memory.h> // kj::Maybe used for priority filter
+#include <kj/memory.h>  // kj::Maybe used for priority filter
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/table.h>
 #include <kj/timer.h>
 #include <kj/vector.h>
-#include <queue>
-#include <regex>
-#include <vector> // std::vector used for EventTag containers
+#include <queue>   // std::priority_queue - KJ does not provide a priority queue implementation
+#include <regex>   // std::regex - KJ does not provide regex functionality
+#include <vector>  // std::vector - used with std::priority_queue which requires STL containers
 
 namespace veloz::core {
+
+// =======================================================================================
+// std Library Usage Justification (KJ Migration Analysis)
+// =======================================================================================
+//
+// The following std library types are retained because KJ does not provide equivalents
+// or the KJ equivalents have limitations that prevent their use in this context:
+//
+// 1. std::function<void()>
+//    - Used for: Task callbacks, EventFilter, EventRouter
+//    - Why not kj::Function: kj::Function is not copyable, but std::priority_queue
+//      requires copyable elements. Task structs containing callbacks must be copyable
+//      for the priority queue to work correctly.
+//
+// 2. std::priority_queue<Task, std::vector<Task>, std::greater<>>
+//    - Used for: Priority-based task scheduling
+//    - Why not KJ: KJ does not provide a priority queue implementation. The priority
+//      queue is essential for executing higher-priority events before lower-priority ones.
+//
+// 3. std::vector<EventTag>
+//    - Used for: Storing event tags in Task struct
+//    - Why not kj::Vector: std::priority_queue requires STL-compatible containers.
+//      Using kj::Vector would require custom adapters for std::priority_queue.
+//
+// 4. std::regex
+//    - Used for: Tag pattern filtering (add_tag_filter)
+//    - Why not KJ: KJ does not provide regex functionality. Tag filtering requires
+//      pattern matching capabilities that only std::regex provides.
+//
+// 5. std::chrono::steady_clock
+//    - Used for: Task enqueue timestamps, deadline tracking
+//    - Why not KJ: kj::TimePoint and kj::Duration are designed for async I/O timing,
+//      not for measuring elapsed wall-clock time. std::chrono::steady_clock provides
+//      monotonic time suitable for measuring task queue wait times and deadlines.
+//
+// =======================================================================================
 
 /**
  * @brief Event priority enumeration
@@ -43,7 +80,9 @@ enum class EventPriority : uint8_t {
  *
  * Events can be tagged with strings to enable filtering and routing
  * based on event types, categories, or sources.
- * Note: Using std::vector for STL container compatibility (priority_queue)
+ *
+ * @note Uses kj::String for the tag value itself, but stored in std::vector
+ *       for STL container compatibility with std::priority_queue.
  */
 using EventTag = kj::String;
 
@@ -52,7 +91,10 @@ using EventTag = kj::String;
  *
  * A filter function that returns true if an event should be processed.
  * The filter receives the event tags and can decide based on them.
- * Note: Using std::function for STL container compatibility
+ *
+ * @note Uses std::function instead of kj::Function because kj::Function is not
+ *       copyable, but std::priority_queue requires copyable elements in Task struct.
+ * @note Uses std::vector<EventTag> for STL container compatibility with priority_queue.
  */
 using EventFilter = std::function<bool(const std::vector<EventTag>&)>;
 
@@ -60,7 +102,10 @@ using EventFilter = std::function<bool(const std::vector<EventTag>&)>;
  * @brief Event routing function
  *
  * Routes an event to a specific handler based on its tags.
- * Note: Using std::function for STL container compatibility
+ *
+ * @note Uses std::function instead of kj::Function because kj::Function is not
+ *       copyable, but std::priority_queue requires copyable elements in Task struct.
+ * @note Uses std::vector<EventTag> for STL container compatibility with priority_queue.
  */
 using EventRouter = std::function<void(const std::vector<EventTag>&, std::function<void()>)>;
 
@@ -170,11 +215,23 @@ public:
   void clear_router();
 
 private:
+  /**
+   * @brief Internal task representation for the priority queue
+   *
+   * @note std library types are used here because:
+   *   - std::function<void()>: kj::Function is not copyable, but std::priority_queue
+   *     requires copyable elements. Task must be copyable for queue operations.
+   *   - std::vector<EventTag>: Required for STL container compatibility with
+   *     std::priority_queue. kj::Vector would require custom adapters.
+   *   - std::chrono::steady_clock::time_point: KJ time types (kj::TimePoint) are
+   *     designed for async I/O timing, not for measuring elapsed wall-clock time.
+   *     steady_clock provides monotonic time for queue wait time measurement.
+   */
   struct Task {
-    std::function<void()> task;
+    std::function<void()> task;  // std::function required: kj::Function not copyable
     EventPriority priority;
-    std::vector<EventTag> tags;
-    std::chrono::steady_clock::time_point enqueue_time;
+    std::vector<EventTag> tags;  // std::vector required: STL container for priority_queue
+    std::chrono::steady_clock::time_point enqueue_time;  // steady_clock: monotonic time
 
     Task() = default;
     Task(const Task& other)
@@ -234,18 +291,33 @@ private:
   kj::Promise<void> process_next_task();
   kj::Promise<void> schedule_delayed_tasks();
 
-  // Queue state (protected by KJ mutex for thread-safe access)
+  /**
+   * @brief Queue state (protected by KJ mutex for thread-safe access)
+   *
+   * @note Uses std::priority_queue because KJ does not provide a priority queue
+   *       implementation. Priority-based task scheduling is essential for executing
+   *       higher-priority events (e.g., Critical) before lower-priority ones (e.g., Low).
+   * @note Uses std::vector as the underlying container because std::priority_queue
+   *       requires STL-compatible containers.
+   */
   struct QueueState {
+    // std::priority_queue required: KJ does not provide priority queue implementation
     std::priority_queue<Task, std::vector<Task>, std::greater<>> tasks;
     std::priority_queue<DelayedTask, std::vector<DelayedTask>, std::greater<>> delayed_tasks;
   };
 
-  // Filter state (protected by KJ mutex)
+  /**
+   * @brief Filter state (protected by KJ mutex)
+   *
+   * @note Uses std::regex for tag pattern matching because KJ does not provide
+   *       regex functionality. Tag filtering requires pattern matching capabilities.
+   * @note Uses kj::HashMap and kj::HashSet for filter storage (KJ equivalents available).
+   */
   struct FilterState {
     kj::HashSet<uint64_t> active_filters;
     uint64_t next_filter_id = 0;
     kj::HashMap<uint64_t, std::pair<EventFilter, kj::Maybe<EventPriority>>> filters;
-    kj::HashMap<uint64_t, std::regex> tag_filters;
+    kj::HashMap<uint64_t, std::regex> tag_filters;  // std::regex required: KJ has no regex
     kj::Maybe<EventRouter> router;
   };
 

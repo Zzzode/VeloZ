@@ -1,8 +1,17 @@
 #include "veloz/core/event_loop.h"
 
-#include <chrono>
-#include <iomanip>  // std::setprecision for formatting
-#include <sstream>
+// =======================================================================================
+// std Library Usage Justification (see event_loop.h for full documentation)
+// =======================================================================================
+// - std::chrono::steady_clock: Monotonic time for task queue wait time measurement
+// - std::iomanip/std::sstream: String formatting (kj::str() lacks width specifiers)
+// - std::thread::sleep_for: Brief sleep during timer polling (KJ timer requires manual advance)
+// =======================================================================================
+
+#include <chrono>   // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
+#include <iomanip>  // std::setprecision - kj::str() lacks width/precision specifiers
+#include <sstream>  // std::ostringstream - kj::str() lacks width/precision specifiers
+#include <thread>   // std::this_thread::sleep_for - for timer polling with kj::TimerImpl
 #include <kj/async.h>
 #include <kj/common.h>
 #include <kj/debug.h>
@@ -372,15 +381,20 @@ void EventLoop::run() {
     // This is the KJ-idiomatic way to wait without busy-polling
     auto combined = wake_promise.exclusiveJoin(kj::mv(timeout_promise));
 
-    // Update timer to current time
-    kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
-
-    // Poll the event loop to process the combined promise
+    // Process the combined promise using KJ's event loop
+    // Note: kj::TimerImpl requires manual time advancement, so we use poll() + advanceTo()
+    // instead of wait() which would block indefinitely with a mock timer
     if (!stop_requested_.load()) {
-      // Run the event loop to process pending promises
-      // This will return when either the wake fulfiller is triggered
-      // or the timeout expires
-      kj_state.event_loop.run(1);
+      // Advance timer to current time to trigger any expired timeouts
+      kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
+
+      // Poll the event loop to process pending promises
+      // This processes any ready promises without blocking
+      while (!wait_scope.poll() && !stop_requested_.load()) {
+        // If no promises are ready, sleep briefly and advance timer
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
+      }
     }
 
     // Clear the wake fulfiller
