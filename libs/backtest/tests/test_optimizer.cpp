@@ -2,9 +2,9 @@
 #include "veloz/backtest/optimizer.h"
 #include "veloz/strategy/strategy.h"
 
-#include <kj/test.h>
 #include <kj/map.h>
 #include <kj/refcount.h>
+#include <kj/test.h>
 
 using namespace veloz::backtest;
 using namespace veloz::strategy;
@@ -68,7 +68,8 @@ public:
 class TestStrategy : public IStrategy {
 public:
   TestStrategy()
-      : id_(kj::str("test_strategy")), name_(kj::str("TestStrategy")), type_(veloz::strategy::StrategyType::Custom) {}
+      : id_(kj::str("test_strategy")), name_(kj::str("TestStrategy")),
+        type_(veloz::strategy::StrategyType::Custom) {}
   ~TestStrategy() noexcept(false) override = default;
 
   kj::StringPtr get_id() const override {

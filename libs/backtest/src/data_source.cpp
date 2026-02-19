@@ -1,14 +1,11 @@
 #include "veloz/backtest/data_source.h"
 
-#include "veloz/core/json.h"
-#include "veloz/core/logger.h"
-
 // std library includes with justifications
 #include <algorithm>  // std::transform, std::remove_if - standard algorithms (no KJ equivalent)
 #include <chrono>     // std::chrono - wall clock time (KJ time is async I/O only)
-#include <filesystem> // std::filesystem - file operations (no KJ equivalent)
-#include <format>     // std::format - C++20 formatting (no KJ equivalent)
+#include <filesystem> // std::filesystem::create_directories - KJ doesn't provide equivalent
 #include <fstream>    // std::ifstream, std::ofstream - file I/O (no KJ equivalent)
+#include <iomanip>    // std::fixed, std::setprecision - formatting (no KJ equivalent)
 #include <iostream>   // std::cerr - error output (no KJ equivalent)
 #include <mutex>      // std::mutex - rate limiting with static state (no KJ equivalent for static)
 #include <random>     // std::random_device, std::mt19937 - KJ has no RNG
@@ -17,9 +14,16 @@
 
 // KJ library includes
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/exception.h>
+#include <kj/filesystem.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/vector.h>
+
+// VeloZ includes (after KJ to avoid header ordering issues)
+#include "veloz/core/json.h"
+#include "veloz/core/logger.h"
 
 #ifndef VELOZ_NO_CURL
 #include <curl/curl.h>
@@ -60,8 +64,12 @@ public:
     cleanup();
   }
 
-  CURL* get() const { return handle_; }
-  explicit operator bool() const { return handle_ != nullptr; }
+  CURL* get() const {
+    return handle_;
+  }
+  explicit operator bool() const {
+    return handle_ != nullptr;
+  }
 
 private:
   void cleanup() {
@@ -78,19 +86,20 @@ private:
 #ifndef VELOZ_NO_CURL
 // Static helper for CURL write callback - uses kj::ArrayPtr<char> instead of void*/char*
 size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
-  auto str_ptr = static_cast<std::string*>(userp);
-  auto data_ptr = kj::ArrayPtr<char>(static_cast<char*>(contents), size * nmemb);
-  str_ptr->append(data_ptr.begin(), data_ptr.end());
-  return size * nmemb;
+  size_t total_size = size * nmemb;
+  auto* buffer = static_cast<kj::Vector<char>*>(userp);
+  auto data_ptr = kj::ArrayPtr<char>(static_cast<char*>(contents), total_size);
+  buffer->addAll(data_ptr.begin(), data_ptr.end());
+  return total_size;
 }
 
-std::string http_get(kj::StringPtr url) {
+kj::String http_get(kj::StringPtr url) {
   CurlHandle curl;
   if (!curl) {
-    return "";
+    return kj::str("");
   }
 
-  std::string response_string;
+  kj::Vector<char> response_string;
 
   curl_easy_setopt(curl.get(), CURLOPT_URL, url.cStr());
   curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
@@ -105,7 +114,8 @@ std::string http_get(kj::StringPtr url) {
 
   // RAII cleanup happens automatically via CurlHandle destructor
 
-  return response_string;
+  response_string.add('\0');
+  return kj::String(response_string.releaseAsArray());
 }
 #endif
 
@@ -150,6 +160,19 @@ bool is_valid_time_frame(kj::StringPtr time_frame) {
   return false;
 }
 
+kj::String to_lower_ascii(kj::StringPtr input) {
+  auto chars = kj::heapArray<char>(input.size() + 1);
+  for (size_t i = 0; i < input.size(); ++i) {
+    char c = input[i];
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+    chars[i] = c;
+  }
+  chars[input.size()] = '\0';
+  return kj::String(kj::mv(chars));
+}
+
 } // anonymous namespace
 
 namespace veloz::backtest {
@@ -192,158 +215,195 @@ CSVDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::int6
   kj::Vector<veloz::market::MarketEvent> events;
   veloz::core::Logger logger;
 
-  // Construct file path: data_directory / symbol_data_type.csv
+  // Construct file path using kj::Path: data_directory / symbol_data_type.csv
   // Example: /data/BTCUSDT_trade.csv or /data/BTCUSDT_kline_1h.csv
-  std::filesystem::path file_path;
+  auto dataDir = kj::Path::parse("."_kj).eval(data_directory_);
+  kj::Path file_path = kj::mv(dataDir).append(
+      data_type == "kline"_kj && time_frame.size() > 0
+          ? kj::str(symbol, "_", time_frame, ".csv")
+          : kj::str(symbol, "_", data_type, ".csv"));
 
-  if (data_type == "kline"_kj && time_frame.size() > 0) {
-    file_path = std::filesystem::path(data_directory_.cStr()) /
-                (std::string(symbol.cStr()) + "_" + std::string(time_frame.cStr()) + ".csv");
-  } else {
-    file_path = std::filesystem::path(data_directory_.cStr()) /
-                (std::string(symbol.cStr()) + "_" + std::string(data_type.cStr()) + ".csv");
-  }
+  bool filePathAbsolute = data_directory_.size() > 0 && data_directory_[0] == '/';
+  auto path_str = file_path.toString(filePathAbsolute);
+  logger.info(kj::str("Reading data from: ", path_str.cStr()).cStr());
 
-  logger.info(std::format("Reading data from: {}", file_path.string()));
-
-  // Check if file exists and is readable
-  if (!std::filesystem::exists(file_path)) {
-    logger.error(std::format("File not found: {}", file_path.string()));
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getRoot();
+  if (!root.exists(file_path)) {
+    logger.error(kj::str("File not found: ", path_str.cStr()).cStr());
     return events;
   }
-
-  // Open the file
-  std::ifstream file(file_path);
-  if (!file.is_open()) {
-    logger.error(std::format("Failed to open file: {}", file_path.string()));
-    return events;
-  }
-
-  std::string line;
+  auto file = root.openFile(file_path);
+  auto file_content = file->readAllText();
+  kj::StringPtr file_content_ptr = file_content;
   int line_number = 0;
   int skipped_lines = 0;
 
-  try {
-    while (std::getline(file, line)) {
-      line_number++;
+  // Use KJ exception handling pattern for file reading
+  // kj::runCatchingExceptions returns Maybe<Exception> - contains exception if one was thrown
+  KJ_IF_SOME(
+      outer_exception, kj::runCatchingExceptions([&]() {
+        size_t line_start = 0;
+        for (size_t i = 0; i <= file_content_ptr.size(); ++i) {
+          if (i < file_content_ptr.size() && file_content_ptr[i] != '\n') {
+            continue;
+          }
+          auto line_slice = file_content_ptr.slice(line_start, i);
+          line_start = i + 1;
+          line_number++;
+          if (line_slice.size() == 0) {
+            continue;
+          }
+          if (line_slice[line_slice.size() - 1] == '\r') {
+            line_slice = line_slice.first(line_slice.size() - 1);
+            if (line_slice.size() == 0) {
+              continue;
+            }
+          }
+          kj::String line = kj::heapString(line_slice);
+          kj::StringPtr line_ptr = line;
 
-      // Skip empty lines
-      if (line.empty()) {
-        continue;
-      }
+          // Skip empty lines
+          if (line_ptr.size() == 0) {
+            continue;
+          }
 
-      // Skip header line (contains column names)
-      if (line_number == 1 && (line.find("timestamp") != std::string::npos ||
-                               line.find("Timestamp") != std::string::npos)) {
-        continue;
-      }
+          // Skip header line (contains column names)
+          if (line_number == 1 &&
+              (line_ptr.contains("timestamp"_kj) || line_ptr.contains("Timestamp"_kj))) {
+            continue;
+          }
 
-      // Parse CSV line
-      std::vector<std::string> tokens;
-      std::string token;
-      std::istringstream token_stream(line);
+          // Parse CSV line
+          kj::Vector<kj::String> tokens;
+          size_t token_start = 0;
+          for (size_t j = 0; j <= line_ptr.size(); ++j) {
+            if (j < line_ptr.size() && line_ptr[j] != ',') {
+              continue;
+            }
+            auto token_slice = line_ptr.slice(token_start, j);
+            token_start = j + 1;
+            size_t start = 0;
+            while (start < token_slice.size() &&
+                   (token_slice[start] == ' ' || token_slice[start] == '\t' ||
+                    token_slice[start] == '\r' || token_slice[start] == '\n')) {
+              ++start;
+            }
+            size_t end = token_slice.size();
+            while (end > start &&
+                   (token_slice[end - 1] == ' ' || token_slice[end - 1] == '\t' ||
+                    token_slice[end - 1] == '\r' || token_slice[end - 1] == '\n')) {
+              --end;
+            }
+            auto trimmed = token_slice.slice(start, end);
+            tokens.add(kj::heapString(trimmed));
+          }
 
-      while (std::getline(token_stream, token, ',')) {
-        // Remove surrounding whitespace
-        token.erase(0, token.find_first_not_of(" \t\r\n"));
-        token.erase(token.find_last_not_of(" \t\r\n") + 1);
-        tokens.push_back(token);
-      }
+          // Validate minimum number of columns
+          // Expected format: timestamp,symbol,side,price,quantity
+          if (tokens.size() < 5) {
+            skipped_lines++;
+            logger.warn(kj::str("Skipping malformed line ", line_number,
+                                ": insufficient columns (expected 5, got ", tokens.size(), ")")
+                            .cStr());
+            continue;
+          }
 
-      // Validate minimum number of columns
-      // Expected format: timestamp,symbol,side,price,quantity
-      if (tokens.size() < 5) {
-        skipped_lines++;
-        logger.warn(
-            std::format("Skipping malformed line {}: insufficient columns (expected 5, got {})",
-                        line_number, tokens.size()));
-        continue;
-      }
+          // Parse values
+          veloz::market::MarketEvent event;
+          veloz::market::TradeData trade_data;
 
-      // Parse values
-      veloz::market::MarketEvent event;
-      veloz::market::TradeData trade_data;
+          // Use KJ exception handling for parsing individual lines
+          KJ_IF_SOME(
+              inner_exception, kj::runCatchingExceptions([&]() {
+                // Parse timestamp (convert milliseconds to nanoseconds)
+                std::int64_t timestamp_ms = tokens[0].parseAs<long long>();
+                event.ts_exchange_ns = timestamp_ms * 1'000'000; // ms to ns
+                event.ts_recv_ns = event.ts_exchange_ns;
+                event.ts_pub_ns = event.ts_exchange_ns;
 
-      try {
-        // Parse timestamp (convert milliseconds to nanoseconds)
-        std::int64_t timestamp_ms = std::stoll(tokens[0]);
-        event.ts_exchange_ns = timestamp_ms * 1'000'000; // ms to ns
-        event.ts_recv_ns = event.ts_exchange_ns;
-        event.ts_pub_ns = event.ts_exchange_ns;
+                // Set symbol
+                event.symbol = veloz::common::SymbolId(tokens[1]);
 
-        // Set symbol
-        event.symbol = veloz::common::SymbolId(kj::str(tokens[1].c_str()));
+                // Set venue (default to Binance for CSV data)
+                event.venue = veloz::common::Venue::Binance;
+                event.market = veloz::common::MarketKind::Spot;
 
-        // Set venue (default to Binance for CSV data)
-        event.venue = veloz::common::Venue::Binance;
-        event.market = veloz::common::MarketKind::Spot;
+                // Parse side and set event type
+                kj::String side_lower = to_lower_ascii(tokens[2]);
 
-        // Parse side and set event type
-        std::string side = tokens[2];
-        std::transform(side.begin(), side.end(), side.begin(), ::tolower);
+                if (side_lower == "buy"_kj) {
+                  trade_data.is_buyer_maker = false;
+                } else if (side_lower == "sell"_kj) {
+                  trade_data.is_buyer_maker = true;
+                } else {
+                  skipped_lines++;
+                  logger.warn(kj::str("Skipping malformed line ", line_number, ": invalid side '",
+                                      side_lower, "'")
+                                  .cStr());
+                  return;
+                }
 
-        if (side == "buy") {
-          trade_data.is_buyer_maker = false;
-        } else if (side == "sell") {
-          trade_data.is_buyer_maker = true;
-        } else {
-          skipped_lines++;
-          logger.warn(
-              std::format("Skipping malformed line {}: invalid side '{}'", line_number, side));
-          continue;
+                // Parse price
+                trade_data.price = tokens[3].parseAs<double>();
+                if (trade_data.price <= 0) {
+                  skipped_lines++;
+                  logger.warn(kj::str("Skipping malformed line ", line_number, ": invalid price '",
+                                      tokens[3], "'")
+                                  .cStr());
+                  return;
+                }
+
+                // Parse quantity
+                trade_data.qty = tokens[4].parseAs<double>();
+                if (trade_data.qty <= 0) {
+                  skipped_lines++;
+                  logger.warn(kj::str("Skipping malformed line ", line_number,
+                                      ": invalid quantity '", tokens[4], "'")
+                                  .cStr());
+                  return;
+                }
+
+                // Set trade_id (use line number as fallback)
+                trade_data.trade_id = static_cast<std::int64_t>(line_number);
+
+                // Set event type
+                event.type = veloz::market::MarketEventType::Trade;
+                event.data = trade_data;
+
+                // Create JSON payload for backward compatibility
+                event.payload = kj::str("{\"type\":\"trade\",\"symbol\":\"", tokens[1],
+                                        "\",\"timestamp\":", timestamp_ms, ",\"price\":",
+                                        trade_data.price, ",\"quantity\":", trade_data.qty,
+                                        ",\"side\":\"", tokens[2], "\"}");
+
+                // Apply time filters
+                if (start_time > 0 && event.ts_exchange_ns < start_time * 1'000'000) {
+                  return;
+                }
+                if (end_time > 0 && event.ts_exchange_ns > end_time * 1'000'000) {
+                  return;
+                }
+
+                events.add(kj::mv(event));
+              })) {
+            // Inner exception occurred - log and continue to next line
+            skipped_lines++;
+            logger.warn(kj::str("Skipping malformed line ", line_number, ": ",
+                                inner_exception.getDescription())
+                            .cStr());
+          }
         }
 
-        // Parse price
-        trade_data.price = std::stod(tokens[3]);
-        if (trade_data.price <= 0) {
-          skipped_lines++;
-          logger.warn(std::format("Skipping malformed line {}: invalid price '{}'", line_number,
-                                  tokens[3]));
-          continue;
-        }
-
-        // Parse quantity
-        trade_data.qty = std::stod(tokens[4]);
-        if (trade_data.qty <= 0) {
-          skipped_lines++;
-          logger.warn(std::format("Skipping malformed line {}: invalid quantity '{}'", line_number,
-                                  tokens[4]));
-          continue;
-        }
-
-        // Set trade_id (use line number as fallback)
-        trade_data.trade_id = static_cast<std::int64_t>(line_number);
-
-        // Set event type
-        event.type = veloz::market::MarketEventType::Trade;
-        event.data = trade_data;
-
-        // Create JSON payload for backward compatibility
-        event.payload = kj::str(std::format(
-            R"({{"type":"trade","symbol":"{}","timestamp":{},"price":{},"quantity":{},"side":"{}"}})",
-            tokens[1], timestamp_ms, trade_data.price, trade_data.qty, tokens[2]).c_str());
-
-        // Apply time filters
-        if (start_time > 0 && event.ts_exchange_ns < start_time * 1'000'000) {
-          continue;
-        }
-        if (end_time > 0 && event.ts_exchange_ns > end_time * 1'000'000) {
-          continue;
-        }
-
-        events.add(kj::mv(event));
-
-      } catch (const std::exception& e) {
-        skipped_lines++;
-        logger.warn(std::format("Skipping malformed line {}: {}", line_number, e.what()));
-      }
-    }
-
-    logger.info(std::format("Successfully read {} events from {} (skipped {} malformed lines)",
-                            events.size(), file_path.string(), skipped_lines));
-
-  } catch (const std::exception& e) {
-    logger.error(std::format("Error reading file {}: {}", file_path.string(), e.what()));
+        logger.info(kj::str("Successfully read ", events.size(), " events from ",
+                            path_str.cStr(), " (skipped ", skipped_lines,
+                            " malformed lines)")
+                        .cStr());
+      })) {
+    // Outer exception occurred - log file reading error
+    logger.error(kj::str("Error reading file ", path_str.cStr(), ": ",
+                         outer_exception.getDescription())
+                     .cStr());
   }
 
   return events;
@@ -366,8 +426,10 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
   }
 
   if (end_time <= start_time) {
-    logger.error(std::format("download_data: end_time ({}) must be greater than start_time ({})",
-                             end_time, start_time));
+    logger.error(
+        kj::str("download_data: end_time (", end_time, ") must be greater than start_time (",
+                start_time, ")")
+            .cStr());
     return false;
   }
 
@@ -379,34 +441,45 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
   // For this implementation, we only support "trade" data type
   // Other data types can be implemented in the future (kline, book)
   if (data_type != "trade"_kj) {
-    logger.error(std::format(
-        "download_data: Unsupported data type '{}'. Only 'trade' is supported.", data_type.cStr()));
+    logger.error(
+        kj::str("download_data: Unsupported data type '", data_type, "'. Only 'trade' is supported.")
+            .cStr());
     return false;
   }
 
-  // Create output directory if it doesn't exist
-  std::filesystem::path output_file_path(output_path.cStr());
+  // Create output directory if it doesn't exist using kj::Path
+  kj::Path output_file_path = kj::Path::parse("."_kj).eval(output_path);
 
+  bool outputPathAbsolute = output_path.size() > 0 && output_path[0] == '/';
   try {
-    std::filesystem::path output_dir = output_file_path.parent_path();
-    if (!output_dir.empty() && !std::filesystem::exists(output_dir)) {
-      if (!std::filesystem::create_directories(output_dir)) {
-        logger.error(std::format("download_data: Failed to create output directory: {}",
-                                 output_dir.string()));
-        return false;
+    // kj::Path::parent() returns parent directory
+    auto parent = output_file_path.parent();
+    if (parent.size() > 0) {
+      auto parent_str = parent.toString(outputPathAbsolute);
+      if (!std::filesystem::exists(parent_str.cStr())) {
+        // Use std::filesystem::create_directories - KJ doesn't provide equivalent
+        if (!std::filesystem::create_directories(parent_str.cStr())) {
+          logger.error(kj::str("download_data: Failed to create output directory: ",
+                               parent_str.cStr())
+                           .cStr());
+          return false;
+        }
+        logger.info(kj::str("Created output directory: ", parent_str.cStr()).cStr());
       }
-      logger.info(std::format("Created output directory: {}", output_dir.string()));
     }
   } catch (const std::filesystem::filesystem_error& e) {
-    logger.error(std::format("download_data: Filesystem error creating directory: {}", e.what()));
+    logger.error(
+        kj::str("download_data: Filesystem error creating directory: ", e.what()).cStr());
     return false;
   }
 
-  // Open output file
-  std::ofstream output_file(output_file_path);
+  // Open output file - convert kj::Path string representation to const char*
+  auto output_path_str = output_file_path.toString(outputPathAbsolute);
+  std::ofstream output_file(output_path_str.cStr());
   if (!output_file.is_open()) {
-    logger.error(std::format("download_data: Failed to open output file for writing: {}",
-                             output_file_path.string()));
+    logger.error(kj::str("download_data: Failed to open output file for writing: ",
+                         output_path_str.cStr())
+                     .cStr());
     return false;
   }
 
@@ -415,8 +488,8 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
 
   // Initialize random number generator with seed based on symbol and start_time
   // This ensures deterministic output for the same parameters
-  std::uint64_t seed = static_cast<std::uint64_t>(std::hash<std::string>{}(symbol.cStr())) ^
-                       static_cast<std::uint64_t>(start_time);
+  std::uint64_t seed =
+      static_cast<std::uint64_t>(kj::hashCode(symbol)) ^ static_cast<std::uint64_t>(start_time);
   std::mt19937_64 rng(seed);
 
   // Synthetic data generation parameters
@@ -433,8 +506,9 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
   const std::int64_t avg_trade_interval_ms = 100;
   const std::int64_t total_trades = std::max(std::int64_t(1), duration_ms / avg_trade_interval_ms);
 
-  logger.info(std::format("Generating {} synthetic trade records for symbol {} from {} to {}",
-                          total_trades, symbol.cStr(), start_time, end_time));
+  logger.info(kj::str("Generating ", total_trades, " synthetic trade records for symbol ", symbol,
+                      " from ", start_time, " to ", end_time)
+                  .cStr());
 
   // Generate synthetic data using geometric Brownian motion with trend
   double current_price = base_price;
@@ -459,7 +533,7 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
     double quantity = qty_dist(rng);
 
     // Generate random side (buy/sell)
-    std::string side = side_dist(rng) ? "buy" : "sell";
+    kj::StringPtr side = side_dist(rng) ? "buy"_kj : "sell"_kj;
 
     // Advance time with some randomness
     std::int64_t time_increment =
@@ -467,21 +541,24 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
     current_time = std::min(current_time + time_increment, end_time);
 
     // Format price to 2 decimal places
-    std::string price_str = std::format("{:.2f}", current_price);
+    std::ostringstream price_oss;
+    price_oss << std::fixed << std::setprecision(2) << current_price;
+    kj::String price_str = kj::str(price_oss.str().c_str());
 
     // Format quantity to appropriate precision (up to 6 decimal places)
-    std::string qty_str;
+    std::ostringstream qty_oss;
     if (quantity < 0.01) {
-      qty_str = std::format("{:.6f}", quantity);
+      qty_oss << std::fixed << std::setprecision(6) << quantity;
     } else if (quantity < 1.0) {
-      qty_str = std::format("{:.4f}", quantity);
+      qty_oss << std::fixed << std::setprecision(4) << quantity;
     } else {
-      qty_str = std::format("{:.2f}", quantity);
+      qty_oss << std::fixed << std::setprecision(2) << quantity;
     }
+    kj::String qty_str = kj::str(qty_oss.str().c_str());
 
     // Write CSV record
-    output_file << current_time << "," << symbol.cStr() << "," << side << "," << price_str << ","
-                << qty_str << "\n";
+    output_file << current_time << "," << symbol.cStr() << "," << side.cStr() << ","
+                << price_str.cStr() << "," << qty_str.cStr() << "\n";
 
     records_written++;
   }
@@ -490,13 +567,15 @@ bool CSVDataSource::download_data(kj::StringPtr symbol, std::int64_t start_time,
 
   // Verify file was written successfully
   if (!output_file.good()) {
-    logger.error(std::format("download_data: Error occurred while writing to file: {}",
-                             output_file_path.string()));
+    logger.error(kj::str("download_data: Error occurred while writing to file: ",
+                         output_path_str.cStr())
+                     .cStr());
     return false;
   }
 
-  logger.info(std::format("Successfully generated {} trade records to: {}", records_written,
-                          output_file_path.string()));
+  logger.info(kj::str("Successfully generated ", records_written, " trade records to: ",
+                      output_path_str.cStr())
+                  .cStr());
 
   return true;
 }
@@ -542,18 +621,19 @@ BinanceDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::
 
   // Validate time frame for kline data
   if (data_type == "kline"_kj && !is_valid_time_frame(effective_time_frame)) {
-    logger.error(std::format("Binance API: invalid time frame '{}'. Valid frames: 1s, 1m, 3m, 5m, "
-                             "15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M",
-                             effective_time_frame.cStr()));
+    logger.error(kj::str("Binance API: invalid time frame '", effective_time_frame,
+                         "'. Valid frames: 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, "
+                         "3d, 1w, 1M")
+                     .cStr());
     return events;
   }
 
   // Default to kline if data_type not specified
   kj::String effective_data_type = data_type.size() == 0 ? kj::str("kline") : kj::str(data_type);
 
-  logger.info(std::format("Binance API: Fetching {} data for {} from {} to {} (time frame: {})",
-                          effective_data_type.cStr(), symbol.cStr(), start_time, end_time,
-                          effective_time_frame.cStr()));
+  logger.info(kj::str("Binance API: Fetching ", effective_data_type, " data for ", symbol, " from ",
+                      start_time, " to ", end_time, " (time frame: ", effective_time_frame, ")")
+                  .cStr());
 
   kj::String formatted_symbol = format_symbol(symbol);
   std::int64_t current_start_time = start_time;
@@ -582,142 +662,178 @@ BinanceDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::
       rate_limit_wait();
 
       // Fetch data with retry
-      std::string response;
+      kj::String response;
       for (int retry = 0; retry < max_retries_; ++retry) {
         response = http_get(kj::StringPtr(url.str().c_str()));
 
-        if (!response.empty()) {
+        if (response.size() > 0) {
           break;
         }
 
         if (retry < max_retries_ - 1) {
-          logger.warn(std::format("Binance API: Request failed, retrying ({}/{})...", retry + 1,
-                                  max_retries_));
+          logger.warn(
+              kj::str("Binance API: Request failed, retrying (", retry + 1, "/", max_retries_,
+                      ")...")
+                  .cStr());
           std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms_ * (retry + 1)));
         }
       }
 
-      if (response.empty()) {
+      if (response.size() == 0) {
         logger.error("Binance API: Failed to fetch data after all retries");
         break;
       }
 
-      // Parse JSON response
-      try {
-        auto doc = JsonDocument::parse(response);
-        auto root = doc.root();
+      // Parse JSON response using KJ exception handling
+      bool should_break = false;
+      bool should_continue = false;
+      KJ_IF_SOME(
+          outer_exception, kj::runCatchingExceptions([&]() {
+            auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
+            auto root = doc.root();
 
-        // Check for API error response
-        auto code = root["code"];
-        auto msg = root["msg"];
-        if (code.is_int() && msg.is_string()) {
-          int code_val = code.get_int();
-          std::string msg_val = msg.get_string();
+            // Check for API error response
+            auto code = root["code"];
+            auto msg = root["msg"];
+            if (code.is_int() && msg.is_string()) {
+              int code_val = code.get_int();
+              kj::String msg_val = kj::str(msg.get_string().c_str());
 
-          // Handle rate limit errors (429)
-          if (code_val == -1003 || code_val == -1021) {
-            logger.warn(std::format(
-                "Binance API: Rate limit exceeded (code {}), waiting and retrying...", code_val));
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            continue; // Retry same request
-          }
+              // Handle rate limit errors (429)
+              if (code_val == -1003 || code_val == -1021) {
+                logger.warn(kj::str("Binance API: Rate limit exceeded (code ", code_val,
+                                    "), waiting and retrying...")
+                                .cStr());
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                should_continue = true;
+                return;
+              }
 
-          logger.error(std::format("Binance API error (code {}): {}", code_val, msg_val));
-          break;
-        }
+              logger.error(
+                  kj::str("Binance API error (code ", code_val, "): ", msg_val.cStr()).cStr());
+              should_break = true;
+              return;
+            }
 
-        // Parse klines array
-        if (!root.is_array()) {
-          logger.error("Binance API: Unexpected response format (expected array)");
-          break;
-        }
+            // Parse klines array
+            if (!root.is_array()) {
+              logger.error("Binance API: Unexpected response format (expected array)");
+              should_break = true;
+              return;
+            }
 
-        int klines_in_batch = 0;
-        for (size_t i = 0; i < root.size(); ++i) {
-          const auto kline = root[i];
-          if (!kline.is_array() || kline.size() < 11) {
-            continue;
-          }
+            int klines_in_batch = 0;
+            for (size_t i = 0; i < root.size(); ++i) {
+              const auto kline = root[i];
+              if (!kline.is_array() || kline.size() < 11) {
+                continue;
+              }
 
-          try {
-            veloz::market::MarketEvent event;
-            veloz::market::KlineData kline_data;
+              // Use KJ exception handling for parsing individual klines
+              KJ_IF_SOME(inner_exception, kj::runCatchingExceptions([&]() {
+                           veloz::market::MarketEvent event;
+                           veloz::market::KlineData kline_data;
 
-            // Binance kline format:
-            // [0] Open time
-            // [1] Open price
-            // [2] High price
-            // [3] Low price
-            // [4] Close price
-            // [5] Volume
-            // [6] Close time
-            // [7] Quote asset volume
-            // [8] Number of trades
-            // [9] Taker buy base asset volume
-            // [10] Taker buy quote asset volume
+                           // Binance kline format:
+                           // [0] Open time
+                           // [1] Open price
+                           // [2] High price
+                           // [3] Low price
+                           // [4] Close price
+                           // [5] Volume
+                           // [6] Close time
+                           // [7] Quote asset volume
+                           // [8] Number of trades
+                           // [9] Taker buy base asset volume
+                           // [10] Taker buy quote asset volume
 
-            kline_data.start_time = kline[0].get_int(0LL);
-            kline_data.open = std::stod(kline[1].get_string());
-            kline_data.high = std::stod(kline[2].get_string());
-            kline_data.low = std::stod(kline[3].get_string());
-            kline_data.close = std::stod(kline[4].get_string());
-            kline_data.volume = std::stod(kline[5].get_string());
-            kline_data.close_time = kline[6].get_int(0LL);
+                           kline_data.start_time = kline[0].get_int(0LL);
+                           kline_data.open =
+                               kj::StringPtr(kline[1].get_string().c_str()).parseAs<double>();
+                           kline_data.high =
+                               kj::StringPtr(kline[2].get_string().c_str()).parseAs<double>();
+                           kline_data.low =
+                               kj::StringPtr(kline[3].get_string().c_str()).parseAs<double>();
+                           kline_data.close =
+                               kj::StringPtr(kline[4].get_string().c_str()).parseAs<double>();
+                           kline_data.volume =
+                               kj::StringPtr(kline[5].get_string().c_str()).parseAs<double>();
+                           kline_data.close_time = kline[6].get_int(0LL);
 
-            // Set event properties
-            event.type = veloz::market::MarketEventType::Kline;
-            event.venue = veloz::common::Venue::Binance;
-            event.market = veloz::common::MarketKind::Spot;
-            event.symbol = veloz::common::SymbolId(formatted_symbol.cStr());
-            event.ts_exchange_ns = kline_data.start_time * 1'000'000;
-            event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           // Set event properties
+                           event.type = veloz::market::MarketEventType::Kline;
+                           event.venue = veloz::common::Venue::Binance;
+                           event.market = veloz::common::MarketKind::Spot;
+                           event.symbol = veloz::common::SymbolId(formatted_symbol.cStr());
+                           event.ts_exchange_ns = kline_data.start_time * 1'000'000;
+                           event.ts_recv_ns =
+                               std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::system_clock::now().time_since_epoch())
                                    .count();
-            event.ts_pub_ns = event.ts_recv_ns;
-            event.data = kline_data;
-            event.payload = kj::str("");
+                           event.ts_pub_ns = event.ts_recv_ns;
+                           event.data = kline_data;
+                           event.payload = kj::str("");
 
-            // Apply time filters
-            if (start_time > 0 && kline_data.start_time < start_time) {
-              continue;
+                           // Apply time filters
+                           if (start_time > 0 && kline_data.start_time < start_time) {
+                             return;
+                           }
+                           if (end_time > 0 && kline_data.start_time > end_time) {
+                             should_break = true;
+                             return;
+                           }
+
+                           events.add(kj::mv(event));
+                           klines_in_batch++;
+
+                           // Update start time for next pagination
+                           current_start_time = kline_data.close_time + 1;
+                         })) {
+                // Inner exception - log and continue to next kline
+                logger.warn(
+                    kj::str("Binance API: Failed to parse kline data: ",
+                            inner_exception.getDescription())
+                        .cStr());
+              }
+
+              if (should_break) {
+                break;
+              }
             }
-            if (end_time > 0 && kline_data.start_time > end_time) {
-              break; // No more data within range
+
+            total_klines += klines_in_batch;
+            request_count++;
+
+            // Check if we got fewer klines than limit - we've reached end
+            if (klines_in_batch < kline_limit) {
+              logger.info(kj::str("Binance API: Fetched ", total_klines, " klines in ",
+                                  request_count, " requests (batch ended with ", klines_in_batch,
+                                  " klines)")
+                              .cStr());
+              should_break = true;
+              return;
             }
 
-            events.add(kj::mv(event));
-            klines_in_batch++;
+            // Small delay between paginated requests to respect rate limits
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          })) {
+        // Outer exception - log and break
+        logger.error(
+            kj::str("Binance API: Unexpected error: ", outer_exception.getDescription()).cStr());
+        should_break = true;
+      }
 
-            // Update start time for next pagination
-            current_start_time = kline_data.close_time + 1;
-
-          } catch (const std::exception& e) {
-            logger.warn(std::format("Binance API: Failed to parse kline data: {}", e.what()));
-          }
-        }
-
-        total_klines += klines_in_batch;
-        request_count++;
-
-        // Check if we got fewer klines than limit - we've reached end
-        if (klines_in_batch < kline_limit) {
-          logger.info(std::format(
-              "Binance API: Fetched {} klines in {} requests (batch ended with {} klines)",
-              total_klines, request_count, klines_in_batch));
-          break;
-        }
-
-        // Small delay between paginated requests to respect rate limits
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-      } catch (const std::exception& e) {
-        logger.error(std::format("Binance API: Unexpected error: {}", e.what()));
+      if (should_continue) {
+        continue;
+      }
+      if (should_break) {
         break;
       }
     }
 
-    logger.info(std::format("Binance API: Successfully fetched {} klines for {} ({} requests)",
-                            events.size(), formatted_symbol.cStr(), request_count));
+    logger.info(kj::str("Binance API: Successfully fetched ", events.size(), " klines for ",
+                        formatted_symbol, " (", request_count, " requests)")
+                    .cStr());
 
     // Sort events by timestamp
     // Note: kj::Vector doesn't have std::sort compatibility, so we use a simple approach
@@ -744,107 +860,125 @@ BinanceDataSource::get_data(kj::StringPtr symbol, std::int64_t start_time, std::
     rate_limit_wait();
 
     // Fetch data with retry
-    std::string response;
+    kj::String response;
     for (int retry = 0; retry < max_retries_; ++retry) {
       response = http_get(kj::StringPtr(url.str().c_str()));
 
-      if (!response.empty()) {
+      if (response.size() > 0) {
         break;
       }
 
       if (retry < max_retries_ - 1) {
-        logger.warn(std::format("Binance API: Request failed, retrying ({}/{})...", retry + 1,
-                                max_retries_));
+        logger.warn(
+            kj::str("Binance API: Request failed, retrying (", retry + 1, "/", max_retries_,
+                    ")...")
+                .cStr());
         std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms_ * (retry + 1)));
       }
     }
 
-    if (response.empty()) {
+    if (response.size() == 0) {
       logger.error("Binance API: Failed to fetch trades data");
       return events;
     }
 
-    // Parse JSON response
-    try {
-      auto doc = JsonDocument::parse(response);
-      auto root = doc.root();
+    // Parse JSON response using KJ exception handling
+    KJ_IF_SOME(outer_exception, kj::runCatchingExceptions([&]() {
+                 auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
+                 auto root = doc.root();
 
-      // Check for API error response
-      auto code = root["code"];
-      auto msg = root["msg"];
-      if (code.is_int() && msg.is_string()) {
-        int code_val = code.get_int();
-        std::string msg_val = msg.get_string();
-        logger.error(std::format("Binance API error (code {}): {}", code_val, msg_val));
-        return events;
-      }
+                 // Check for API error response
+                 auto code = root["code"];
+                 auto msg = root["msg"];
+                 if (code.is_int() && msg.is_string()) {
+                   int code_val = code.get_int();
+                   kj::String msg_val = kj::str(msg.get_string().c_str());
+                   logger.error(
+                       kj::str("Binance API error (code ", code_val, "): ", msg_val.cStr())
+                           .cStr());
+                   return;
+                 }
 
-      if (!root.is_array()) {
-        logger.error("Binance API: Unexpected trades response format (expected array)");
-        return events;
-      }
+                 if (!root.is_array()) {
+                   logger.error("Binance API: Unexpected trades response format (expected array)");
+                   return;
+                 }
 
-      for (size_t i = 0; i < root.size(); ++i) {
-        const auto trade = root[i];
-        try {
-          veloz::market::MarketEvent event;
-          veloz::market::TradeData trade_data;
+                 bool should_break = false;
+                 for (size_t i = 0; i < root.size(); ++i) {
+                   const auto trade = root[i];
 
-          // Binance trade format:
-          // id: trade ID
-          // price: price
-          // qty: quantity
-          // time: timestamp
-          // isBuyerMaker: true if buyer is maker
-          // isBestMatch: true if best match
+                   // Use KJ exception handling for parsing individual trades
+                   KJ_IF_SOME(inner_exception, kj::runCatchingExceptions([&]() {
+                                veloz::market::MarketEvent event;
+                                veloz::market::TradeData trade_data;
 
-          trade_data.price = std::stod(trade["price"].get_string());
-          trade_data.qty = std::stod(trade["qty"].get_string());
-          trade_data.trade_id = trade["id"].get_int(0LL);
-          trade_data.is_buyer_maker = trade["isBuyerMaker"].get_bool(false);
+                                // Binance trade format:
+                                // id: trade ID
+                                // price: price
+                                // qty: quantity
+                                // time: timestamp
+                                // isBuyerMaker: true if buyer is maker
+                                // isBestMatch: true if best match
 
-          std::int64_t trade_time = trade["time"].get_int(0LL);
+                                trade_data.price = std::stod(trade["price"].get_string());
+                                trade_data.qty = std::stod(trade["qty"].get_string());
+                                trade_data.trade_id = trade["id"].get_int(0LL);
+                                trade_data.is_buyer_maker = trade["isBuyerMaker"].get_bool(false);
 
-          // Set event properties
-          event.type = veloz::market::MarketEventType::Trade;
-          event.venue = veloz::common::Venue::Binance;
-          event.market = veloz::common::MarketKind::Spot;
-          event.symbol = veloz::common::SymbolId(formatted_symbol.cStr());
-          event.ts_exchange_ns = trade_time * 1'000'000;
-          event.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                 std::chrono::system_clock::now().time_since_epoch())
-                                 .count();
-          event.ts_pub_ns = event.ts_recv_ns;
-          event.data = trade_data;
-          event.payload = kj::str("");
+                                std::int64_t trade_time = trade["time"].get_int(0LL);
 
-          // Apply time filters
-          if (start_time > 0 && trade_time < start_time) {
-            continue;
-          }
-          if (end_time > 0 && trade_time > end_time) {
-            break; // No more data within range
-          }
+                                // Set event properties
+                                event.type = veloz::market::MarketEventType::Trade;
+                                event.venue = veloz::common::Venue::Binance;
+                                event.market = veloz::common::MarketKind::Spot;
+                                event.symbol = veloz::common::SymbolId(formatted_symbol.cStr());
+                                event.ts_exchange_ns = trade_time * 1'000'000;
+                                event.ts_recv_ns =
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::system_clock::now().time_since_epoch())
+                                        .count();
+                                event.ts_pub_ns = event.ts_recv_ns;
+                                event.data = trade_data;
+                                event.payload = kj::str("");
 
-          events.add(kj::mv(event));
+                                // Apply time filters
+                                if (start_time > 0 && trade_time < start_time) {
+                                  return;
+                                }
+                                if (end_time > 0 && trade_time > end_time) {
+                                  should_break = true;
+                                  return;
+                                }
 
-        } catch (const std::exception& e) {
-          logger.warn(std::format("Binance API: Failed to parse trade data: {}", e.what()));
-        }
-      }
+                                events.add(kj::mv(event));
+                              })) {
+                     // Inner exception - log and continue to next trade
+                     logger.warn(kj::str("Binance API: Failed to parse trade data: ",
+                                         inner_exception.getDescription())
+                                     .cStr());
+                   }
 
-      logger.info(std::format("Binance API: Successfully fetched {} trades for {}", events.size(),
-                              formatted_symbol.cStr()));
+                   if (should_break) {
+                     break;
+                   }
+                 }
 
-    } catch (const std::exception& e) {
-      logger.error(std::format("Binance API: Unexpected error: {}", e.what()));
+                 logger.info(kj::str("Binance API: Successfully fetched ", events.size(),
+                                     " trades for ", formatted_symbol)
+                                 .cStr());
+               })) {
+      // Outer exception - log error
+      logger.error(
+          kj::str("Binance API: Unexpected error: ", outer_exception.getDescription()).cStr());
     }
 
     return events;
   }
 
-  logger.error(std::format("Binance API: Unsupported data type '{}'. Supported types: kline, trade",
-                           effective_data_type.cStr()));
+  logger.error(kj::str("Binance API: Unsupported data type '", effective_data_type,
+                       "'. Supported types: kline, trade")
+                   .cStr());
   return events;
 #endif
 }
@@ -918,8 +1052,10 @@ bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_t
   }
 
   if (end_time <= start_time) {
-    logger.error(std::format("download_data: end_time ({}) must be greater than start_time ({})",
-                             end_time, start_time));
+    logger.error(
+        kj::str("download_data: end_time (", end_time, ") must be greater than start_time (",
+                start_time, ")")
+            .cStr());
     return false;
   }
 
@@ -935,9 +1071,10 @@ bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_t
   // For now, we only support "kline" data type (candlestick data)
   // Trade data and orderbook data can be added later
   if (data_type != "kline"_kj) {
-    logger.error(std::format(
-        "download_data: Unsupported data type '{}'. Only 'kline' is currently supported.",
-        data_type.cStr()));
+    logger.error(
+        kj::str("download_data: Unsupported data type '", data_type,
+                "'. Only 'kline' is currently supported.")
+            .cStr());
     return false;
   }
 
@@ -947,35 +1084,46 @@ bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_t
   }
 
   if (!is_valid_time_frame(time_frame)) {
-    logger.error(std::format("download_data: Invalid time frame '{}'. Valid values: 1s, 1m, 3m, "
-                             "5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M",
-                             time_frame.cStr()));
+    logger.error(kj::str("download_data: Invalid time frame '", time_frame,
+                         "'. Valid values: 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, "
+                         "3d, 1w, 1M")
+                     .cStr());
     return false;
   }
 
-  // Create output directory if it doesn't exist
-  std::filesystem::path output_file_path(output_path.cStr());
+  // Create output directory if it doesn't exist using kj::Path
+  kj::Path output_file_path = kj::Path::parse("."_kj).eval(output_path);
 
+  bool outputPathAbsolute = output_path.size() > 0 && output_path[0] == '/';
   try {
-    std::filesystem::path output_dir = output_file_path.parent_path();
-    if (!output_dir.empty() && !std::filesystem::exists(output_dir)) {
-      if (!std::filesystem::create_directories(output_dir)) {
-        logger.error(std::format("download_data: Failed to create output directory: {}",
-                                 output_dir.string()));
-        return false;
+    // kj::Path::parent() returns parent directory
+    auto parent = output_file_path.parent();
+    if (parent.size() > 0) {
+      auto parent_str = parent.toString(outputPathAbsolute);
+      if (!std::filesystem::exists(parent_str.cStr())) {
+        // Use std::filesystem::create_directories - KJ doesn't provide equivalent
+        if (!std::filesystem::create_directories(parent_str.cStr())) {
+          logger.error(kj::str("download_data: Failed to create output directory: ",
+                               parent_str.cStr())
+                           .cStr());
+          return false;
+        }
+        logger.info(kj::str("Created output directory: ", parent_str.cStr()).cStr());
       }
-      logger.info(std::format("Created output directory: {}", output_dir.string()));
     }
   } catch (const std::filesystem::filesystem_error& e) {
-    logger.error(std::format("download_data: Filesystem error creating directory: {}", e.what()));
+    logger.error(
+        kj::str("download_data: Filesystem error creating directory: ", e.what()).cStr());
     return false;
   }
 
-  // Open output file
-  std::ofstream output_file(output_file_path);
+  // Open output file - convert kj::Path string representation to const char*
+  auto output_path_str = output_file_path.toString(outputPathAbsolute);
+  std::ofstream output_file(output_path_str.cStr());
   if (!output_file.is_open()) {
-    logger.error(std::format("download_data: Failed to open output file for writing: {}",
-                             output_file_path.string()));
+    logger.error(kj::str("download_data: Failed to open output file for writing: ",
+                         output_path_str.cStr())
+                     .cStr());
     return false;
   }
 
@@ -986,8 +1134,9 @@ bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_t
   // Format symbol for Binance API (uppercase)
   kj::String formatted_symbol = format_symbol(symbol);
 
-  logger.info(std::format("Downloading kline data for {} from {} to {} (time frame: {})",
-                          formatted_symbol.cStr(), start_time, end_time, time_frame.cStr()));
+  logger.info(kj::str("Downloading kline data for ", formatted_symbol, " from ", start_time,
+                      " to ", end_time, " (time frame: ", time_frame, ")")
+                  .cStr());
 
   // Binance API returns at most 1000 klines per request
   // We need to paginate through the time range
@@ -1045,102 +1194,123 @@ bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_t
         << "&startTime=" << current_start_time << "&endTime=" << request_end_time
         << "&limit=" << MAX_KLINES_PER_REQUEST;
 
-    logger.info(std::format("Fetching klines from {} to {}", current_start_time, request_end_time));
+    logger.info(
+        kj::str("Fetching klines from ", current_start_time, " to ", request_end_time).cStr());
 
     // Fetch data from Binance API
-    std::string response = http_get(kj::StringPtr(url.str().c_str()));
+    kj::String response = http_get(kj::StringPtr(url.str().c_str()));
 
-    if (response.empty()) {
+    if (response.size() == 0) {
       logger.error(
-          std::format("download_data: Empty response from Binance API for request: {}", url.str()));
+          kj::str("download_data: Empty response from Binance API for request: ", url.str().c_str())
+              .cStr());
       output_file.close();
       return false;
     }
 
-    // Parse JSON response
-    try {
-      auto doc = JsonDocument::parse(response);
-      auto root = doc.root();
+    // Parse JSON response using KJ exception handling
+    bool parse_error = false;
+    bool should_break = false;
+    KJ_IF_SOME(
+        exception, kj::runCatchingExceptions([&]() {
+          auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
+          auto root = doc.root();
 
-      // Check for error
-      auto code = root["code"];
-      if (code.is_int()) {
-        auto msg = root["msg"];
-        logger.error(std::format("Binance API error: {} - {}", code.get_int(), msg.get_string()));
-        output_file.close();
-        return false;
-      }
+          // Check for error
+          auto code = root["code"];
+          if (code.is_int()) {
+            auto msg = root["msg"];
+            // Convert std::string to c_str() for kj::str() compatibility
+            logger.error(kj::str("Binance API error: ", code.get_int(), " - ", msg.get_string().c_str())
+                             .cStr());
+            parse_error = true;
+            return;
+          }
 
-      if (!root.is_array()) {
-        logger.error(std::format("Binance API returned unexpected response format"));
-        output_file.close();
-        return false;
-      }
+          if (!root.is_array()) {
+            logger.error("Binance API returned unexpected response format");
+            parse_error = true;
+            return;
+          }
 
-      // Process klines
-      // Each kline is an array: [open_time, open, high, low, close, volume, close_time,
-      // quote_volume, trades, taker_buy_base, taker_buy_quote, ignore]
-      for (size_t i = 0; i < root.size(); ++i) {
-        const auto kline = root[i];
-        if (!kline.is_array() || kline.size() < 12) {
-          continue;
-        }
+          // Process klines
+          // Each kline is an array: [open_time, open, high, low, close, volume, close_time,
+          // quote_volume, trades, taker_buy_base, taker_buy_quote, ignore]
+          for (size_t i = 0; i < root.size(); ++i) {
+            const auto kline = root[i];
+            if (!kline.is_array() || kline.size() < 12) {
+              continue;
+            }
 
-        std::int64_t open_time = kline[0].get_int(0LL);
-        double open = std::stod(kline[1].get_string());
-        double close = std::stod(kline[4].get_string());
-        double volume = std::stod(kline[5].get_string());
-        double taker_buy_base = std::stod(kline[9].get_string()); // Base asset buy volume
-        [[maybe_unused]] double taker_buy_quote =
-            std::stod(kline[10].get_string()); // Quote asset buy volume
+            std::int64_t open_time = kline[0].get_int(0LL);
+            double open = kj::StringPtr(kline[1].get_string().c_str()).parseAs<double>();
+            double close = kj::StringPtr(kline[4].get_string().c_str()).parseAs<double>();
+            double volume = kj::StringPtr(kline[5].get_string().c_str()).parseAs<double>();
+            double taker_buy_base =
+                kj::StringPtr(kline[9].get_string().c_str()).parseAs<double>(); // Base asset buy volume
+            [[maybe_unused]] double taker_buy_quote =
+                kj::StringPtr(kline[10].get_string().c_str()).parseAs<double>(); // Quote asset buy volume
 
-        // Generate synthetic trade data from kline
-        // We create two trades: one buy at open, one sell at close
-        // This approximates the candle's price movement
+            // Generate synthetic trade data from kline
+            // We create two trades: one buy at open, one sell at close
+            // This approximates the candle's price movement
 
-        // Trade 1: Buy at open (taker buy at open)
-        std::int64_t trade1_time = open_time;
-        std::string trade1_side = "buy";
-        double trade1_price = open;
-        // Estimate quantity from volume (assume even distribution across trades)
-        double trade1_qty = taker_buy_base / 2.0; // Half of taker buy volume at open
+            // Trade 1: Buy at open (taker buy at open)
+            std::int64_t trade1_time = open_time;
+            kj::StringPtr trade1_side = "buy"_kj;
+            double trade1_price = open;
+            // Estimate quantity from volume (assume even distribution across trades)
+            double trade1_qty = taker_buy_base / 2.0; // Half of taker buy volume at open
 
-        // Trade 2: Sell at close (seller initiated at close)
-        std::int64_t trade2_time = open_time + interval_ms;
-        std::string trade2_side = "sell";
-        double trade2_price = close;
-        double trade2_qty = (volume - taker_buy_base) / 2.0; // Half of maker sell volume at close
+            // Trade 2: Sell at close (seller initiated at close)
+            std::int64_t trade2_time = open_time + interval_ms;
+            kj::StringPtr trade2_side = "sell"_kj;
+            double trade2_price = close;
+            double trade2_qty =
+                (volume - taker_buy_base) / 2.0; // Half of maker sell volume at close
 
-        // Ensure quantities are positive
-        if (trade1_qty <= 0)
-          trade1_qty = volume / 4.0;
-        if (trade2_qty <= 0)
-          trade2_qty = volume / 4.0;
+            // Ensure quantities are positive
+            if (trade1_qty <= 0)
+              trade1_qty = volume / 4.0;
+            if (trade2_qty <= 0)
+              trade2_qty = volume / 4.0;
 
-        // Write trade 1
-        output_file << trade1_time << "," << formatted_symbol.cStr() << "," << trade1_side << ","
-                    << std::fixed << std::setprecision(8) << trade1_price << "," << std::fixed
-                    << std::setprecision(8) << trade1_qty << "\n";
+            // Write trade 1
+            output_file << trade1_time << "," << formatted_symbol.cStr() << ","
+                        << trade1_side.cStr()
+                        << "," << std::fixed << std::setprecision(8) << trade1_price << ","
+                        << std::fixed << std::setprecision(8) << trade1_qty << "\n";
 
-        // Write trade 2
-        output_file << trade2_time << "," << formatted_symbol.cStr() << "," << trade2_side << ","
-                    << std::fixed << std::setprecision(8) << trade2_price << "," << std::fixed
-                    << std::setprecision(8) << trade2_qty << "\n";
+            // Write trade 2
+            output_file << trade2_time << "," << formatted_symbol.cStr() << ","
+                        << trade2_side.cStr()
+                        << "," << std::fixed << std::setprecision(8) << trade2_price << ","
+                        << std::fixed << std::setprecision(8) << trade2_qty << "\n";
 
-        total_klines++;
-      }
+            total_klines++;
+          }
 
-      logger.info(std::format("Processed {} klines", root.size()));
+          logger.info(kj::str("Processed ", root.size(), " klines").cStr());
 
-      // If we got fewer klines than requested, we've reached the end
-      if (root.size() < MAX_KLINES_PER_REQUEST) {
-        break;
-      }
-
-    } catch (const std::exception& e) {
-      logger.error(std::format("download_data: JSON parsing error: {}", e.what()));
+          // If we got fewer klines than requested, we've reached the end
+          if (root.size() < MAX_KLINES_PER_REQUEST) {
+            should_break = true;
+          }
+        })) {
+      // Exception occurred - log and return error
+      logger.error(
+          kj::str("download_data: JSON parsing error: ", exception.getDescription()).cStr());
       output_file.close();
       return false;
+    }
+
+    if (parse_error) {
+      output_file.close();
+      return false;
+    }
+
+    if (should_break) {
+      break;
     }
 
     // Advance to next time window
@@ -1151,13 +1321,15 @@ bool BinanceDataSource::download_data(kj::StringPtr symbol, std::int64_t start_t
 
   // Verify file was written successfully
   if (!output_file.good()) {
-    logger.error(std::format("download_data: Error occurred while writing to file: {}",
-                             output_file_path.string()));
+    logger.error(kj::str("download_data: Error occurred while writing to file: ",
+                         output_path_str.cStr())
+                     .cStr());
     return false;
   }
 
-  logger.info(std::format("Successfully downloaded {} klines to: {}", total_klines,
-                          output_file_path.string()));
+  logger.info(kj::str("Successfully downloaded ", total_klines, " klines to: ",
+                      output_path_str.cStr())
+                  .cStr());
 
   return true;
 #endif // VELOZ_NO_CURL
@@ -1181,7 +1353,7 @@ kj::Rc<IDataSource> DataSourceFactory::create_data_source(kj::StringPtr type) {
     return kj::rc<BinanceDataSource>();
   }
 
-  logger.error(std::format("Unknown data source type: {}", type.cStr()));
+  logger.error(kj::str("Unknown data source type: ", type).cStr());
 
   return nullptr;
 }

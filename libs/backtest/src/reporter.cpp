@@ -3,11 +3,13 @@
 #include "veloz/core/logger.h"
 
 // std library includes with justifications
-#include <fstream>  // std::ofstream - file I/O (no KJ equivalent)
-#include <sstream>  // std::stringstream - string building (no KJ equivalent)
+#include <fstream> // std::ofstream - file I/O (no KJ equivalent)
+#include <sstream> // std::stringstream - string building (no KJ equivalent)
 
 // KJ library includes
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/exception.h>
 #include <kj/memory.h>
 #include <kj/string.h>
 
@@ -25,30 +27,28 @@ BacktestReporter::BacktestReporter() : impl_(kj::heap<Impl>()) {}
 BacktestReporter::~BacktestReporter() noexcept {}
 
 bool BacktestReporter::generate_report(const BacktestResult& result, kj::StringPtr output_path) {
-  impl_->logger->info(std::format("Generating report to: {}", output_path.cStr()));
-
-  // TODO: Implement report generation
-  // For now, just create a simple HTML file
+  impl_->logger->info(kj::str("Generating report to: ", output_path).cStr());
 
   kj::String html_content = generate_html_report(result);
 
-  // Write to file
-  try {
-    std::ofstream out_file(output_path.cStr());
-    if (!out_file.is_open()) {
-      impl_->logger->error(std::format("Failed to open file: {}", output_path.cStr()));
-      return false;
-    }
+  // Write to file using KJ exception handling pattern
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               std::ofstream out_file(output_path.cStr());
+               if (!out_file.is_open()) {
+                 impl_->logger->error(kj::str("Failed to open file for writing: ", output_path).cStr());
+                 return;
+               }
 
-    out_file << html_content.cStr();
-    out_file.close();
+               out_file << html_content.cStr();
+               out_file.close();
 
-    impl_->logger->info(std::format("Report generated successfully: {}", output_path.cStr()));
-    return true;
-  } catch (const std::exception& e) {
-    impl_->logger->error(std::format("Failed to write report: {}", e.what()));
+               impl_->logger->info(kj::str("Report generated successfully: ", output_path).cStr());
+             })) {
+    impl_->logger->error(kj::str("Failed to write report: ", exception.getDescription()).cStr());
     return false;
   }
+
+  return true;
 }
 
 kj::String BacktestReporter::generate_html_report(const BacktestResult& result) {

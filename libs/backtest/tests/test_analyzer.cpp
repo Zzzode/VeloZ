@@ -1,8 +1,8 @@
 #include "veloz/backtest/analyzer.h"
 
-#include <kj/test.h>
 #include <kj/memory.h>
 #include <kj/string.h>
+#include <kj/test.h>
 #include <kj/vector.h>
 
 using namespace veloz::backtest;

@@ -32,8 +32,8 @@ public:
   virtual const kj::TreeMap<kj::String, double>& get_best_parameters() const = 0;
 
   // kj::TreeMap: KJ-native ordered map for parameter ranges (min, max pairs)
-  virtual void set_parameter_ranges(
-      const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) = 0;
+  virtual void
+  set_parameter_ranges(const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) = 0;
   virtual void set_optimization_target(kj::StringPtr target) = 0; // "sharpe", "return", "win_rate"
   virtual void set_max_iterations(int iterations) = 0;
   // kj::Rc: matches DataSourceFactory return type for reference-counted ownership
@@ -51,8 +51,8 @@ public:
   kj::Vector<BacktestResult> get_results() const override;
   const kj::TreeMap<kj::String, double>& get_best_parameters() const override;
 
-  void set_parameter_ranges(
-      const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) override;
+  void
+  set_parameter_ranges(const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) override;
   void set_optimization_target(kj::StringPtr target) override;
   void set_max_iterations(int iterations) override;
   void set_data_source(kj::Rc<IDataSource> data_source) override;
@@ -73,8 +73,8 @@ public:
   kj::Vector<BacktestResult> get_results() const override;
   const kj::TreeMap<kj::String, double>& get_best_parameters() const override;
 
-  void set_parameter_ranges(
-      const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) override;
+  void
+  set_parameter_ranges(const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) override;
   void set_optimization_target(kj::StringPtr target) override;
   void set_max_iterations(int iterations) override;
   void set_data_source(kj::Rc<IDataSource> data_source) override;

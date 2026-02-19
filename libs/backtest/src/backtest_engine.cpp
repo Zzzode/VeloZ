@@ -5,8 +5,7 @@
 #include "veloz/market/market_event.h"
 #include "veloz/oms/position.h"
 
-#include <cmath>   // std::abs, std::min - standard C++ math functions (no KJ equivalent)
-#include <format>  // std::format - C++20 formatting (no KJ equivalent)
+#include <cmath> // std::abs, std::min - standard C++ math functions (no KJ equivalent)
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/hash.h>
@@ -71,7 +70,9 @@ double calculate_fill_price(double base_price, veloz::exec::OrderSide side, doub
 
 // Hash function for kj::String to use with kj::HashMap
 struct StringHash {
-  inline size_t operator()(const kj::String& s) const { return kj::hashCode(s.asPtr()); }
+  inline size_t operator()(const kj::String& s) const {
+    return kj::hashCode(s.asPtr());
+  }
 };
 
 struct BacktestEngine::Impl {
@@ -103,7 +104,7 @@ BacktestEngine::BacktestEngine() : impl_(kj::heap<Impl>()) {}
 BacktestEngine::~BacktestEngine() noexcept {}
 
 bool BacktestEngine::initialize(const BacktestConfig& config) {
-  impl_->logger->info(std::format("Initializing backtest engine"));
+  impl_->logger->info("Initializing backtest engine");
   impl_->config.strategy_name = kj::str(config.strategy_name);
   impl_->config.symbol = kj::str(config.symbol);
   impl_->config.start_time = config.start_time;
@@ -111,7 +112,10 @@ bool BacktestEngine::initialize(const BacktestConfig& config) {
   impl_->config.initial_balance = config.initial_balance;
   impl_->config.risk_per_trade = config.risk_per_trade;
   impl_->config.max_position_size = config.max_position_size;
-  impl_->config.strategy_parameters = config.strategy_parameters;
+  impl_->config.strategy_parameters.clear();
+  for (const auto& entry : config.strategy_parameters) {
+    impl_->config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+  }
   impl_->config.data_source = kj::str(config.data_source);
   impl_->config.data_type = kj::str(config.data_type);
   impl_->config.time_frame = kj::str(config.time_frame);
@@ -137,27 +141,27 @@ bool BacktestEngine::initialize(const BacktestConfig& config) {
 
 bool BacktestEngine::run() {
   if (!impl_->is_initialized) {
-    impl_->logger->error(std::format("Backtest engine not initialized"));
+    impl_->logger->error("Backtest engine not initialized");
     return false;
   }
 
   if (impl_->strategy == nullptr) {
-    impl_->logger->error(std::format("No strategy set"));
+    impl_->logger->error("No strategy set");
     return false;
   }
 
   if (impl_->data_source == nullptr) {
-    impl_->logger->error(std::format("No data source set"));
+    impl_->logger->error("No data source set");
     return false;
   }
 
-  impl_->logger->info(std::format("Starting backtest"));
+  impl_->logger->info("Starting backtest");
   impl_->is_running = true;
 
-  try {
+  auto runBacktest = [&]() -> bool {
     // Connect to data source
     if (!impl_->data_source->connect()) {
-      impl_->logger->error(std::format("Failed to connect to data source"));
+      impl_->logger->error("Failed to connect to data source");
       impl_->is_running = false;
       return false;
     }
@@ -174,13 +178,12 @@ bool BacktestEngine::run() {
     strategy_config.risk_per_trade = impl_->config.risk_per_trade;
     strategy_config.max_position_size = impl_->config.max_position_size;
     strategy_config.symbols.add(kj::str(impl_->config.symbol));
-    // Convert std::map<std::string, double> to kj::TreeMap<kj::String, double>
-    for (const auto& [key, value] : impl_->config.strategy_parameters) {
-      strategy_config.parameters.insert(kj::str(key.c_str()), value);
+    for (const auto& entry : impl_->config.strategy_parameters) {
+      strategy_config.parameters.insert(kj::str(entry.key), entry.value);
     }
 
     if (!impl_->strategy->initialize(strategy_config, *impl_->logger)) {
-      impl_->logger->error(std::format("Failed to initialize strategy"));
+      impl_->logger->error("Failed to initialize strategy");
       impl_->data_source->disconnect();
       impl_->is_running = false;
       return false;
@@ -202,14 +205,14 @@ bool BacktestEngine::run() {
       auto signals = impl_->strategy->get_signals();
 
       // Get current price from market event for order simulation
-      KJ_IF_SOME (current_price, get_price_from_event(event)) {
+      KJ_IF_SOME(current_price, get_price_from_event(event)) {
         // Process each signal (order request)
         for (const auto& signal : signals) {
           kj::StringPtr symbol = signal.symbol.value;
           double qty = signal.qty;
 
           if (qty <= 0.0) {
-            impl_->logger->warn(std::format("Invalid quantity: {} for signal", qty));
+            impl_->logger->warn(kj::str("Invalid quantity: ", qty, " for signal").cStr());
             continue;
           }
 
@@ -218,10 +221,11 @@ bool BacktestEngine::run() {
           veloz::oms::Position* position_ptr = nullptr;
           KJ_IF_SOME(existing, impl_->positions.find(symbol_key)) {
             position_ptr = &existing;
-          } else {
+          }
+          else {
             // insert() returns Entry& which has .key and .value members
-            auto& entry = impl_->positions.insert(kj::str(symbol_key),
-                veloz::oms::Position{veloz::common::SymbolId(symbol)});
+            auto& entry = impl_->positions.insert(
+                kj::str(symbol_key), veloz::oms::Position{veloz::common::SymbolId(symbol)});
             position_ptr = &entry.value;
           }
           auto& position = *position_ptr;
@@ -236,8 +240,10 @@ bool BacktestEngine::run() {
 
           // Check max position size constraint (both long and short)
           if (std::abs(new_size) > impl_->config.max_position_size) {
-            impl_->logger->warn(std::format("Order rejected: would exceed max position size {}",
-                                            impl_->config.max_position_size));
+            impl_->logger->warn(
+                kj::str("Order rejected: would exceed max position size ",
+                        impl_->config.max_position_size)
+                    .cStr());
             continue;
           }
 
@@ -274,9 +280,11 @@ bool BacktestEngine::run() {
 
           impl_->result.trades.add(kj::mv(trade_record));
 
-          impl_->logger->info(std::format("Order filled: {} {} @ {}, fee: {}, PnL: {}, equity: {}",
-                                          impl_->result.trades.back().side.cStr(), qty, fill_price,
-                                          fee, trade_pnl, impl_->current_equity));
+          impl_->logger->info(
+              kj::str("Order filled: ", impl_->result.trades.back().side, " ", qty, " @ ",
+                      fill_price, ", fee: ", fee, ", PnL: ", trade_pnl,
+                      ", equity: ", impl_->current_equity)
+                  .cStr());
 
           // Notify strategy of position update
           impl_->strategy->on_position_update(position);
@@ -285,7 +293,7 @@ bool BacktestEngine::run() {
 
       // Update progress
       progress += progress_step;
-      KJ_IF_SOME (callback, impl_->progress_callback) {
+      KJ_IF_SOME(callback, impl_->progress_callback) {
         callback(std::min(progress, 1.0));
       }
     }
@@ -301,7 +309,7 @@ bool BacktestEngine::run() {
     for (const auto& entry : impl_->positions) {
       // Use last known price from the last market event for unrealized PnL
       if (market_events.size() > 0) {
-        KJ_IF_SOME (last_price, get_price_from_event(market_events.back())) {
+        KJ_IF_SOME(last_price, get_price_from_event(market_events.back())) {
           total_unrealized_pnl += entry.value.unrealized_pnl(last_price);
         }
       }
@@ -321,11 +329,13 @@ bool BacktestEngine::run() {
     impl_->result.avg_lose = analyzed_result->avg_lose;
 
     impl_->is_running = false;
-    impl_->logger->info(std::format("Backtest completed"));
+    impl_->logger->info("Backtest completed");
 
     return true;
-  } catch (const std::exception& e) {
-    impl_->logger->error(std::format("Backtest failed: {}", e.what()));
+  };
+
+  KJ_IF_SOME(exception, kj::runCatchingExceptions(runBacktest)) {
+    impl_->logger->error(kj::str("Backtest failed: ", exception.getDescription()).cStr());
     impl_->is_running = false;
 
     if (impl_->data_source != nullptr) {
@@ -334,21 +344,23 @@ bool BacktestEngine::run() {
 
     return false;
   }
+
+  return true;
 }
 
 bool BacktestEngine::stop() {
   if (!impl_->is_running) {
-    impl_->logger->warn(std::format("Backtest not running"));
+    impl_->logger->warn("Backtest not running");
     return false;
   }
 
-  impl_->logger->info(std::format("Stopping backtest"));
+  impl_->logger->info("Stopping backtest");
   impl_->is_running = false;
   return true;
 }
 
 bool BacktestEngine::reset() {
-  impl_->logger->info(std::format("Resetting backtest engine"));
+  impl_->logger->info("Resetting backtest engine");
   impl_->config = BacktestConfig();
   impl_->strategy = nullptr;
   impl_->data_source = nullptr;

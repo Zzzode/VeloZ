@@ -1,11 +1,10 @@
 #include "veloz/backtest/data_source.h"
 
-#include <kj/test.h>
-#include <kj/refcount.h>
-
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <kj/refcount.h>
+#include <kj/test.h>
 #include <string>
 
 using namespace veloz::backtest;
@@ -64,7 +63,8 @@ KJ_TEST("CSVDataSource: DownloadData") {
   std::filesystem::remove(test_file);
 
   // Test successful download for trade data
-  bool result = csv_data_source->download_data("BTCUSDT", start_time, end_time, "trade", "", test_file.c_str());
+  bool result = csv_data_source->download_data("BTCUSDT", start_time, end_time, "trade", "",
+                                               test_file.c_str());
   KJ_EXPECT(result);
 
   // Verify file was created
@@ -88,11 +88,16 @@ KJ_TEST("CSVDataSource: DownloadDataInvalidParams") {
   auto csv_data_source = kj::rc<CSVDataSource>();
 
   // Test with invalid parameters
-  KJ_EXPECT(!csv_data_source->download_data("", 1609459200000, 1640995200000, "trade", "", "test.csv")); // Empty symbol
-  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 0, 1640995200000, "trade", "", "test.csv")); // Invalid start_time
-  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1609459200000, 0, "trade", "", "test.csv")); // Invalid end_time
-  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1640995200000, 1609459200000, "trade", "", "test.csv")); // end_time < start_time
-  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h", "test.csv")); // Unsupported data type
+  KJ_EXPECT(!csv_data_source->download_data("", 1609459200000, 1640995200000, "trade", "",
+                                            "test.csv")); // Empty symbol
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 0, 1640995200000, "trade", "",
+                                            "test.csv")); // Invalid start_time
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1609459200000, 0, "trade", "",
+                                            "test.csv")); // Invalid end_time
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1640995200000, 1609459200000, "trade", "",
+                                            "test.csv")); // end_time < start_time
+  KJ_EXPECT(!csv_data_source->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h",
+                                            "test.csv")); // Unsupported data type
 }
 
 // ============================================================================
@@ -131,7 +136,8 @@ KJ_TEST("BinanceDataSource: GetData") {
     return; // Skip test
   }
   auto binance_data_source = kj::rc<BinanceDataSource>();
-  auto events = binance_data_source->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
+  auto events =
+      binance_data_source->get_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h");
   KJ_EXPECT(events.empty()); // Should be empty as not implemented yet
 }
 
@@ -140,7 +146,8 @@ KJ_TEST("BinanceDataSource: DownloadData") {
     return; // Skip test
   }
   auto binance_data_source = kj::rc<BinanceDataSource>();
-  KJ_EXPECT(!binance_data_source->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline", "1h", "test_data.csv"));
+  KJ_EXPECT(!binance_data_source->download_data("BTCUSDT", 1609459200000, 1640995200000, "kline",
+                                                "1h", "test_data.csv"));
 }
 
 // ============================================================================

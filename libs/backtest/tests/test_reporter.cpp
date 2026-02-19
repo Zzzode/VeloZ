@@ -1,10 +1,9 @@
 #include "veloz/backtest/reporter.h"
 
-#include <kj/test.h>
 #include <kj/memory.h>
 #include <kj/string.h>
+#include <kj/test.h>
 #include <kj/vector.h>
-
 #include <string>
 
 using namespace veloz::backtest;
