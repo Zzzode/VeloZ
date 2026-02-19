@@ -45,8 +45,8 @@ std::string HmacSha256::sign(const std::string& key, const std::string& data) {
 
   // Generate HMAC
   HMAC(EVP_sha256(), key.c_str(), static_cast<int>(key.length()),
-       reinterpret_cast<const unsigned char*>(data.c_str()), data.length(),
-       digest_buffer.begin(), &digest_len);
+       reinterpret_cast<const unsigned char*>(data.c_str()), data.length(), digest_buffer.begin(),
+       &digest_len);
 
   // Hex encode signature
   std::string signature;

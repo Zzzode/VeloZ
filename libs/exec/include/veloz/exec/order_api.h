@@ -128,7 +128,7 @@ struct ExecutionReport final {
  * Used for order book data instead of std::pair.
  */
 struct PriceLevel {
-  double price{0.0};  ///< Price at this level
+  double price{0.0};    ///< Price at this level
   double quantity{0.0}; ///< Quantity at this level
 };
 
@@ -139,7 +139,7 @@ struct PriceLevel {
  * Used for recent trades data instead of std::pair.
  */
 struct TradeData {
-  double price{0.0};  ///< Trade price
+  double price{0.0};    ///< Trade price
   double quantity{0.0}; ///< Trade quantity
 };
 

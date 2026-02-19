@@ -1,4 +1,5 @@
 #include "veloz/exec/bybit_adapter.h"
+
 #include "veloz/exec/hmac_wrapper.h"
 
 #include <chrono>
@@ -25,9 +26,9 @@ constexpr int64_t DEFAULT_RECV_WINDOW = 5000;
 
 BybitAdapter::BybitAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key,
                            kj::StringPtr secret_key, Category category, bool testnet)
-    : io_context_(io_context), api_key_(kj::heapString(api_key)), secret_key_(kj::heapString(secret_key)),
-      connected_(false), testnet_(testnet), category_(category),
-      last_activity_time_(kj::systemCoarseMonotonicClock().now()),
+    : io_context_(io_context), api_key_(kj::heapString(api_key)),
+      secret_key_(kj::heapString(secret_key)), connected_(false), testnet_(testnet),
+      category_(category), last_activity_time_(kj::systemCoarseMonotonicClock().now()),
       request_timeout_(30 * kj::SECONDS), rate_limit_window_(1 * kj::SECONDS),
       rate_limit_per_window_(50), max_retries_(3), retry_delay_(1 * kj::SECONDS),
       recv_window_(DEFAULT_RECV_WINDOW) {
@@ -182,7 +183,8 @@ kj::Promise<kj::String> BybitAdapter::http_get_async(kj::StringPtr endpoint, kj:
   auto timestamp = kj::str(get_timestamp_ms());
   auto signature = build_signature(timestamp, params != nullptr ? params : kj::StringPtr());
 
-  return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params != nullptr ? params : kj::StringPtr()),
+  return get_http_client().then([this, endpoint = kj::str(endpoint),
+                                 params = kj::str(params != nullptr ? params : kj::StringPtr()),
                                  timestamp = kj::mv(timestamp),
                                  signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
@@ -248,7 +250,8 @@ BybitAdapter::place_order_async(const PlaceOrderRequest& req) {
     body = kj::str("{\"category\":\"", cat, "\",\"symbol\":\"", symbol, "\",\"side\":\"", side,
                    "\",\"orderType\":\"", type, "\",\"qty\":\"", req.qty, "\",\"price\":\"", price,
                    "\",\"orderLinkId\":\"", req.client_order_id, "\"}");
-  } else {
+  }
+  else {
     body = kj::str("{\"category\":\"", cat, "\",\"symbol\":\"", symbol, "\",\"side\":\"", side,
                    "\",\"orderType\":\"", type, "\",\"qty\":\"", req.qty, "\",\"orderLinkId\":\"",
                    req.client_order_id, "\"}");
@@ -309,9 +312,8 @@ BybitAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) {
   auto cat = category_to_string(category_);
   auto params = kj::str("category=", cat, "&symbol=", formatted_symbol);
 
-  return http_get_async("/v5/market/tickers", params).then([](kj::String response) -> kj::Maybe<double> {
-    return kj::none;
-  });
+  return http_get_async("/v5/market/tickers", params)
+      .then([](kj::String response) -> kj::Maybe<double> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<kj::Array<PriceLevel>>>
@@ -320,9 +322,8 @@ BybitAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int de
   auto cat = category_to_string(category_);
   auto params = kj::str("category=", cat, "&symbol=", formatted_symbol, "&limit=", depth);
 
-  return http_get_async("/v5/market/orderbook", params).then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> {
-    return kj::none;
-  });
+  return http_get_async("/v5/market/orderbook", params)
+      .then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<kj::Array<TradeData>>>
@@ -331,25 +332,23 @@ BybitAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, int
   auto cat = category_to_string(category_);
   auto params = kj::str("category=", cat, "&symbol=", formatted_symbol, "&limit=", limit);
 
-  return http_get_async("/v5/market/recent-trade", params).then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> {
-    return kj::none;
-  });
+  return http_get_async("/v5/market/recent-trade", params)
+      .then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<double>> BybitAdapter::get_account_balance_async(kj::StringPtr asset) {
   auto params = kj::str("accountType=UNIFIED&coin=", asset);
 
-  return http_get_async("/v5/account/wallet-balance", params).then([](kj::String response) -> kj::Maybe<double> {
-    return kj::none;
-  });
+  return http_get_async("/v5/account/wallet-balance", params)
+      .then([](kj::String response) -> kj::Maybe<double> { return kj::none; });
 }
 
 kj::Maybe<double> BybitAdapter::get_current_price(const veloz::common::SymbolId& symbol) {
   return kj::none;
 }
 
-kj::Maybe<kj::Array<PriceLevel>>
-BybitAdapter::get_order_book(const veloz::common::SymbolId& symbol, int depth) {
+kj::Maybe<kj::Array<PriceLevel>> BybitAdapter::get_order_book(const veloz::common::SymbolId& symbol,
+                                                              int depth) {
   return kj::none;
 }
 

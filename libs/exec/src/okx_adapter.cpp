@@ -1,4 +1,5 @@
 #include "veloz/exec/okx_adapter.h"
+
 #include "veloz/exec/hmac_wrapper.h"
 
 #include <chrono>
@@ -196,13 +197,15 @@ kj::Promise<kj::Own<kj::HttpClient>> OKXAdapter::get_http_client() {
 }
 
 kj::Promise<kj::String> OKXAdapter::http_get_async(kj::StringPtr endpoint, kj::StringPtr params) {
+  // std::string used for timestamp/signature due to HMAC generation requiring std::string
   auto timestamp = get_timestamp_iso();
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = build_signature(timestamp, "GET", request_path.cStr());
+  auto signature = build_signature(timestamp, "GET", std::string(request_path.cStr()));
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::heapString(timestamp.c_str()),
+                                 signature = kj::heapString(signature.c_str())](
+                                    kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -226,12 +229,15 @@ kj::Promise<kj::String> OKXAdapter::http_get_async(kj::StringPtr endpoint, kj::S
 }
 
 kj::Promise<kj::String> OKXAdapter::http_post_async(kj::StringPtr endpoint, kj::StringPtr body) {
+  // std::string used for timestamp/signature due to HMAC generation requiring std::string
   auto timestamp = get_timestamp_iso();
-  auto signature = build_signature(timestamp, "POST", endpoint.cStr(), body.cStr());
+  auto signature =
+      build_signature(timestamp, "POST", std::string(endpoint.cStr()), std::string(body.cStr()));
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), body = kj::str(body),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::heapString(timestamp.c_str()),
+                                 signature = kj::heapString(signature.c_str())](
+                                    kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -256,13 +262,15 @@ kj::Promise<kj::String> OKXAdapter::http_post_async(kj::StringPtr endpoint, kj::
 
 kj::Promise<kj::String> OKXAdapter::http_delete_async(kj::StringPtr endpoint,
                                                       kj::StringPtr params) {
+  // std::string used for timestamp/signature due to HMAC generation requiring std::string
   auto timestamp = get_timestamp_iso();
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = build_signature(timestamp, "DELETE", request_path.cStr());
+  auto signature = build_signature(timestamp, "DELETE", std::string(request_path.cStr()));
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::heapString(timestamp.c_str()),
+                                 signature = kj::heapString(signature.c_str())](
+                                    kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -297,7 +305,8 @@ OKXAdapter::place_order_async(const PlaceOrderRequest& req) {
     body = kj::str("{\"instId\":\"", symbol, "\",\"tdMode\":\"cash\",\"side\":\"", side,
                    "\",\"ordType\":\"", type, "\",\"sz\":\"", req.qty, "\",\"px\":\"", price,
                    "\",\"clOrdId\":\"", req.client_order_id, "\"}");
-  } else {
+  }
+  else {
     body = kj::str("{\"instId\":\"", symbol, "\",\"tdMode\":\"cash\",\"side\":\"", side,
                    "\",\"ordType\":\"", type, "\",\"sz\":\"", req.qty, "\",\"clOrdId\":\"",
                    req.client_order_id, "\"}");
@@ -363,10 +372,11 @@ OKXAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) {
   auto formatted_symbol = format_symbol(symbol);
   auto params = kj::str("instId=", formatted_symbol);
 
-  return http_get_async("/api/v5/market/ticker", params).then([](kj::String response) -> kj::Maybe<double> {
-    // Parse response - in production, use proper JSON parsing
-    return kj::none;
-  });
+  return http_get_async("/api/v5/market/ticker", params)
+      .then([](kj::String response) -> kj::Maybe<double> {
+        // Parse response - in production, use proper JSON parsing
+        return kj::none;
+      });
 }
 
 kj::Promise<kj::Maybe<kj::Array<PriceLevel>>>
@@ -374,9 +384,8 @@ OKXAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int dept
   auto formatted_symbol = format_symbol(symbol);
   auto params = kj::str("instId=", formatted_symbol, "&sz=", depth);
 
-  return http_get_async("/api/v5/market/books", params).then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> {
-    return kj::none;
-  });
+  return http_get_async("/api/v5/market/books", params)
+      .then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<kj::Array<TradeData>>>
@@ -384,30 +393,28 @@ OKXAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, int l
   auto formatted_symbol = format_symbol(symbol);
   auto params = kj::str("instId=", formatted_symbol, "&limit=", limit);
 
-  return http_get_async("/api/v5/market/trades", params).then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> {
-    return kj::none;
-  });
+  return http_get_async("/api/v5/market/trades", params)
+      .then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<double>> OKXAdapter::get_account_balance_async(kj::StringPtr asset) {
   auto params = kj::str("ccy=", asset);
 
-  return http_get_async("/api/v5/account/balance", params).then([](kj::String response) -> kj::Maybe<double> {
-    return kj::none;
-  });
+  return http_get_async("/api/v5/account/balance", params)
+      .then([](kj::String response) -> kj::Maybe<double> { return kj::none; });
 }
 
 kj::Maybe<double> OKXAdapter::get_current_price(const veloz::common::SymbolId& symbol) {
   return kj::none;
 }
 
-kj::Maybe<kj::Array<PriceLevel>>
-OKXAdapter::get_order_book(const veloz::common::SymbolId& symbol, int depth) {
+kj::Maybe<kj::Array<PriceLevel>> OKXAdapter::get_order_book(const veloz::common::SymbolId& symbol,
+                                                            int depth) {
   return kj::none;
 }
 
-kj::Maybe<kj::Array<TradeData>>
-OKXAdapter::get_recent_trades(const veloz::common::SymbolId& symbol, int limit) {
+kj::Maybe<kj::Array<TradeData>> OKXAdapter::get_recent_trades(const veloz::common::SymbolId& symbol,
+                                                              int limit) {
   return kj::none;
 }
 

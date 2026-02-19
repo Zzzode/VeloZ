@@ -8,6 +8,7 @@ add_library(veloz_exec
     src/bybit_adapter.cpp
     src/resilient_adapter.cpp
     src/hmac_wrapper.cpp
+    src/reconciliation.cpp
     )
 
 target_include_directories(veloz_exec
@@ -23,6 +24,7 @@ target_link_libraries(veloz_exec
     PRIVATE
         veloz_common
         veloz_core
+        veloz_oms    # For OrderStore in reconciliation
         veloz_risk   # For circuit breaker in resilient adapter
         kj-test
         kj-http      # KJ HTTP client for async HTTP operations
@@ -53,11 +55,13 @@ if(VELOZ_BUILD_TESTS)
         tests/test_binance_adapter.cpp
         tests/test_exchange_adapters.cpp
         tests/test_resilient_adapter.cpp
+        tests/test_reconciliation.cpp
     )
     target_link_libraries(veloz_exec_tests
         PRIVATE
             veloz_exec
             veloz_common
+            veloz_oms
             veloz_risk
             kj-test
             kj-async

@@ -35,7 +35,7 @@ ResilientExchangeAdapter::ResilientExchangeAdapter(kj::Own<ExchangeAdapter> inne
   kj::String adapter_name_copy = kj::str(inner_->name());
   circuit_breaker_.set_state_change_callback(
       [adapter_name = kj::mv(adapter_name_copy)](risk::CircuitState old_state,
-                                                  risk::CircuitState new_state) {
+                                                 risk::CircuitState new_state) {
         KJ_LOG(WARNING, "Circuit breaker state changed", adapter_name.cStr(),
                risk::to_string(old_state), risk::to_string(new_state));
       });
@@ -91,9 +91,8 @@ kj::Maybe<ExecutionReport> ResilientExchangeAdapter::place_order(const PlaceOrde
         throw;
       }
       stats_.retried_requests++;
-      auto delay =
-          calculate_delay(attempts - 1, config_.initial_retry_delay, config_.max_retry_delay,
-                          config_.backoff_multiplier);
+      auto delay = calculate_delay(attempts - 1, config_.initial_retry_delay,
+                                   config_.max_retry_delay, config_.backoff_multiplier);
       sleep_for_duration(delay);
     } catch (const core::TimeoutException& e) {
       circuit_breaker_.record_failure();
@@ -102,9 +101,8 @@ kj::Maybe<ExecutionReport> ResilientExchangeAdapter::place_order(const PlaceOrde
         throw;
       }
       stats_.retried_requests++;
-      auto delay =
-          calculate_delay(attempts - 1, config_.initial_retry_delay, config_.max_retry_delay,
-                          config_.backoff_multiplier);
+      auto delay = calculate_delay(attempts - 1, config_.initial_retry_delay,
+                                   config_.max_retry_delay, config_.backoff_multiplier);
       sleep_for_duration(delay);
     } catch (const core::RateLimitException& e) {
       circuit_breaker_.record_failure();
@@ -160,9 +158,8 @@ kj::Maybe<ExecutionReport> ResilientExchangeAdapter::cancel_order(const CancelOr
         throw;
       }
       stats_.retried_requests++;
-      auto delay =
-          calculate_delay(attempts - 1, config_.initial_retry_delay, config_.max_retry_delay,
-                          config_.backoff_multiplier);
+      auto delay = calculate_delay(attempts - 1, config_.initial_retry_delay,
+                                   config_.max_retry_delay, config_.backoff_multiplier);
       sleep_for_duration(delay);
     } catch (const core::TimeoutException& e) {
       circuit_breaker_.record_failure();
@@ -171,9 +168,8 @@ kj::Maybe<ExecutionReport> ResilientExchangeAdapter::cancel_order(const CancelOr
         throw;
       }
       stats_.retried_requests++;
-      auto delay =
-          calculate_delay(attempts - 1, config_.initial_retry_delay, config_.max_retry_delay,
-                          config_.backoff_multiplier);
+      auto delay = calculate_delay(attempts - 1, config_.initial_retry_delay,
+                                   config_.max_retry_delay, config_.backoff_multiplier);
       sleep_for_duration(delay);
     } catch (const core::RateLimitException& e) {
       circuit_breaker_.record_failure();
@@ -232,9 +228,8 @@ void ResilientExchangeAdapter::connect() {
         throw;
       }
       stats_.retried_requests++;
-      auto delay =
-          calculate_delay(attempts - 1, config_.initial_retry_delay, config_.max_retry_delay,
-                          config_.backoff_multiplier);
+      auto delay = calculate_delay(attempts - 1, config_.initial_retry_delay,
+                                   config_.max_retry_delay, config_.backoff_multiplier);
       sleep_for_duration(delay);
     } catch (const kj::Exception& e) {
       circuit_breaker_.record_failure();

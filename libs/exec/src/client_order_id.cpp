@@ -14,8 +14,7 @@ kj::String ClientOrderIdGenerator::generate() {
   // Note: KJ's time types are for async I/O timing, not wall clock time.
   // std::chrono is used here because we need Unix epoch timestamps for order IDs.
   auto now = std::chrono::system_clock::now();
-  auto timestamp =
-      std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+  auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
 
   ++sequence_;
 

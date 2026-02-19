@@ -1,4 +1,5 @@
 #include "veloz/exec/coinbase_adapter.h"
+
 #include "veloz/exec/hmac_wrapper.h"
 
 #include <chrono>
@@ -181,13 +182,14 @@ kj::Promise<kj::Own<kj::HttpClient>> CoinbaseAdapter::get_http_client() {
 
 kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
                                                         kj::StringPtr params) {
-  auto timestamp = std::to_string(get_timestamp_sec());
+  // std::string used for timestamp/signature due to JWT generation requiring std::string
+  auto timestamp = kj::str(get_timestamp_sec());
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = build_jwt_token("GET", request_path.cStr());
+  auto signature = kj::heapString(build_jwt_token("GET", std::string(request_path.cStr())).c_str());
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -212,12 +214,13 @@ kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
 
 kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
                                                          kj::StringPtr body) {
-  auto timestamp = std::to_string(get_timestamp_sec());
-  auto signature = build_jwt_token("POST", endpoint.cStr());
+  // std::string used for timestamp/signature due to JWT generation requiring std::string
+  auto timestamp = kj::str(get_timestamp_sec());
+  auto signature = kj::heapString(build_jwt_token("POST", std::string(endpoint.cStr())).c_str());
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), body = kj::str(body),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -242,13 +245,15 @@ kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
 
 kj::Promise<kj::String> CoinbaseAdapter::http_delete_async(kj::StringPtr endpoint,
                                                            kj::StringPtr params) {
-  auto timestamp = std::to_string(get_timestamp_sec());
+  // std::string used for timestamp/signature due to JWT generation requiring std::string
+  auto timestamp = kj::str(get_timestamp_sec());
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = build_jwt_token("DELETE", request_path.cStr());
+  auto signature =
+      kj::heapString(build_jwt_token("DELETE", std::string(request_path.cStr())).c_str());
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::str(timestamp.c_str()),
-                                 signature = kj::str(signature.c_str())](kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -282,7 +287,8 @@ CoinbaseAdapter::place_order_async(const PlaceOrderRequest& req) {
                    "\",\"order_configuration\":{\"limit_limit_gtc\":{\"base_size\":\"", req.qty,
                    "\",\"limit_price\":\"", price, "\"}},\"client_order_id\":\"",
                    req.client_order_id, "\"}");
-  } else {
+  }
+  else {
     body = kj::str("{\"product_id\":\"", symbol, "\",\"side\":\"", side,
                    "\",\"order_configuration\":{\"market_market_ioc\":{\"quote_size\":\"", req.qty,
                    "\"}},\"client_order_id\":\"", req.client_order_id, "\"}");
@@ -353,9 +359,8 @@ CoinbaseAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int
   auto endpoint = kj::str("/api/v3/brokerage/products/", formatted_symbol, "/book");
   auto params = kj::str("limit=", depth);
 
-  return http_get_async(endpoint, params).then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> {
-    return kj::none;
-  });
+  return http_get_async(endpoint, params)
+      .then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<kj::Array<TradeData>>>
@@ -363,9 +368,8 @@ CoinbaseAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, 
   auto formatted_symbol = format_symbol(symbol);
   auto endpoint = kj::str("/api/v3/brokerage/products/", formatted_symbol, "/ticker");
 
-  return http_get_async(endpoint, nullptr).then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> {
-    return kj::none;
-  });
+  return http_get_async(endpoint, nullptr)
+      .then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> { return kj::none; });
 }
 
 kj::Promise<kj::Maybe<double>> CoinbaseAdapter::get_account_balance_async(kj::StringPtr asset) {

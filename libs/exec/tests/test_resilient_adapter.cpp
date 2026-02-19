@@ -115,7 +115,7 @@ KJ_TEST("ResilientExchangeAdapter: Successful place order") {
 
   auto resilient_adapter = kj::heap<ResilientExchangeAdapter>(kj::mv(mock_adapter), config);
 
-  resilient_adapter->connect();  // This counts as 1 successful request
+  resilient_adapter->connect(); // This counts as 1 successful request
 
   PlaceOrderRequest req;
   req.symbol = veloz::common::SymbolId("BTCUSDT");
@@ -128,7 +128,8 @@ KJ_TEST("ResilientExchangeAdapter: Successful place order") {
 
   KJ_IF_SOME(report, result) {
     KJ_EXPECT(report.status == OrderStatus::New);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected execution report");
   }
 
@@ -139,7 +140,7 @@ KJ_TEST("ResilientExchangeAdapter: Successful place order") {
 
 KJ_TEST("ResilientExchangeAdapter: Retry on network error") {
   auto mock_adapter = kj::heap<MockExchangeAdapter>();
-  auto* mock_ptr = mock_adapter.get();  // Keep raw pointer before move
+  auto* mock_ptr = mock_adapter.get(); // Keep raw pointer before move
 
   ResilientAdapterConfig config;
   config.max_retries = 3;
@@ -175,7 +176,7 @@ KJ_TEST("ResilientExchangeAdapter: Retry on network error") {
 
 KJ_TEST("ResilientExchangeAdapter: Circuit breaker integration") {
   auto mock_adapter = kj::heap<MockExchangeAdapter>();
-  auto* mock_ptr = mock_adapter.get();  // Keep raw pointer before move
+  auto* mock_ptr = mock_adapter.get(); // Keep raw pointer before move
 
   ResilientAdapterConfig config;
   config.max_retries = 1;
@@ -218,7 +219,7 @@ KJ_TEST("ResilientExchangeAdapter: Circuit breaker integration") {
 
 KJ_TEST("ResilientExchangeAdapter: Circuit breaker trips") {
   auto mock_adapter = kj::heap<MockExchangeAdapter>();
-  auto* mock_ptr = mock_adapter.get();  // Keep raw pointer before move
+  auto* mock_ptr = mock_adapter.get(); // Keep raw pointer before move
 
   ResilientAdapterConfig config;
   config.max_retries = 1;
@@ -252,7 +253,7 @@ KJ_TEST("ResilientExchangeAdapter: Circuit breaker trips") {
 
 KJ_TEST("ResilientExchangeAdapter: Circuit breaker recovery") {
   auto mock_adapter = kj::heap<MockExchangeAdapter>();
-  auto* mock_ptr = mock_adapter.get();  // Keep raw pointer before move
+  auto* mock_ptr = mock_adapter.get(); // Keep raw pointer before move
 
   ResilientAdapterConfig config;
   config.max_retries = 1;
@@ -294,7 +295,7 @@ KJ_TEST("ResilientExchangeAdapter: Circuit breaker recovery") {
 
 KJ_TEST("ResilientExchangeAdapter: Success after failures") {
   auto mock_adapter = kj::heap<MockExchangeAdapter>();
-  auto* mock_ptr = mock_adapter.get();  // Keep raw pointer before move
+  auto* mock_ptr = mock_adapter.get(); // Keep raw pointer before move
 
   ResilientAdapterConfig config;
   config.max_retries = 3;
@@ -359,7 +360,7 @@ KJ_TEST("ResilientExchangeAdapter: Statistics") {
 
   auto resilient_adapter = kj::heap<ResilientExchangeAdapter>(kj::mv(mock_adapter), config);
 
-  resilient_adapter->connect();  // This counts as 1 successful request
+  resilient_adapter->connect(); // This counts as 1 successful request
 
   PlaceOrderRequest req;
   req.symbol = veloz::common::SymbolId("BTCUSDT");

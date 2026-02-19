@@ -2,7 +2,7 @@
 
 #include <kj/array.h>
 #include <kj/string.h>
-#include <string>   // std::string for OpenSSL compatibility
+#include <string> // std::string for OpenSSL compatibility
 #include <string_view>
 
 namespace veloz::exec {

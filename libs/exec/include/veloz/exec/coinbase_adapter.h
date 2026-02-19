@@ -62,9 +62,9 @@ public:
   // Synchronous versions for backward compatibility (blocks on async)
   kj::Maybe<double> get_current_price(const veloz::common::SymbolId& symbol);
   kj::Maybe<kj::Array<PriceLevel>> get_order_book(const veloz::common::SymbolId& symbol,
-                                                   int depth = 10);
-  kj::Maybe<kj::Array<TradeData>>
-  get_recent_trades(const veloz::common::SymbolId& symbol, int limit = 500);
+                                                  int depth = 10);
+  kj::Maybe<kj::Array<TradeData>> get_recent_trades(const veloz::common::SymbolId& symbol,
+                                                    int limit = 500);
   kj::Maybe<double> get_account_balance(kj::StringPtr asset);
 
   // Configuration
