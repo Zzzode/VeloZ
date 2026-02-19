@@ -2,14 +2,22 @@
 
 This directory contains documentation for VeloZ users and developers.
 
-## Documents
+## Getting Started
 
 - [getting-started.md](getting-started.md) - Quick start guide for new users
 - [installation.md](installation.md) - Detailed installation instructions
-- [backtest.md](backtest.md) - Backtesting user guide
-- [requirements.md](requirements.md) - Product requirements and feature roadmap (with status tracking)
+
+## User Guides
+
+- [backtest.md](backtest.md) - Running backtests and optimizing strategies
+- [binance.md](binance.md) - Connecting to Binance for live trading
+- [monitoring.md](monitoring.md) - System monitoring and metrics
 - [configuration.md](configuration.md) - Configuration options and environment variables
+
+## Development
+
 - [development.md](development.md) - Development environment setup guide
+- [requirements.md](requirements.md) - Product requirements and feature roadmap
 
 ## For More Information
 

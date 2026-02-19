@@ -437,7 +437,7 @@ public:
 
 ```cpp
 // Before
-std::unique_ptr<MyObject> ptr = std::make_unique<MyObject>(...);
+kj::Own<MyObject> ptr = kj::heap<MyObject>(...);
 
 // After (KJ library)
 kj::Own<MyObject> ptr = kj::heap<MyObject>(...);

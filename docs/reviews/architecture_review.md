@@ -324,7 +324,7 @@ private:
 
     std::atomic<bool> connected_;
     std::atomic<bool> running_;
-    std::unique_ptr<std::thread> thread_;
+    kj::Own<std::thread> thread_;
     MarketEventCallback event_callback_;
     std::map<veloz::common::SymbolId, std::vector<MarketEventType>> subscriptions_;
     mutable std::mutex subscriptions_mu_;

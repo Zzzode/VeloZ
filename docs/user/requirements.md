@@ -445,7 +445,7 @@ and alignment with project standards.
 
 | std Type | KJ Equivalent | Status |
 |----------|---------------|--------|
-| `std::unique_ptr<T>` | `kj::Own<T>` | ✅ Complete |
+| `kj::Own<T>` | `kj::Own<T>` | ✅ Complete |
 | `std::optional<T>` | `kj::Maybe<T>` | ✅ Complete |
 | `std::vector<T>` | `kj::Vector<T>` / `kj::Array<T>` | ✅ Complete |
 | `std::unordered_map<K,V>` | `kj::HashMap<K,V>` | ✅ Complete |

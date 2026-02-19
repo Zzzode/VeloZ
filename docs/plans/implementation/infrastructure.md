@@ -303,7 +303,7 @@ public:
   // Configuration methods
   void set_level(Level level);
   void add_output(OutputDestination dest, const std::string& config = "");
-  void set_formatter(std::unique_ptr<Formatter> formatter);
+  void set_formatter(kj::Own<Formatter> formatter);
 
   // Logging methods
   void trace(const std::string& message, const char* file, int line);
@@ -323,8 +323,8 @@ private:
   Logger();
 
   Level level_;
-  std::vector<std::unique_ptr<Output>> outputs_;
-  std::unique_ptr<Formatter> formatter_;
+  std::vector<kj::Own<Output>> outputs_;
+  kj::Own<Formatter> formatter_;
   std::mutex mutex_;
 };
 

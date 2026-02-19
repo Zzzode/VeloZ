@@ -205,7 +205,7 @@ class MemoryPoolBase {
 template <typename T, size_t BlockSize = 64>
 class FixedSizeMemoryPool {
     void* allocate() override;
-    std::unique_ptr<T, Deleter> create(Args&&... args);
+    kj::Own<T, Deleter> create(Args&&... args);
 };
 ```
 
@@ -263,8 +263,8 @@ class ConfigItem {
 
 // Hierarchical groups
 class ConfigGroup {
-    void add_item(std::unique_ptr<ConfigItemBase> item);
-    void add_group(std::unique_ptr<ConfigGroup> group);
+    void add_item(kj::Own<ConfigItemBase> item);
+    void add_group(kj::Own<ConfigGroup> group);
 };
 
 // Central manager

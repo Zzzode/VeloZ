@@ -365,7 +365,7 @@ class MetricsRegistry {
 public:
   void register_counter(std::string name, std::string description) {
     std::scoped_lock lock(mu_);
-    counters_[kj::mv(name)] = std::make_unique<Counter>(name, kj::mv(description));
+    counters_[kj::mv(name)] = kj::heap<Counter>(name, kj::mv(description));
   }
 
   Counter* counter(std::string_view name) {
@@ -376,9 +376,9 @@ public:
 
 private:
   mutable std::mutex mu_;
-  std::map<std::string, std::unique_ptr<Counter>> counters_;
-  std::map<std::string, std::unique_ptr<Gauge>> gauges_;
-  std::map<std::string, std::unique_ptr<Histogram>> histograms_;
+  std::map<std::string, kj::Own<Counter>> counters_;
+  std::map<std::string, kj::Own<Gauge>> gauges_;
+  std::map<std::string, kj::Own<Histogram>> histograms_;
 };
 ```
 
@@ -396,11 +396,11 @@ private:
 class LockFreeMetricsRegistry {
 public:
   void register_counter(std::string name, std::string description) {
-    auto counter = std::make_unique<Counter>(kj::mv(name), kj::mv(description));
+    auto counter = kj::heap<Counter>(kj::mv(name), kj::mv(description));
     auto name_str = counter->name();
 
     // Use atomic operations for insertion
-    std::unique_ptr<Counter> expected = nullptr;
+    kj::Own<Counter> expected = nullptr;
     if (counters_.find(name_str) == counters_.end()) {
       counters_.try_emplace(name_str, kj::mv(counter));
     }
@@ -415,9 +415,9 @@ public:
 
 private:
   // Use concurrent hash map (e.g., TBB's concurrent_hash_map)
-  tbb::concurrent_hash_map<std::string, std::unique_ptr<Counter>> counters_;
-  tbb::concurrent_hash_map<std::string, std::unique_ptr<Gauge>> gauges_;
-  tbb::concurrent_hash_map<std::string, std::unique_ptr<Histogram>> histograms_;
+  tbb::concurrent_hash_map<std::string, kj::Own<Counter>> counters_;
+  tbb::concurrent_hash_map<std::string, kj::Own<Gauge>> gauges_;
+  tbb::concurrent_hash_map<std::string, kj::Own<Histogram>> histograms_;
 };
 ```
 
@@ -447,7 +447,7 @@ public:
 
 private:
   std::unordered_map<std::string, Counter*> counter_cache_;
-  std::map<std::string, std::unique_ptr<Counter>> counters_;
+  std::map<std::string, kj::Own<Counter>> counters_;
   std::mutex mu_;
 };
 ```
