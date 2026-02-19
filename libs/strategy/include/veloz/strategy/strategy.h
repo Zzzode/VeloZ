@@ -16,7 +16,7 @@
 #include "veloz/oms/position.h"
 
 // std includes with justifications
-#include <atomic>  // std::atomic for lightweight counters (KJ MutexGuarded has overhead)
+#include <atomic> // std::atomic for lightweight counters (KJ MutexGuarded has overhead)
 #include <cstdint>
 
 // KJ library includes
@@ -55,13 +55,13 @@ enum class StrategyType {
  * risk parameters, trading parameters, and custom parameters.
  */
 struct StrategyConfig {
-  kj::String name;                         ///< Strategy name
-  StrategyType type;                       ///< Strategy type
-  double risk_per_trade;                   ///< Risk per trade ratio (0-1)
-  double max_position_size;                ///< Maximum position size
-  double stop_loss;                        ///< Stop loss ratio (0-1)
-  double take_profit;                      ///< Take profit ratio (0-1)
-  kj::Vector<kj::String> symbols;          ///< List of trading symbols
+  kj::String name;                            ///< Strategy name
+  StrategyType type;                          ///< Strategy type
+  double risk_per_trade;                      ///< Risk per trade ratio (0-1)
+  double max_position_size;                   ///< Maximum position size
+  double stop_loss;                           ///< Stop loss ratio (0-1)
+  double take_profit;                         ///< Take profit ratio (0-1)
+  kj::Vector<kj::String> symbols;             ///< List of trading symbols
   kj::TreeMap<kj::String, double> parameters; ///< Strategy parameters (ordered by key)
 };
 
@@ -461,7 +461,7 @@ public:
    */
   explicit BaseStrategy(const StrategyConfig& config)
       : config_(kj::mv(const_cast<StrategyConfig&>(config))),
-        strategy_id_(generate_strategy_id(config_)) {}  // logger_ defaults to kj::none
+        strategy_id_(generate_strategy_id(config_)) {} // logger_ defaults to kj::none
 
   /**
    * @brief Virtual destructor
@@ -491,7 +491,7 @@ public:
    * @return Whether initialization was successful
    */
   bool initialize(const StrategyConfig& config, core::Logger& logger) override {
-    logger_ = logger;  // kj::Maybe<T&> stores reference, doesn't copy
+    logger_ = logger; // kj::Maybe<T&> stores reference, doesn't copy
     KJ_IF_SOME(l, logger_) {
       l.info(kj::str("Strategy ", config.name, " initialized").cStr());
     }
@@ -565,19 +565,19 @@ protected:
     return kj::str(config.name, "_", ++counter);
   }
 
-  StrategyConfig config_;          ///< Strategy configuration parameters
-  kj::String strategy_id_;         ///< Strategy ID
-  kj::Maybe<veloz::core::Logger&> logger_;  ///< Optional logger reference (non-owning)
-  bool initialized_{false};        ///< Whether initialized
-  bool running_{false};            ///< Whether running
-  double current_pnl_{0.0};        ///< Current profit and loss
-  double max_drawdown_{0.0};       ///< Maximum drawdown
-  int trade_count_{0};             ///< Number of trades
-  int win_count_{0};               ///< Number of winning trades
-  int lose_count_{0};              ///< Number of losing trades
-  double total_profit_{0.0};       ///< Total profit
-  double total_loss_{0.0};         ///< Total loss
-  oms::Position current_position_; ///< Current position
+  StrategyConfig config_;                  ///< Strategy configuration parameters
+  kj::String strategy_id_;                 ///< Strategy ID
+  kj::Maybe<veloz::core::Logger&> logger_; ///< Optional logger reference (non-owning)
+  bool initialized_{false};                ///< Whether initialized
+  bool running_{false};                    ///< Whether running
+  double current_pnl_{0.0};                ///< Current profit and loss
+  double max_drawdown_{0.0};               ///< Maximum drawdown
+  int trade_count_{0};                     ///< Number of trades
+  int win_count_{0};                       ///< Number of winning trades
+  int lose_count_{0};                      ///< Number of losing trades
+  double total_profit_{0.0};               ///< Total profit
+  double total_loss_{0.0};                 ///< Total loss
+  oms::Position current_position_;         ///< Current position
 };
 
 /**

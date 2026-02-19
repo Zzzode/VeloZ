@@ -8,15 +8,17 @@ using namespace veloz::strategy;
 // Test strategy implementation
 class TestStrategy : public IStrategy {
 public:
-  explicit TestStrategy(const StrategyConfig& config) : config_ref_(config) {}
+  explicit TestStrategy(const StrategyConfig& config)
+      : config_ref_(config), id_(kj::str("strat-", rand() % 1000000)), name_(kj::str(config.name)) {
+  }
   ~TestStrategy() noexcept(false) override = default;
 
   kj::StringPtr get_id() const override {
-    return "test-strategy"_kj;
+    return id_;
   }
 
   kj::StringPtr get_name() const override {
-    return "Test Strategy"_kj;
+    return name_;
   }
 
   StrategyType get_type() const override {
@@ -67,11 +69,17 @@ public:
     return "Custom"_kj;
   }
 
-  bool is_initialized() const { return initialized_; }
-  bool is_running() const { return running_; }
+  bool is_initialized() const {
+    return initialized_;
+  }
+  bool is_running() const {
+    return running_;
+  }
 
 private:
   const StrategyConfig& config_ref_;
+  kj::String id_;
+  kj::String name_;
   bool initialized_ = false;
   bool running_ = false;
 };
@@ -263,7 +271,7 @@ KJ_TEST("StrategyManager: Metrics summary") {
   auto summary = manager->get_metrics_summary();
   KJ_EXPECT(summary.size() > 0);
   // Check if summary contains expected text
-  KJ_EXPECT(summary.size() >= 10);  // Minimal check for non-empty summary
+  KJ_EXPECT(summary.size() >= 10); // Minimal check for non-empty summary
 }
 
 KJ_TEST("StrategyManager: Strategy count") {

@@ -3,13 +3,11 @@
 
 // std::chrono for wall clock timestamps (KJ time is async I/O only)
 #include <chrono>
-#include <format>
 #include <iomanip>
 #include <kj/debug.h>
 // std::random for ID generation (KJ lacks RNG)
 #include <random>
 #include <sstream>
-#include <stdexcept>
 
 namespace veloz::strategy {
 
@@ -31,9 +29,7 @@ StrategyManager::~StrategyManager() {
 }
 
 void StrategyManager::register_strategy_factory(kj::Rc<IStrategyFactory> factory) {
-  if (factory == nullptr) {
-    throw std::invalid_argument("Factory cannot be null");
-  }
+  KJ_REQUIRE(factory != nullptr, "Factory cannot be null");
 
   kj::StringPtr type_name = factory->get_strategy_type();
   // kj::HashMap find pattern - returns kj::Maybe
@@ -58,14 +54,6 @@ void StrategyManager::register_strategy_factory(kj::Rc<IStrategyFactory> factory
 }
 
 kj::Rc<IStrategy> StrategyManager::create_strategy(const StrategyConfig& config) {
-  // Generate unique strategy ID
-  // std::random for ID generation (KJ lacks RNG)
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dis(100000, 999999);
-
-  kj::String strategy_id = kj::str("strat-", dis(gen));
-
   // Convert StrategyType to string for factory lookup
   kj::StringPtr type_name;
   switch (config.type) {
@@ -98,6 +86,9 @@ kj::Rc<IStrategy> StrategyManager::create_strategy(const StrategyConfig& config)
     // Create strategy instance
     kj::Rc<IStrategy> strategy = factory->create_strategy(config);
     if (strategy != nullptr) {
+      // Use the strategy's own ID for storage
+      kj::StringPtr strategy_id = strategy->get_id();
+
       // Store in legacy map for backward compatibility using kj::HashMap upsert
       strategies_.upsert(kj::str(strategy_id), strategy.addRef(),
                          [](kj::Rc<IStrategy>&, kj::Rc<IStrategy>&&) {});
@@ -150,6 +141,13 @@ bool StrategyManager::remove_strategy(kj::StringPtr strategy_id) {
       strategy->on_stop();
     }
     strategies_.erase(strategy_id);
+
+    // Also remove from thread-safe state
+    {
+      auto lock = state_.lockExclusive();
+      lock->strategies.erase(strategy_id);
+    }
+
     logger_->info(kj::str("Strategy removed: ", strategy_id).cStr());
     return true;
   }
@@ -297,7 +295,7 @@ kj::String StrategyManager::load_strategy(const StrategyConfig& config,
     strategies_.upsert(kj::str(strategy_id), kj::mv(strategy),
                        [](kj::Rc<IStrategy>&, kj::Rc<IStrategy>&&) {});
 
-    logger_->info(std::format("Strategy loaded: {} ({})", strategy_id.cStr(), config.name.cStr()));
+    logger_->info(kj::str("Strategy loaded: ", strategy_id, " (", config.name, ")").cStr());
     return kj::mv(strategy_id);
   }
 
@@ -346,8 +344,9 @@ bool StrategyManager::reload_parameters(kj::StringPtr strategy_id,
 
     bool success = strategy->update_parameters(parameters);
     if (success) {
-      logger_->info(kj::str("Parameters reloaded for strategy: ", strategy_id,
-                            " (", parameters.size(), " params)").cStr());
+      logger_->info(kj::str("Parameters reloaded for strategy: ", strategy_id, " (",
+                            parameters.size(), " params)")
+                        .cStr());
     } else {
       logger_->error(kj::str("Failed to reload parameters for strategy: ", strategy_id).cStr());
     }
@@ -384,8 +383,9 @@ void StrategyManager::process_and_route_signals() {
         if (signals.size() > 0) {
           auto duration_us =
               std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-          logger_->debug(std::format("Strategy {} generated {} signals in {} us",
-                                     entry.key.cStr(), signals.size(), duration_us));
+          logger_->debug(kj::str("Strategy ", entry.key, " generated ", signals.size(),
+                                 " signals in ", duration_us, " us")
+                             .cStr());
         }
 
         for (size_t i = 0; i < signals.size(); ++i) {
@@ -432,7 +432,8 @@ kj::String StrategyManager::get_metrics_summary() const {
         oss << "  Signals/sec: " << std::fixed << std::setprecision(2)
             << metrics.signals_per_second() << "\n";
         oss << "  Errors: " << metrics.errors.load() << "\n";
-      } else {
+      }
+      else {
         oss << "\n" << entry.key.cStr() << ": (no metrics)\n";
       }
     }
@@ -446,7 +447,8 @@ kj::String StrategyManager::get_metrics_summary() const {
   return kj::str(oss.str().c_str());
 }
 
-kj::Maybe<const StrategyMetrics&> StrategyManager::get_strategy_metrics(kj::StringPtr strategy_id) const {
+kj::Maybe<const StrategyMetrics&>
+StrategyManager::get_strategy_metrics(kj::StringPtr strategy_id) const {
   auto lock = state_.lockShared();
 
   // Use kj::HashMap find pattern

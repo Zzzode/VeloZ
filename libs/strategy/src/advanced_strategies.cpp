@@ -167,8 +167,8 @@ void RsiStrategy::on_event(const market::MarketEvent& event) {
                                                .type = exec::OrderType::Market});
         } else if (rsi < oversold_level_ && current_position_.size() == 0) {
           // Generate buy signal
-          double quantity =
-              config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
+          double quantity = config_.max_position_size *
+                            get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
           signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                                .side = exec::OrderSide::Buy,
                                                .qty = quantity,
@@ -195,8 +195,10 @@ kj::StringPtr RsiStrategy::get_strategy_type() {
 // MacdStrategy implementation
 MacdStrategy::MacdStrategy(const StrategyConfig& config)
     : TechnicalIndicatorStrategy(config),
-      fast_period_(static_cast<int>(get_param_or_default(config.parameters, "fast_period"_kj, 12.0))),
-      slow_period_(static_cast<int>(get_param_or_default(config.parameters, "slow_period"_kj, 26.0))),
+      fast_period_(
+          static_cast<int>(get_param_or_default(config.parameters, "fast_period"_kj, 12.0))),
+      slow_period_(
+          static_cast<int>(get_param_or_default(config.parameters, "slow_period"_kj, 26.0))),
       signal_period_(
           static_cast<int>(get_param_or_default(config.parameters, "signal_period"_kj, 9.0))) {}
 
@@ -215,13 +217,12 @@ void MacdStrategy::on_event(const market::MarketEvent& event) {
     if (recent_prices_.size() >= static_cast<size_t>(max_period + 1)) {
       kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
       double signal;
-      double macd =
-          calculate_macd(prices_ptr, signal, fast_period_, slow_period_, signal_period_);
+      double macd = calculate_macd(prices_ptr, signal, fast_period_, slow_period_, signal_period_);
 
       // MACD crossover signal
       if (macd > signal && current_position_.size() == 0) {
-        double quantity =
-            config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
+        double quantity = config_.max_position_size *
+                          get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
@@ -273,8 +274,8 @@ void BollingerBandsStrategy::on_event(const market::MarketEvent& event) {
       calculate_bollinger_bands(prices_ptr, upper, middle, lower, period_, std_dev_);
 
       if (event.data.get<market::TradeData>().price <= lower && current_position_.size() == 0) {
-        double quantity =
-            config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
+        double quantity = config_.max_position_size *
+                          get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
@@ -329,8 +330,8 @@ void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
       calculate_stochastic_oscillator(prices_ptr, k, d, k_period_, d_period_);
 
       if (k < oversold_level_ && d < oversold_level_ && current_position_.size() == 0) {
-        double quantity =
-            config_.max_position_size * get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
+        double quantity = config_.max_position_size *
+                          get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
@@ -477,8 +478,7 @@ kj::StringPtr CrossExchangeArbitrageStrategy::get_strategy_type() {
 }
 
 // StrategyPortfolioManager implementation
-void StrategyPortfolioManager::add_strategy(kj::Rc<IStrategy> strategy,
-                                            double weight) {
+void StrategyPortfolioManager::add_strategy(kj::Rc<IStrategy> strategy, double weight) {
   kj::String id = kj::str(strategy->get_id());
   strategies_.upsert(kj::mv(id), StrategyWeight{kj::mv(strategy), weight},
                      [](StrategyWeight& existing, StrategyWeight&& replacement) {
@@ -545,7 +545,7 @@ void StrategyPortfolioManager::set_risk_model(
 }
 
 void StrategyPortfolioManager::rebalance_portfolio() {
-  KJ_IF_SOME (risk_model, risk_model_) {
+  KJ_IF_SOME(risk_model, risk_model_) {
     // Calculate risk for each strategy (simplified)
     kj::Vector<double> risks;
     // kj::HashMap iteration uses entry with .key and .value

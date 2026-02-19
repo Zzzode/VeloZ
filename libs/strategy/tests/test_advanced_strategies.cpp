@@ -38,8 +38,8 @@ KJ_TEST("RsiStrategy: Calculation") {
   RsiStrategy strategy(config);
 
   // Use kj::Array for KJ-compatible API
-  kj::Array<double> prices = kj::heapArray<double>({100, 102, 101, 103, 102, 104, 103, 105,
-                                                     104, 106, 105, 107, 106, 108, 107});
+  kj::Array<double> prices = kj::heapArray<double>(
+      {100, 102, 101, 103, 102, 104, 103, 105, 104, 106, 105, 107, 106, 108, 107});
 
   auto rsi = strategy.calculate_rsi(prices, 14);
   KJ_EXPECT(rsi > 0.0);
@@ -75,8 +75,8 @@ KJ_TEST("MacdStrategy: Calculation") {
 
   MacdStrategy strategy(config);
 
-  kj::Array<double> prices = kj::heapArray<double>({100, 101, 102, 103, 104, 105, 106, 107,
-                                                     108, 109, 110, 111, 112, 113, 114});
+  kj::Array<double> prices = kj::heapArray<double>(
+      {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114});
 
   double signal;
   auto macd = strategy.calculate_macd(prices, signal);
@@ -112,8 +112,8 @@ KJ_TEST("BollingerBandsStrategy: Calculation") {
 
   BollingerBandsStrategy strategy(config);
 
-  kj::Array<double> prices = kj::heapArray<double>({100, 101, 102, 103, 104, 105, 106, 107,
-                                                     108, 109, 110, 111, 112, 113, 114});
+  kj::Array<double> prices = kj::heapArray<double>(
+      {100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114});
 
   double upper, middle, lower;
   strategy.calculate_bollinger_bands(prices, upper, middle, lower);
@@ -150,8 +150,8 @@ KJ_TEST("StochasticOscillatorStrategy: Calculation") {
 
   StochasticOscillatorStrategy strategy(config);
 
-  kj::Array<double> prices = kj::heapArray<double>({100, 105, 102, 110, 104, 114, 103, 108,
-                                                     106, 112, 101, 109, 105, 111, 107});
+  kj::Array<double> prices = kj::heapArray<double>(
+      {100, 105, 102, 110, 104, 114, 103, 108, 106, 112, 101, 109, 105, 111, 107});
 
   double k, d;
   strategy.calculate_stochastic_oscillator(prices, k, d);
