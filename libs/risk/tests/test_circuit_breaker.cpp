@@ -1,9 +1,9 @@
-#include "kj/test.h"
-#include "kj/function.h"
 #include "veloz/risk/circuit_breaker.h"
 
 #include <atomic>
-#include <unistd.h>  // For usleep
+#include <kj/function.h>
+#include <kj/test.h>
+#include <unistd.h> // For usleep
 
 namespace {
 

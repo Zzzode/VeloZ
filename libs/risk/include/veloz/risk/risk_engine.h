@@ -34,8 +34,8 @@ namespace veloz::risk {
  * rejection reason.
  */
 struct RiskCheckResult {
-  bool allowed{true};  ///< Whether trading is allowed
-  kj::String reason;   ///< Reason for rejection (if not allowed)
+  bool allowed{true}; ///< Whether trading is allowed
+  kj::String reason;  ///< Reason for rejection (if not allowed)
 };
 
 /**
@@ -62,8 +62,8 @@ inline kj::uint KJ_HASHCODE(RiskLevel level) {
  * trading symbol.
  */
 struct RiskAlert {
-  RiskLevel level;                                 ///< Risk alert level
-  kj::String message;                              ///< Alert message
+  RiskLevel level;    ///< Risk alert level
+  kj::String message; ///< Alert message
   // std::chrono for wall clock timestamps (KJ time is async I/O only)
   std::chrono::steady_clock::time_point timestamp; ///< Alert timestamp
   kj::String symbol;                               ///< Associated trading symbol

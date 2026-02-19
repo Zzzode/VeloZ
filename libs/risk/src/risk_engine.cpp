@@ -22,7 +22,8 @@ RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest
   if (!check_order_rate()) {
     circuit_breaker_tripped_ = true;
     circuit_breaker_reset_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    add_risk_alert(RiskLevel::Critical, "Order rate limit exceeded"_kj, kj::StringPtr(req.symbol.value));
+    add_risk_alert(RiskLevel::Critical, "Order rate limit exceeded"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Order rate limit exceeded")};
   }
 
@@ -34,19 +35,22 @@ RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest
 
   // Check available funds
   if (!check_available_funds(req)) {
-    add_risk_alert(RiskLevel::Critical, "Insufficient funds for order"_kj, kj::StringPtr(req.symbol.value));
+    add_risk_alert(RiskLevel::Critical, "Insufficient funds for order"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Insufficient funds")};
   }
 
   // Check max position
   if (!check_max_position(req)) {
-    add_risk_alert(RiskLevel::High, "Order size exceeds max position"_kj, kj::StringPtr(req.symbol.value));
+    add_risk_alert(RiskLevel::High, "Order size exceeds max position"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Order size exceeds max position")};
   }
 
   // Check price deviation
   if (!check_price_deviation(req)) {
-    add_risk_alert(RiskLevel::Medium, "Price deviation exceeds max"_kj, kj::StringPtr(req.symbol.value));
+    add_risk_alert(RiskLevel::Medium, "Price deviation exceeds max"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Price deviation exceeds max")};
   }
 
@@ -62,13 +66,15 @@ RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest
 RiskCheckResult RiskEngine::check_post_trade(const veloz::oms::Position& position) {
   // Check stop loss
   if (stop_loss_enabled_ && !check_stop_loss(position)) {
-    add_risk_alert(RiskLevel::Critical, "Stop loss triggered"_kj, kj::StringPtr(position.symbol().value));
+    add_risk_alert(RiskLevel::Critical, "Stop loss triggered"_kj,
+                   kj::StringPtr(position.symbol().value));
     return {false, kj::heapString("Stop loss triggered")};
   }
 
   // Check take profit
   if (take_profit_enabled_ && !check_take_profit(position)) {
-    add_risk_alert(RiskLevel::High, "Take profit triggered"_kj, kj::StringPtr(position.symbol().value));
+    add_risk_alert(RiskLevel::High, "Take profit triggered"_kj,
+                   kj::StringPtr(position.symbol().value));
     return {false, kj::heapString("Take profit triggered")};
   }
 
@@ -145,8 +151,7 @@ void RiskEngine::clear_risk_alerts() {
   risk_alerts_.clear();
 }
 
-void RiskEngine::add_risk_alert(RiskLevel level, kj::StringPtr message,
-                                kj::StringPtr symbol) {
+void RiskEngine::add_risk_alert(RiskLevel level, kj::StringPtr message, kj::StringPtr symbol) {
   RiskAlert alert;
   alert.level = level;
   alert.message = kj::heapString(message);
@@ -266,9 +271,10 @@ bool RiskEngine::check_take_profit(const veloz::oms::Position& position) const {
 void RiskEngine::update_position(const veloz::oms::Position& position) {
   // Use kj::HashMap upsert instead of operator[]
   kj::String symbol_key = kj::str(position.symbol().value);
-  positions_.upsert(kj::mv(symbol_key), position, [](veloz::oms::Position& existing, veloz::oms::Position&& replacement) {
-    existing = kj::mv(replacement);
-  });
+  positions_.upsert(kj::mv(symbol_key), position,
+                    [](veloz::oms::Position& existing, veloz::oms::Position&& replacement) {
+                      existing = kj::mv(replacement);
+                    });
 }
 
 void RiskEngine::clear_positions() {
@@ -284,11 +290,12 @@ void RiskEngine::reset_circuit_breaker() {
 }
 
 bool RiskEngine::check_available_funds(const veloz::exec::PlaceOrderRequest& req) const {
-  KJ_IF_SOME (price, req.price) {
+  KJ_IF_SOME(price, req.price) {
     double notional = req.qty * price;
     double required_margin = notional / max_leverage_;
     return required_margin <= account_balance_;
-  } else {
+  }
+  else {
     return true; // Market orders checked elsewhere
   }
 }
@@ -311,10 +318,11 @@ bool RiskEngine::check_price_deviation(const veloz::exec::PlaceOrderRequest& req
     return true; // No reference price
   }
 
-  KJ_IF_SOME (price, req.price) {
+  KJ_IF_SOME(price, req.price) {
     double deviation = std::abs((price - reference_price_) / reference_price_);
     return deviation <= max_price_deviation_;
-  } else {
+  }
+  else {
     return true; // Market order
   }
 }
