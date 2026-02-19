@@ -75,7 +75,7 @@ void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request
                                                       OrderState{}};
   });
   st.client_order_id = kj::heapString(request.client_order_id);
-  if (request.symbol.value.size() == 0) {
+  if (request.symbol.value.size() > 0) {
     st.symbol = kj::heapString(request.symbol.value);
   }
   st.side = kj::heapString(side_to_string(request.side));

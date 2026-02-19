@@ -116,7 +116,7 @@ OrderWal::OrderWal(const kj::Directory& directory, WalConfig config)
   if (files.size() > 0) {
     // Parse the last file to get the highest sequence
     const auto& lastFile = files.back();
-    KJ_IF_SOME (seq, parse_filename(lastFile)) {
+    KJ_IF_SOME(seq, parse_filename(lastFile)) {
       auto lock = state_.lockExclusive();
       lock->sequence = seq;
       lock->stats.current_sequence = seq;
@@ -135,28 +135,33 @@ OrderWal::~OrderWal() {
 
 void OrderWal::open_current_file() {
   auto lock = state_.lockExclusive();
-  kj::String filename = generate_filename(lock->sequence);
+  open_current_file_locked(*lock);
+}
+
+void OrderWal::open_current_file_locked(State& state) {
+  kj::String filename = generate_filename(state.sequence);
 
   // Try to open existing file or create new one
   auto path = kj::Path::parse(filename);
   auto maybeFile = directory_.tryOpenFile(path, kj::WriteMode::CREATE | kj::WriteMode::MODIFY);
 
-  KJ_IF_SOME (file, maybeFile) {
+  KJ_IF_SOME(file, maybeFile) {
     current_file_ = kj::mv(file);
     // Get current file size
-    KJ_IF_SOME (fileRef, current_file_) {
+    KJ_IF_SOME(fileRef, current_file_) {
       auto metadata = fileRef->stat();
       current_file_size_ = metadata.size;
     }
-    current_file_start_sequence_ = lock->sequence;
-  } else {
+    current_file_start_sequence_ = state.sequence;
+  }
+  else {
     KJ_LOG(ERROR, "Failed to open WAL file", filename);
-    lock->healthy = false;
+    state.healthy = false;
   }
 }
 
 void OrderWal::close_current_file() {
-  KJ_IF_SOME (file, current_file_) {
+  KJ_IF_SOME(file, current_file_) {
     if (config_.sync_on_write) {
       file->sync();
     }
@@ -241,11 +246,11 @@ uint64_t OrderWal::write_entry(WalEntryType type, kj::ArrayPtr<const kj::byte> p
   // Check for rotation
   if (needs_rotation()) {
     close_current_file();
-    open_current_file();
+    open_current_file_locked(*lock);
     lock->stats.rotations++;
   }
 
-  KJ_IF_SOME (file, current_file_) {
+  KJ_IF_SOME(file, current_file_) {
     // Prepare header
     WalEntryHeader header;
     header.magic = WalEntryHeader::MAGIC;
@@ -319,12 +324,13 @@ OrderWal::serialize_order_request(const veloz::exec::PlaceOrderRequest& request)
   write_buffer = buffer.slice(offset, buffer.size());
   offset += write_double(write_buffer, request.qty);
 
-  KJ_IF_SOME (price, request.price) {
+  KJ_IF_SOME(price, request.price) {
     write_buffer = buffer.slice(offset, buffer.size());
     offset += write_uint8(write_buffer, 1);
     write_buffer = buffer.slice(offset, buffer.size());
     offset += write_double(write_buffer, price);
-  } else {
+  }
+  else {
     write_buffer = buffer.slice(offset, buffer.size());
     offset += write_uint8(write_buffer, 0);
     write_buffer = buffer.slice(offset, buffer.size());
@@ -448,24 +454,26 @@ kj::Array<kj::byte> OrderWal::serialize_checkpoint(const OrderStore& store) cons
     write_buffer = buffer.slice(offset, buffer.size());
     offset += write_string(write_buffer, order.side);
 
-    KJ_IF_SOME (qty, order.order_qty) {
+    KJ_IF_SOME(qty, order.order_qty) {
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_uint8(write_buffer, 1);
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_double(write_buffer, qty);
-    } else {
+    }
+    else {
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_uint8(write_buffer, 0);
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_double(write_buffer, 0.0);
     }
 
-    KJ_IF_SOME (price, order.limit_price) {
+    KJ_IF_SOME(price, order.limit_price) {
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_uint8(write_buffer, 1);
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_double(write_buffer, price);
-    } else {
+    }
+    else {
       write_buffer = buffer.slice(offset, buffer.size());
       offset += write_uint8(write_buffer, 0);
       write_buffer = buffer.slice(offset, buffer.size());
@@ -643,7 +651,7 @@ void OrderWal::replay(WalReplayCallback callback) {
     auto path = kj::Path::parse(filename);
     auto maybeFile = directory_.tryOpenFile(path);
 
-    KJ_IF_SOME (file, maybeFile) {
+    KJ_IF_SOME(file, maybeFile) {
       auto metadata = file->stat();
       auto data = file->readAllBytes();
 
@@ -733,7 +741,7 @@ void OrderWal::replay_into(OrderStore& store) {
 }
 
 void OrderWal::sync() {
-  KJ_IF_SOME (file, current_file_) {
+  KJ_IF_SOME(file, current_file_) {
     file->sync();
   }
 }

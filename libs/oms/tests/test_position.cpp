@@ -36,7 +36,8 @@ KJ_TEST("Position: AddToLong") {
   pos.apply_fill(OrderSide::Buy, 0.5, 51000.0);
 
   KJ_EXPECT(pos.size() == 1.5);
-  KJ_EXPECT(pos.avg_price() == 50333.333333333336); // Weighted avg: (1.0 * 50000 + 0.5 * 51000) / 1.5
+  KJ_EXPECT(pos.avg_price() ==
+            50333.333333333336); // Weighted avg: (1.0 * 50000 + 0.5 * 51000) / 1.5
 }
 
 KJ_TEST("Position: PartialClose") {
