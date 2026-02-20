@@ -52,3 +52,21 @@ target_link_libraries(veloz_integration_strategy_tests
 )
 target_compile_features(veloz_integration_strategy_tests PUBLIC cxx_std_23)
 add_test(NAME veloz_integration_strategy_tests COMMAND veloz_integration_strategy_tests)
+
+# Engine integration tests (full event flow)
+add_executable(veloz_integration_engine_tests
+    test_engine_integration.cpp
+)
+target_link_libraries(veloz_integration_engine_tests
+    PRIVATE
+        veloz_strategy
+        veloz_market
+        veloz_oms
+        veloz_exec
+        veloz_core
+        veloz_common
+        kj-test
+        kj-async
+)
+target_compile_features(veloz_integration_engine_tests PUBLIC cxx_std_23)
+add_test(NAME veloz_integration_engine_tests COMMAND veloz_integration_engine_tests)

@@ -42,6 +42,8 @@ public:
 
   void on_start() override { is_running_ = true; }
   void on_stop() override { is_running_ = false; }
+  void on_pause() override { is_running_ = false; }
+  void on_resume() override { is_running_ = true; }
 
   void on_event(const veloz::market::MarketEvent& event) override {
     event_count_++;
@@ -84,6 +86,20 @@ public:
     position_open_ = false;
     is_running_ = false;
   }
+
+  bool update_parameters(const kj::TreeMap<kj::String, double>& parameters) override {
+    return false;
+  }
+
+  bool supports_hot_reload() const override {
+    return false;
+  }
+
+  kj::Maybe<const StrategyMetrics&> get_metrics() const override {
+    return kj::none;
+  }
+
+  void on_order_rejected(const veloz::exec::PlaceOrderRequest& req, kj::StringPtr reason) override {}
 
   size_t get_event_count() const { return event_count_; }
   size_t get_trade_count() const { return trade_count_; }
