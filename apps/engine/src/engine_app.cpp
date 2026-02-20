@@ -11,8 +11,6 @@
 #include <kj/io.h>
 #include <kj/memory.h>
 #include <kj/time.h>
-// std::make_unique for Logger API compatibility (Logger requires std::unique_ptr)
-#include <memory>
 #include <unistd.h>
 
 namespace {
@@ -48,8 +46,7 @@ void EngineApp::install_signal_handlers() {
 int EngineApp::run() {
   install_signal_handlers();
 
-  // Create logger with appropriate output
-  // Logger still uses std::unique_ptr for compatibility
+  // Create logger with appropriate output using KJ ownership
   auto console_output = kj::heap<veloz::core::ConsoleOutput>(config_.stdio_mode);
   veloz::core::Logger local_logger(kj::heap<veloz::core::TextFormatter>(), kj::mv(console_output));
   local_logger.set_level(veloz::core::LogLevel::Info);
