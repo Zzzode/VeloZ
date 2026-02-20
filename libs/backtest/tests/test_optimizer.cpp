@@ -89,9 +89,26 @@ public:
 
   void on_start() override {}
   void on_stop() override {}
+  void on_pause() override {}
+  void on_resume() override {}
   void on_event(const veloz::market::MarketEvent& event) override {}
   void on_position_update(const veloz::oms::Position& position) override {}
   void on_timer(int64_t timestamp) override {}
+
+  bool update_parameters(const kj::TreeMap<kj::String, double>& parameters) override {
+    return false;
+  }
+
+  bool supports_hot_reload() const override {
+    return false;
+  }
+
+  kj::Maybe<const StrategyMetrics&> get_metrics() const override {
+    return kj::none;
+  }
+
+  void on_order_rejected(const veloz::exec::PlaceOrderRequest& req, kj::StringPtr reason) override {
+  }
 
   veloz::strategy::StrategyState get_state() const override {
     veloz::strategy::StrategyState state;

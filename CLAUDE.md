@@ -170,16 +170,16 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 
 **Gateway ↔ UI**:
 
-- REST-style JSON endpoints (see `docs/build_and_run.md` for the list).
+- REST-style JSON endpoints (see `docs/guides/build_and_run.md` for the list).
 - Server-Sent Events stream at `GET /api/stream` for realtime updates.
 
 ## Pointers to docs
 
-- `docs/build_and_run.md`: build/run/scripts and gateway endpoints
-- `docs/crypto_quant_framework_design.md`: design series index
-- `docs/kjdoc/`: KJ library documentation (tour.md, style-guide.md, library_usage_guide.md)
-- `docs/kj/library_usage_guide.md`: KJ library usage patterns for VeloZ
-- `docs/kj/SKILL.md`: KJ skill (name: `kj-library`) for Claude Code recognition
+- `docs/guides/build_and_run.md`: build/run/scripts and gateway endpoints
+- `docs/design/README.md`: design series index
+- `docs/references/kjdoc/`: KJ library documentation (tour.md, style-guide.md, library_usage_guide.md)
+- `.claude/skills/kj-library/library_usage_guide.md`: KJ library usage patterns for VeloZ
+- `.claude/skills/kj-library/SKILL.md`: KJ skill (name: `kj-library`) for Claude Code recognition
 
 ## Available Skills
 
@@ -205,7 +205,7 @@ Skills are automatically invoked when relevant. Use `/skill-name` to invoke manu
 
 ### KJ Skill for Detailed Reference
 
-**For comprehensive KJ library guidance, invoke the `kj-library` skill defined in `docs/kj/SKILL.md`**. The skill contains:
+**For comprehensive KJ library guidance, invoke the `kj-library` skill defined in `.claude/skills/kj-library/SKILL.md`**. The skill contains:
 
 - Complete type mappings (std → KJ)
 - Event loop and async I/O patterns

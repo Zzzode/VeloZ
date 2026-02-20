@@ -230,4 +230,285 @@ KJ_TEST("BacktestReporter: LargeTradeHistory") {
   KJ_EXPECT(contains(json, "1000"));
 }
 
+// ============================================================================
+// Enhanced Reporter Tests
+// ============================================================================
+
+KJ_TEST("BacktestReporter: ReportConfig") {
+  auto reporter = kj::heap<BacktestReporter>();
+
+  // Test default config
+  const auto& default_config = reporter->get_config();
+  KJ_EXPECT(default_config.include_equity_curve == true);
+  KJ_EXPECT(default_config.include_drawdown_curve == true);
+  KJ_EXPECT(default_config.include_trade_list == true);
+  KJ_EXPECT(default_config.include_monthly_returns == true);
+  KJ_EXPECT(default_config.include_trade_analysis == true);
+  KJ_EXPECT(default_config.include_risk_metrics == true);
+
+  // Set custom config
+  ReportConfig custom_config;
+  custom_config.include_equity_curve = false;
+  custom_config.include_monthly_returns = false;
+  custom_config.title = kj::str("Custom Report Title");
+  custom_config.description = kj::str("Test description");
+  custom_config.author = kj::str("Test Author");
+
+  reporter->set_config(custom_config);
+
+  const auto& updated_config = reporter->get_config();
+  KJ_EXPECT(updated_config.include_equity_curve == false);
+  KJ_EXPECT(updated_config.include_monthly_returns == false);
+  KJ_EXPECT(updated_config.title == "Custom Report Title"_kj);
+  KJ_EXPECT(updated_config.description == "Test description"_kj);
+  KJ_EXPECT(updated_config.author == "Test Author"_kj);
+}
+
+KJ_TEST("BacktestReporter: GenerateCSVTrades") {
+  auto reporter = kj::heap<BacktestReporter>();
+  auto result = create_sample_result();
+
+  kj::String csv = reporter->generate_csv_trades(result);
+
+  // Check CSV header
+  KJ_EXPECT(contains(csv, "timestamp,symbol,side,price,quantity,fee,pnl,strategy_id"));
+
+  // Check CSV contains trade data
+  KJ_EXPECT(contains(csv, "BTCUSDT"));
+  KJ_EXPECT(contains(csv, "buy"));
+  KJ_EXPECT(contains(csv, "sell"));
+  KJ_EXPECT(contains(csv, "test_strategy"));
+}
+
+KJ_TEST("BacktestReporter: GenerateMarkdownReport") {
+  auto reporter = kj::heap<BacktestReporter>();
+  auto result = create_sample_result();
+
+  // Add equity curve for monthly returns calculation
+  for (int i = 0; i < 100; ++i) {
+    EquityCurvePoint point;
+    point.timestamp = 1609459200000 + i * 86400000; // Daily points
+    point.equity = 10000.0 + i * 50.0;
+    point.cumulative_return = static_cast<double>(i) * 0.005;
+    result.equity_curve.add(point);
+  }
+
+  kj::String md = reporter->generate_markdown_report(result);
+
+  // Check markdown structure
+  KJ_EXPECT(contains(md, "# VeloZ Backtest Report"));
+  KJ_EXPECT(contains(md, "## Summary"));
+  KJ_EXPECT(contains(md, "| Metric | Value |"));
+  KJ_EXPECT(contains(md, "TestStrategy"));
+  KJ_EXPECT(contains(md, "BTCUSDT"));
+}
+
+KJ_TEST("BacktestReporter: CalculateMonthlyReturns") {
+  auto result = create_sample_result();
+
+  // Add equity curve spanning multiple months
+  for (int i = 0; i < 90; ++i) {
+    EquityCurvePoint point;
+    point.timestamp = 1609459200000 + i * 86400000; // Daily points (Jan-Mar 2021)
+    point.equity = 10000.0 + i * 50.0;
+    point.cumulative_return = static_cast<double>(i) * 0.005;
+    result.equity_curve.add(point);
+  }
+
+  auto monthly_returns = BacktestReporter::calculate_monthly_returns(result);
+
+  // Should have at least 2-3 months of data
+  KJ_EXPECT(monthly_returns.size() >= 2);
+
+  // Check first month
+  KJ_EXPECT(monthly_returns[0].year == 2021);
+  KJ_EXPECT(monthly_returns[0].month == 1);
+}
+
+KJ_TEST("BacktestReporter: AnalyzeTrades") {
+  auto result = create_sample_result();
+
+  auto analysis = BacktestReporter::analyze_trades(result);
+
+  // Check best/worst trades
+  KJ_EXPECT(analysis.best_trade_pnl == 100.0);
+  KJ_EXPECT(analysis.worst_trade_pnl == -50.0);
+
+  // Check consecutive wins/losses are calculated
+  KJ_EXPECT(analysis.max_consecutive_wins >= 1);
+  KJ_EXPECT(analysis.max_consecutive_losses >= 1);
+}
+
+KJ_TEST("BacktestReporter: AnalyzeTradesEmpty") {
+  BacktestResult result;
+  result.trades = kj::Vector<TradeRecord>();
+
+  auto analysis = BacktestReporter::analyze_trades(result);
+
+  // Should handle empty trades gracefully
+  KJ_EXPECT(analysis.best_trade_pnl == 0.0);
+  KJ_EXPECT(analysis.worst_trade_pnl == 0.0);
+  KJ_EXPECT(analysis.max_consecutive_wins == 0);
+  KJ_EXPECT(analysis.max_consecutive_losses == 0);
+}
+
+KJ_TEST("BacktestReporter: CalculateExtendedMetrics") {
+  auto result = create_sample_result();
+
+  // Add drawdown curve for ulcer index calculation
+  for (int i = 0; i < 100; ++i) {
+    DrawdownPoint point;
+    point.timestamp = 1609459200000 + i * 3600000;
+    point.drawdown = (i % 10) * 0.01; // Varying drawdown
+    result.drawdown_curve.add(point);
+  }
+
+  auto metrics = BacktestReporter::calculate_extended_metrics(result);
+
+  // Check that metrics are calculated (not necessarily specific values)
+  // Sortino ratio should be calculated
+  KJ_EXPECT(metrics.sortino_ratio != 0.0 || result.trades.size() < 2);
+
+  // Calmar ratio should be positive if we have positive return and drawdown
+  KJ_EXPECT(metrics.calmar_ratio >= 0.0);
+
+  // Omega ratio should be positive for profitable strategy
+  KJ_EXPECT(metrics.omega_ratio >= 0.0);
+}
+
+KJ_TEST("BacktestReporter: GenerateReportFormat_CSV") {
+  auto reporter = kj::heap<BacktestReporter>();
+  auto result = create_sample_result();
+
+  bool success =
+      reporter->generate_report_format(result, "/tmp/test_report.csv"_kj, ReportFormat::CSV);
+  KJ_EXPECT(success == true);
+}
+
+KJ_TEST("BacktestReporter: GenerateReportFormat_Markdown") {
+  auto reporter = kj::heap<BacktestReporter>();
+  auto result = create_sample_result();
+
+  // Add equity curve for monthly returns
+  for (int i = 0; i < 30; ++i) {
+    EquityCurvePoint point;
+    point.timestamp = 1609459200000 + i * 86400000;
+    point.equity = 10000.0 + i * 50.0;
+    point.cumulative_return = static_cast<double>(i) * 0.005;
+    result.equity_curve.add(point);
+  }
+
+  bool success =
+      reporter->generate_report_format(result, "/tmp/test_report.md"_kj, ReportFormat::Markdown);
+  KJ_EXPECT(success == true);
+}
+
+KJ_TEST("BacktestReporter: ExportEquityCurveCSV") {
+  auto reporter = kj::heap<BacktestReporter>();
+  auto result = create_sample_result();
+
+  // Add equity curve
+  for (int i = 0; i < 10; ++i) {
+    EquityCurvePoint point;
+    point.timestamp = 1609459200000 + i * 86400000;
+    point.equity = 10000.0 + i * 100.0;
+    point.cumulative_return = static_cast<double>(i) * 0.01;
+    result.equity_curve.add(point);
+  }
+
+  bool success = reporter->export_equity_curve_csv(result, "/tmp/test_equity.csv"_kj);
+  KJ_EXPECT(success == true);
+}
+
+KJ_TEST("BacktestReporter: ExportDrawdownCurveCSV") {
+  auto reporter = kj::heap<BacktestReporter>();
+  auto result = create_sample_result();
+
+  // Add drawdown curve
+  for (int i = 0; i < 10; ++i) {
+    DrawdownPoint point;
+    point.timestamp = 1609459200000 + i * 86400000;
+    point.drawdown = (i % 5) * 0.02;
+    result.drawdown_curve.add(point);
+  }
+
+  bool success = reporter->export_drawdown_curve_csv(result, "/tmp/test_drawdown.csv"_kj);
+  KJ_EXPECT(success == true);
+}
+
+KJ_TEST("BacktestReporter: GenerateComparisonReport") {
+  auto reporter = kj::heap<BacktestReporter>();
+
+  // Create multiple results
+  kj::Vector<BacktestResult> results;
+
+  BacktestResult result1 = create_sample_result();
+  result1.strategy_name = kj::str("Strategy A");
+  result1.total_return = 0.5;
+  result1.max_drawdown = 0.1;
+  result1.sharpe_ratio = 1.5;
+  results.add(kj::mv(result1));
+
+  BacktestResult result2;
+  result2.strategy_name = kj::str("Strategy B");
+  result2.symbol = kj::str("BTCUSDT");
+  result2.initial_balance = 10000.0;
+  result2.final_balance = 12000.0;
+  result2.total_return = 0.2;
+  result2.max_drawdown = 0.05;
+  result2.sharpe_ratio = 2.0;
+  result2.win_rate = 0.7;
+  result2.profit_factor = 2.5;
+  result2.trade_count = 50;
+  result2.win_count = 35;
+  result2.lose_count = 15;
+  result2.avg_win = 80.0;
+  result2.avg_lose = -40.0;
+  results.add(kj::mv(result2));
+
+  bool success =
+      reporter->generate_comparison_report(results.asPtr(), "/tmp/test_comparison.html"_kj);
+  KJ_EXPECT(success == true);
+}
+
+KJ_TEST("BacktestReporter: GenerateComparisonReportEmpty") {
+  auto reporter = kj::heap<BacktestReporter>();
+
+  kj::Vector<BacktestResult> empty_results;
+  bool success = reporter->generate_comparison_report(empty_results.asPtr(),
+                                                      "/tmp/test_comparison_empty.html"_kj);
+  KJ_EXPECT(success == false); // Should fail with empty results
+}
+
+KJ_TEST("BacktestReporter: MonthlyReturnsEmpty") {
+  BacktestResult result;
+  result.equity_curve = kj::Vector<EquityCurvePoint>();
+
+  auto monthly_returns = BacktestReporter::calculate_monthly_returns(result);
+  KJ_EXPECT(monthly_returns.size() == 0);
+}
+
+KJ_TEST("BacktestReporter: ExtendedMetricsInsufficientData") {
+  BacktestResult result;
+  result.initial_balance = 10000.0;
+
+  // Only one trade - insufficient for metrics
+  TradeRecord trade;
+  trade.timestamp = 1609459200000;
+  trade.symbol = kj::str("BTCUSDT");
+  trade.side = kj::str("buy");
+  trade.price = 50000.0;
+  trade.quantity = 0.01;
+  trade.fee = 0.001;
+  trade.pnl = 100.0;
+  trade.strategy_id = kj::str("test");
+  result.trades.add(kj::mv(trade));
+
+  auto metrics = BacktestReporter::calculate_extended_metrics(result);
+
+  // With insufficient data, metrics should be zero
+  KJ_EXPECT(metrics.sortino_ratio == 0.0);
+  KJ_EXPECT(metrics.calmar_ratio == 0.0);
+}
+
 } // namespace

@@ -157,7 +157,8 @@ public:
    * @param alignment Alignment requirement (default: max alignment)
    * @return ArrayPtr to allocated memory
    */
-  [[nodiscard]] kj::ArrayPtr<kj::byte> allocateBytes(size_t size, size_t alignment = alignof(std::max_align_t)) {
+  [[nodiscard]] kj::ArrayPtr<kj::byte> allocateBytes(size_t size,
+                                                     size_t alignment = alignof(std::max_align_t)) {
     // kj::Arena doesn't have a direct allocateBytes, use allocateArray<byte>
     return arena_.allocateArray<kj::byte>(size);
   }
@@ -438,16 +439,16 @@ struct AlignedMemory {
 
   AlignedMemory() = default;
   AlignedMemory(void* p, size_t s, size_t a) : ptr(p), size(s), alignment(a) {}
-  
+
   ~AlignedMemory(); // Defined in .cpp to avoid inline dependency on freeAligned
-  
-  AlignedMemory(AlignedMemory&& other) noexcept 
+
+  AlignedMemory(AlignedMemory&& other) noexcept
       : ptr(other.ptr), size(other.size), alignment(other.alignment) {
     other.ptr = nullptr;
     other.size = 0;
     other.alignment = 0;
   }
-  
+
   AlignedMemory& operator=(AlignedMemory&& other) noexcept {
     if (this != &other) {
       reset();
@@ -472,10 +473,12 @@ struct AlignedMemory {
     alignment = 0;
     return p;
   }
-  
+
   void reset(); // Defined in .cpp
-  
-  bool isValid() const { return ptr != nullptr; }
+
+  bool isValid() const {
+    return ptr != nullptr;
+  }
 };
 
 [[nodiscard]] AlignedMemory allocateAligned(size_t size, size_t alignment);
@@ -490,7 +493,7 @@ public:
 template <typename T> [[nodiscard]] kj::Own<T> aligned_new(size_t alignment = alignof(T)) {
   AlignedMemory mem = allocateAligned(sizeof(T), alignment);
   KJ_REQUIRE(mem.isValid(), "allocateAligned failed: out of memory", sizeof(T), alignment);
-  
+
   void* ptr = mem.release(); // Transfer ownership to kj::Own via AlignedDisposer
   auto obj = new (ptr) T();
   return kj::Own<T>(obj, AlignedDisposer::instance);
@@ -500,7 +503,7 @@ template <typename T, typename... Args>
 [[nodiscard]] kj::Own<T> aligned_new(size_t alignment, Args&&... args) {
   AlignedMemory mem = allocateAligned(sizeof(T), alignment);
   KJ_REQUIRE(mem.isValid(), "allocateAligned failed: out of memory", sizeof(T), alignment);
-  
+
   void* ptr = mem.release(); // Transfer ownership to kj::Own via AlignedDisposer
   auto obj = new (ptr) T(kj::fwd<Args>(args)...);
   return kj::Own<T>(obj, AlignedDisposer::instance);
