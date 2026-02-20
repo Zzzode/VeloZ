@@ -2,12 +2,10 @@
 #include "veloz/core/memory.h"
 #include "veloz/core/memory_pool.h"
 
-#include <future> // Kept for std::async/std::future in concurrent tests
 #include <kj/string.h>
+#include <kj/thread.h>
 #include <kj/vector.h>
-#include <list>
-#include <thread>
-#include <vector> // Kept for MemoryPool internal compatibility
+#include <thread> // For std::this_thread::sleep_for
 
 using namespace veloz::core;
 
@@ -44,7 +42,7 @@ KJ_TEST("MemoryPool: Create and destroy") {
 KJ_TEST("MemoryPool: Allocate") {
   FixedSizeMemoryPool<TestObject, 4> pool(0, 10);
   auto obj = pool.create(42);
-  KJ_EXPECT(obj != nullptr);
+  KJ_EXPECT(obj.get() != nullptr);
   KJ_EXPECT(obj->value_ == 42);
 
   KJ_EXPECT(pool.total_blocks() == 4);
@@ -64,9 +62,9 @@ KJ_TEST("MemoryPool: Allocate and destroy") {
 
 KJ_TEST("MemoryPool: Multiple allocations") {
   FixedSizeMemoryPool<TestObject, 4> pool(0, 10);
-  std::vector<decltype(pool.create(0))> objects;
+  kj::Vector<decltype(pool.create(0))> objects;
   for (int i = 0; i < 4; ++i) {
-    objects.push_back(pool.create(i));
+    objects.add(pool.create(i));
     KJ_EXPECT(objects.back()->value_ == i);
   }
 
@@ -74,16 +72,16 @@ KJ_TEST("MemoryPool: Multiple allocations") {
 
   // One more allocation should trigger new block
   auto obj5 = pool.create(5);
-  KJ_EXPECT(obj5 != nullptr);
+  KJ_EXPECT(obj5.get() != nullptr);
   KJ_EXPECT(pool.available_blocks() == 3);
   KJ_EXPECT(pool.total_blocks() == 8); // Two blocks now
 }
 
 KJ_TEST("MemoryPool: Pool exhaustion") {
   FixedSizeMemoryPool<TestObject, 2> pool(0, 2); // Max 2 blocks = 4 objects max
-  std::vector<decltype(pool.create(0))> objects;
+  kj::Vector<decltype(pool.create(0))> objects;
   for (int i = 0; i < 4; ++i) {
-    objects.push_back(pool.create(i));
+    objects.add(pool.create(i));
   }
 
   KJ_EXPECT(pool.total_blocks() == 4); // At max
@@ -212,10 +210,10 @@ KJ_TEST("MemoryMonitor: Generate report") {
   monitor.track_allocation("site1"_kj, 100);
   monitor.track_allocation("site2"_kj, 200);
 
-  std::string report = monitor.generate_report();
-  KJ_EXPECT(!report.empty());
-  KJ_EXPECT(report.find("Memory Usage Report") != std::string::npos);
-  KJ_EXPECT(report.find("Total Allocated") != std::string::npos);
+  kj::String report = monitor.generate_report();
+  KJ_EXPECT(report.size() > 0);
+  KJ_EXPECT(report.asPtr().contains("Memory Usage Report"_kj));
+  KJ_EXPECT(report.asPtr().contains("Total Allocated"_kj));
 }
 
 KJ_TEST("MemoryMonitor: Reset monitor") {
@@ -273,20 +271,18 @@ KJ_TEST("MemoryPool: Concurrent allocations") {
   const int thread_count = 4;
   const int allocs_per_thread = 10;
 
-  std::vector<std::future<void>> futures;
+  kj::Vector<kj::Own<kj::Thread>> threads;
   for (int t = 0; t < thread_count; ++t) {
-    futures.push_back(std::async(std::launch::async, [&pool, allocs_per_thread, t] {
-      std::vector<decltype(pool.create(0))> objects;
+    threads.add(kj::heap<kj::Thread>([&pool, allocs_per_thread, t] {
+      kj::Vector<decltype(pool.create(0))> objects;
       for (int i = 0; i < allocs_per_thread; ++i) {
-        objects.push_back(pool.create(i));
+        objects.add(pool.create(i));
         std::this_thread::sleep_for(std::chrono::microseconds(1));
       }
     }));
   }
 
-  for (auto& future : futures) {
-    future.wait();
-  }
+  threads.clear(); // Joins all threads
 
   // Verify pool statistics are consistent
   KJ_EXPECT(pool.allocation_count() == pool.deallocation_count());
@@ -297,9 +293,9 @@ KJ_TEST("MemoryPool: Concurrent monitor tracking") {
   const int thread_count = 4;
   const int tracks_per_thread = 10;
 
-  std::vector<std::future<void>> futures;
+  kj::Vector<kj::Own<kj::Thread>> threads;
   for (int t = 0; t < thread_count; ++t) {
-    futures.push_back(std::async(std::launch::async, [&monitor, tracks_per_thread, t] {
+    threads.add(kj::heap<kj::Thread>([&monitor, tracks_per_thread, t] {
       auto site_name = kj::str("thread_", t);
       for (int i = 0; i < tracks_per_thread; ++i) {
         monitor.track_allocation(site_name, 100);
@@ -309,9 +305,7 @@ KJ_TEST("MemoryPool: Concurrent monitor tracking") {
     }));
   }
 
-  for (auto& future : futures) {
-    future.wait();
-  }
+  threads.clear(); // Joins all threads
 
   KJ_EXPECT(monitor.active_sites() == thread_count);
   KJ_EXPECT(monitor.total_allocation_count() == thread_count * tracks_per_thread);
@@ -595,27 +589,26 @@ KJ_TEST("wrapNonOwning: Basic") {
 KJ_TEST("VeloZArena: Basic allocation") {
   VeloZArena arena;
 
-  auto* obj = arena.allocate<TestObject>(42);
-  KJ_EXPECT(obj != nullptr);
-  KJ_EXPECT(obj->value_ == 42);
-  KJ_EXPECT(obj->allocated);
+  auto& obj = arena.allocate<TestObject>(42);
+  KJ_EXPECT(obj.value_ == 42);
+  KJ_EXPECT(obj.allocated);
 }
 
 KJ_TEST("VeloZArena: Multiple allocations") {
   VeloZArena arena;
 
-  auto* obj1 = arena.allocate<TestObject>(1);
-  auto* obj2 = arena.allocate<TestObject>(2);
-  auto* obj3 = arena.allocate<TestObject>(3);
+  auto& obj1 = arena.allocate<TestObject>(1);
+  auto& obj2 = arena.allocate<TestObject>(2);
+  auto& obj3 = arena.allocate<TestObject>(3);
 
-  KJ_EXPECT(obj1->value_ == 1);
-  KJ_EXPECT(obj2->value_ == 2);
-  KJ_EXPECT(obj3->value_ == 3);
+  KJ_EXPECT(obj1.value_ == 1);
+  KJ_EXPECT(obj2.value_ == 2);
+  KJ_EXPECT(obj3.value_ == 3);
 
   // All objects are different
-  KJ_EXPECT(obj1 != obj2);
-  KJ_EXPECT(obj2 != obj3);
-  KJ_EXPECT(obj1 != obj3);
+  KJ_EXPECT(&obj1 != &obj2);
+  KJ_EXPECT(&obj2 != &obj3);
+  KJ_EXPECT(&obj1 != &obj3);
 }
 
 KJ_TEST("VeloZArena: Array allocation") {
@@ -648,8 +641,8 @@ KJ_TEST("VeloZArena: With chunk size hint") {
 
   // Allocate multiple objects
   for (int i = 0; i < 100; ++i) {
-    auto* obj = arena.allocate<TestObject>(i);
-    KJ_EXPECT(obj->value_ == i);
+    auto& obj = arena.allocate<TestObject>(i);
+    KJ_EXPECT(obj.value_ == i);
   }
 }
 
@@ -664,9 +657,8 @@ KJ_TEST("VeloZArena: Underlying arena access") {
 KJ_TEST("ThreadSafeArena: Basic allocation") {
   ThreadSafeArena arena;
 
-  auto* obj = arena.allocate<TestObject>(42);
-  KJ_EXPECT(obj != nullptr);
-  KJ_EXPECT(obj->value_ == 42);
+  auto& obj = arena.allocate<TestObject>(42);
+  KJ_EXPECT(obj.value_ == 42);
 }
 
 KJ_TEST("ThreadSafeArena: Concurrent allocations") {
@@ -675,21 +667,19 @@ KJ_TEST("ThreadSafeArena: Concurrent allocations") {
   constexpr int num_threads = 4;
   constexpr int allocations_per_thread = 100;
 
-  std::vector<std::thread> threads;
+  kj::Vector<kj::Own<kj::Thread>> threads;
   for (int t = 0; t < num_threads; ++t) {
-    threads.emplace_back([&arena, &success_count, t]() {
+    threads.add(kj::heap<kj::Thread>([&arena, &success_count, t]() {
       for (int i = 0; i < allocations_per_thread; ++i) {
-        auto* obj = arena.allocate<TestObject>(t * 1000 + i);
-        if (obj != nullptr && obj->value_ == t * 1000 + i) {
+        auto& obj = arena.allocate<TestObject>(t * 1000 + i);
+        if (obj.value_ == t * 1000 + i) {
           success_count++;
         }
       }
-    });
+    }));
   }
 
-  for (auto& thread : threads) {
-    thread.join();
-  }
+  threads.clear(); // Joins all threads
 
   KJ_EXPECT(success_count.load() == num_threads * allocations_per_thread);
 }
@@ -717,8 +707,8 @@ KJ_TEST("ThreadSafeArena: String copy") {
 KJ_TEST("ResettableArenaPool: Basic allocation") {
   ResettableArenaPool pool(4096);
 
-  int* value = pool.allocate<int>(42);
-  KJ_EXPECT(*value == 42);
+  int& value = pool.allocate<int>(42);
+  KJ_EXPECT(value == 42);
   KJ_EXPECT(pool.allocationCount() == 1);
   KJ_EXPECT(pool.totalAllocatedBytes() >= sizeof(int));
 }
@@ -726,21 +716,21 @@ KJ_TEST("ResettableArenaPool: Basic allocation") {
 KJ_TEST("ResettableArenaPool: Multiple allocations") {
   ResettableArenaPool pool(4096);
 
-  int* v1 = pool.allocate<int>(1);
-  int* v2 = pool.allocate<int>(2);
-  int* v3 = pool.allocate<int>(3);
+  int& v1 = pool.allocate<int>(1);
+  int& v2 = pool.allocate<int>(2);
+  int& v3 = pool.allocate<int>(3);
 
-  KJ_EXPECT(*v1 == 1);
-  KJ_EXPECT(*v2 == 2);
-  KJ_EXPECT(*v3 == 3);
+  KJ_EXPECT(v1 == 1);
+  KJ_EXPECT(v2 == 2);
+  KJ_EXPECT(v3 == 3);
   KJ_EXPECT(pool.allocationCount() == 3);
 }
 
 KJ_TEST("ResettableArenaPool: Reset clears allocations") {
   ResettableArenaPool pool(4096);
 
-  pool.allocate<int>(1);
-  pool.allocate<int>(2);
+  (void)pool.allocate<int>(1);
+  (void)pool.allocate<int>(2);
   KJ_EXPECT(pool.allocationCount() == 2);
 
   pool.reset();
@@ -749,8 +739,8 @@ KJ_TEST("ResettableArenaPool: Reset clears allocations") {
   KJ_EXPECT(pool.totalAllocatedBytes() == 0);
 
   // Can allocate again after reset
-  int* v = pool.allocate<int>(42);
-  KJ_EXPECT(*v == 42);
+  int& v = pool.allocate<int>(42);
+  KJ_EXPECT(v == 42);
   KJ_EXPECT(pool.allocationCount() == 1);
 }
 
@@ -786,8 +776,8 @@ KJ_TEST("ResettableArenaPool: Batch processing pattern") {
   for (int batch = 0; batch < 3; ++batch) {
     // Allocate batch items
     for (int i = 0; i < 10; ++i) {
-      int* value = pool.allocate<int>(batch * 10 + i);
-      KJ_EXPECT(*value == batch * 10 + i);
+      int& value = pool.allocate<int>(batch * 10 + i);
+      KJ_EXPECT(value == batch * 10 + i);
     }
     KJ_EXPECT(pool.allocationCount() == 10);
 
@@ -800,8 +790,8 @@ KJ_TEST("ResettableArenaPool: Batch processing pattern") {
 KJ_TEST("ThreadSafeResettableArenaPool: Basic allocation") {
   ThreadSafeResettableArenaPool pool(4096);
 
-  int* value = pool.allocate<int>(42);
-  KJ_EXPECT(*value == 42);
+  int& value = pool.allocate<int>(42);
+  KJ_EXPECT(value == 42);
   KJ_EXPECT(pool.allocationCount() == 1);
 }
 
@@ -810,21 +800,18 @@ KJ_TEST("ThreadSafeResettableArenaPool: Concurrent allocations") {
   constexpr int num_threads = 4;
   constexpr int allocations_per_thread = 100;
 
-  std::vector<std::thread> threads;
-  threads.reserve(num_threads);
+  kj::Vector<kj::Own<kj::Thread>> threads;
 
   for (int t = 0; t < num_threads; ++t) {
-    threads.emplace_back([&pool, t]() {
+    threads.add(kj::heap<kj::Thread>([&pool, t]() {
       for (int i = 0; i < allocations_per_thread; ++i) {
-        int* value = pool.allocate<int>(t * allocations_per_thread + i);
-        KJ_EXPECT(*value == t * allocations_per_thread + i);
+        int& value = pool.allocate<int>(t * allocations_per_thread + i);
+        KJ_EXPECT(value == t * allocations_per_thread + i);
       }
-    });
+    }));
   }
 
-  for (auto& thread : threads) {
-    thread.join();
-  }
+  threads.clear();
 
   KJ_EXPECT(pool.allocationCount() == num_threads * allocations_per_thread);
 }
@@ -832,14 +819,28 @@ KJ_TEST("ThreadSafeResettableArenaPool: Concurrent allocations") {
 KJ_TEST("ThreadSafeResettableArenaPool: Reset") {
   ThreadSafeResettableArenaPool pool(4096);
 
-  pool.allocate<int>(1);
-  pool.allocate<int>(2);
+  (void)pool.allocate<int>(1);
+  (void)pool.allocate<int>(2);
   KJ_EXPECT(pool.allocationCount() == 2);
 
   pool.reset();
 
   KJ_EXPECT(pool.allocationCount() == 0);
   KJ_EXPECT(pool.totalAllocatedBytes() == 0);
+}
+
+// =======================================================================================
+// Aligned New Tests
+// =======================================================================================
+
+KJ_TEST("aligned_new: allocates and frees aligned memory") {
+  struct alignas(64) AlignedStruct {
+    char data[64];
+  };
+
+  auto ptr = aligned_new<AlignedStruct>(64);
+  KJ_EXPECT(reinterpret_cast<uintptr_t>(ptr.get()) % 64 == 0);
+  // Destruction happens automatically via kj::Own
 }
 
 } // namespace

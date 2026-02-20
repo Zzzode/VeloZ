@@ -8,12 +8,12 @@
 
 namespace veloz::core {
 
-void* aligned_alloc(size_t size, size_t alignment) {
+AlignedMemory allocateAligned(size_t size, size_t alignment) {
   void* ptr;
 #if defined(__POSIX__) || defined(__linux__)
   int result = posix_memalign(&ptr, alignment, size);
   if (result != 0) {
-    return nullptr;
+    return AlignedMemory();
   }
 #elif defined(_WIN32)
   ptr = _aligned_malloc(size, alignment);
@@ -21,7 +21,7 @@ void* aligned_alloc(size_t size, size_t alignment) {
   // Generic implementation
   ptr = malloc(size + alignment + sizeof(void*));
   if (ptr == nullptr) {
-    return nullptr;
+    return AlignedMemory();
   }
   void** aligned_ptr =
       reinterpret_cast<void**>((reinterpret_cast<uintptr_t>(ptr) + alignment + sizeof(void*)) &
@@ -29,10 +29,10 @@ void* aligned_alloc(size_t size, size_t alignment) {
   aligned_ptr[-1] = ptr;
   ptr = aligned_ptr;
 #endif
-  return ptr;
+  return AlignedMemory(ptr, size, alignment);
 }
 
-void aligned_free(void* ptr) {
+void freeAligned(void* ptr) {
   if (ptr == nullptr) {
     return;
   }
@@ -45,6 +45,27 @@ void aligned_free(void* ptr) {
   void* real_ptr = reinterpret_cast<void**>(ptr)[-1];
   free(real_ptr);
 #endif
+}
+
+AlignedMemory::~AlignedMemory() {
+  if (ptr) {
+    freeAligned(ptr);
+  }
+}
+
+void AlignedMemory::reset() {
+  if (ptr) {
+    freeAligned(ptr);
+    ptr = nullptr;
+    size = 0;
+    alignment = 0;
+  }
+}
+
+const AlignedDisposer AlignedDisposer::instance;
+
+void AlignedDisposer::disposeImpl(void* pointer) const {
+  freeAligned(pointer);
 }
 
 // Global memory monitor instance using KJ Lazy for thread-safe lazy initialization

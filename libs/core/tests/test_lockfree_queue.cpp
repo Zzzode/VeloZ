@@ -3,8 +3,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <kj/string.h>
+#include <kj/thread.h>
+#include <kj/vector.h>
 #include <thread>
-#include <vector>
 
 using namespace veloz::core;
 
@@ -80,9 +82,9 @@ KJ_TEST("LockFreeNodePool: Node reuse") {
 KJ_TEST("LockFreeNodePool: Multiple allocations") {
   LockFreeNodePool<int> pool;
 
-  std::vector<LockFreeNodePool<int>::Node*> nodes;
+  kj::Vector<LockFreeNodePool<int>::Node*> nodes;
   for (int i = 0; i < 10; ++i) {
-    nodes.push_back(pool.allocate());
+    nodes.add(pool.allocate());
   }
 
   KJ_EXPECT(pool.allocated_count() == 10);
@@ -96,12 +98,12 @@ KJ_TEST("LockFreeNodePool: Multiple allocations") {
 }
 
 KJ_TEST("LockFreeNodePool: Construct and destroy value") {
-  LockFreeNodePool<std::string> pool;
+  LockFreeNodePool<kj::String> pool;
 
   auto* node = pool.allocate();
-  node->construct("Hello, World!");
+  node->construct(kj::str("Hello, World!"));
 
-  KJ_EXPECT(*node->get() == "Hello, World!");
+  KJ_EXPECT(*node->get() == "Hello, World!"_kj);
 
   node->destroy();
   pool.deallocate(node);
@@ -175,14 +177,14 @@ KJ_TEST("LockFreeQueue: FIFO order") {
 }
 
 KJ_TEST("LockFreeQueue: Move semantics") {
-  LockFreeQueue<std::string> queue;
+  LockFreeQueue<kj::String> queue;
 
-  std::string str = "Hello";
-  queue.push(std::move(str));
+  kj::String str = kj::str("Hello");
+  queue.push(kj::mv(str));
 
   auto maybe_result = queue.pop();
   KJ_IF_SOME(result, maybe_result) {
-    KJ_EXPECT(result == "Hello");
+    KJ_EXPECT(result == "Hello"_kj);
   }
   else {
     KJ_FAIL_EXPECT("result not found");
@@ -224,19 +226,17 @@ KJ_TEST("LockFreeQueue: Concurrent producers") {
   constexpr int NUM_THREADS = 4;
   constexpr int ITEMS_PER_THREAD = 1000;
 
-  std::vector<std::thread> threads;
+  kj::Vector<kj::Own<kj::Thread>> threads;
   for (int t = 0; t < NUM_THREADS; ++t) {
-    threads.emplace_back([&queue, &counter, t]() {
+    threads.add(kj::heap<kj::Thread>([&queue, &counter, t]() {
       for (int i = 0; i < ITEMS_PER_THREAD; ++i) {
         queue.push(t * ITEMS_PER_THREAD + i);
         counter.fetch_add(1, std::memory_order_relaxed);
       }
-    });
+    }));
   }
 
-  for (auto& thread : threads) {
-    thread.join();
-  }
+  threads.clear(); // Joins all threads
 
   KJ_EXPECT(counter.load() == NUM_THREADS * ITEMS_PER_THREAD);
   KJ_EXPECT(queue.size() == NUM_THREADS * ITEMS_PER_THREAD);
@@ -253,9 +253,9 @@ KJ_TEST("LockFreeQueue: Concurrent consumers") {
   std::atomic<int> consumed{0};
   constexpr int NUM_THREADS = 4;
 
-  std::vector<std::thread> threads;
+  kj::Vector<kj::Own<kj::Thread>> threads;
   for (int t = 0; t < NUM_THREADS; ++t) {
-    threads.emplace_back([&queue, &consumed]() {
+    threads.add(kj::heap<kj::Thread>([&queue, &consumed]() {
       while (true) {
         auto maybe_value = queue.pop();
         if (maybe_value == kj::none) {
@@ -263,12 +263,10 @@ KJ_TEST("LockFreeQueue: Concurrent consumers") {
         }
         consumed.fetch_add(1, std::memory_order_relaxed);
       }
-    });
+    }));
   }
 
-  for (auto& thread : threads) {
-    thread.join();
-  }
+  threads.clear(); // Joins all threads
 
   KJ_EXPECT(consumed.load() == TOTAL_ITEMS);
   KJ_EXPECT(queue.empty());
@@ -285,19 +283,19 @@ KJ_TEST("LockFreeQueue: Concurrent producers and consumers") {
   constexpr int NUM_CONSUMERS = 2;
   constexpr int ITEMS_PER_PRODUCER = 1000;
 
-  std::vector<std::thread> producers;
+  kj::Vector<kj::Own<kj::Thread>> producers;
   for (int t = 0; t < NUM_PRODUCERS; ++t) {
-    producers.emplace_back([&queue, &produced]() {
+    producers.add(kj::heap<kj::Thread>([&queue, &produced]() {
       for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
         queue.push(i);
         produced.fetch_add(1, std::memory_order_relaxed);
       }
-    });
+    }));
   }
 
-  std::vector<std::thread> consumers;
+  kj::Vector<kj::Own<kj::Thread>> consumers;
   for (int t = 0; t < NUM_CONSUMERS; ++t) {
-    consumers.emplace_back([&queue, &consumed, &done]() {
+    consumers.add(kj::heap<kj::Thread>([&queue, &consumed, &done]() {
       while (!done.load(std::memory_order_acquire) || !queue.empty()) {
         auto maybe_value = queue.pop();
         if (maybe_value != kj::none) {
@@ -306,18 +304,14 @@ KJ_TEST("LockFreeQueue: Concurrent producers and consumers") {
           std::this_thread::yield();
         }
       }
-    });
+    }));
   }
 
-  for (auto& thread : producers) {
-    thread.join();
-  }
+  producers.clear(); // Joins producers
 
   done.store(true, std::memory_order_release);
 
-  for (auto& thread : consumers) {
-    thread.join();
-  }
+  consumers.clear(); // Joins consumers
 
   KJ_EXPECT(produced.load() == NUM_PRODUCERS * ITEMS_PER_PRODUCER);
   KJ_EXPECT(consumed.load() == NUM_PRODUCERS * ITEMS_PER_PRODUCER);
