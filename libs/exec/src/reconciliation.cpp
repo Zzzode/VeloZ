@@ -48,6 +48,21 @@ kj::StringPtr to_string(ReconciliationAction action) {
   }
 }
 
+kj::StringPtr to_string(ReconciliationSeverity severity) {
+  switch (severity) {
+  case ReconciliationSeverity::Info:
+    return "Info"_kj;
+  case ReconciliationSeverity::Warning:
+    return "Warning"_kj;
+  case ReconciliationSeverity::Error:
+    return "Error"_kj;
+  case ReconciliationSeverity::Critical:
+    return "Critical"_kj;
+  default:
+    return "Unknown"_kj;
+  }
+}
+
 AccountReconciler::AccountReconciler(kj::AsyncIoContext& io_context, oms::OrderStore& order_store,
                                      ReconciliationConfig config)
     : io_context_(io_context), order_store_(order_store), config_(kj::mv(config)),
@@ -290,6 +305,17 @@ void AccountReconciler::compare_order_states(const oms::OrderState& local,
     mismatch.exchange_avg_price = exchange.last_fill_price;
     mismatch.detected_ts_ns = now_ns();
 
+    // Determine severity and manual intervention requirement
+    mismatch.severity = determine_severity(mismatch);
+    mismatch.requires_manual_intervention = requires_manual_intervention(mismatch);
+
+    if (mismatch.requires_manual_intervention) {
+      mismatch.intervention_reason = kj::str(
+          "Order state mismatch requires review: local_status=", static_cast<int>(local_status),
+          " exchange_status=", static_cast<int>(exchange.status), " local_qty=", local.executed_qty,
+          " exchange_qty=", exchange.last_fill_qty);
+    }
+
     mismatches.add(kj::mv(mismatch));
 
     {
@@ -326,11 +352,34 @@ kj::Promise<void> AccountReconciler::handle_mismatches(veloz::common::Venue venu
 
   // Process each mismatch
   for (auto& mismatch : mismatches) {
+    // Check if manual intervention is required
+    if (mismatch.requires_manual_intervention) {
+      ManualInterventionItem intervention;
+      intervention.client_order_id = kj::str(mismatch.client_order_id);
+      intervention.symbol = kj::str(mismatch.symbol);
+      intervention.venue = venue;
+      intervention.description = kj::str(mismatch.intervention_reason);
+      intervention.severity = mismatch.severity;
+      add_manual_intervention(kj::mv(intervention));
+
+      emit_event(ReconciliationEvent{
+          .type = ReconciliationEventType::StateMismatch,
+          .ts_ns = now_ns(),
+          .message =
+              kj::str("State mismatch requires manual intervention: ", mismatch.client_order_id),
+          .client_order_id = kj::str(mismatch.client_order_id),
+          .severity = mismatch.severity,
+      });
+
+      // Don't auto-correct if manual intervention is required
+      continue;
+    }
+
     emit_event(ReconciliationEvent{
         .type = ReconciliationEventType::StateMismatch,
         .ts_ns = now_ns(),
         .message = kj::str("State mismatch for order ", mismatch.client_order_id),
-        .mismatch = kj::mv(mismatch),
+        .severity = mismatch.severity,
     });
 
     // Update local state from exchange (trust exchange as source of truth)
@@ -353,6 +402,7 @@ kj::Promise<void> AccountReconciler::handle_mismatches(veloz::common::Venue venu
         .ts_ns = now_ns(),
         .message = kj::str("Order state corrected from exchange"),
         .client_order_id = kj::str(mismatch.client_order_id),
+        .severity = ReconciliationSeverity::Info,
     });
   }
 
@@ -612,6 +662,258 @@ std::int64_t AccountReconciler::now_ns() const {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
              std::chrono::steady_clock::now().time_since_epoch())
       .count();
+}
+
+kj::Maybe<ReconciliationReport>
+AccountReconciler::get_last_report(veloz::common::Venue venue) const {
+  auto lock = guarded_.lockExclusive();
+  KJ_IF_SOME(report, lock->last_reports.find(venue)) {
+    // Create a copy of the report
+    ReconciliationReport copy;
+    copy.start_ts_ns = report.start_ts_ns;
+    copy.end_ts_ns = report.end_ts_ns;
+    copy.duration = report.duration;
+    copy.venue = report.venue;
+    copy.orders_checked = report.orders_checked;
+    copy.orders_matched = report.orders_matched;
+    copy.mismatches_found = report.mismatches_found;
+    copy.mismatches_auto_resolved = report.mismatches_auto_resolved;
+    copy.orphaned_orders_found = report.orphaned_orders_found;
+    copy.orphaned_orders_cancelled = report.orphaned_orders_cancelled;
+    copy.positions_checked = report.positions_checked;
+    copy.position_discrepancies = report.position_discrepancies;
+    copy.manual_interventions_required = report.manual_interventions_required;
+    copy.success = report.success;
+    copy.error_message = kj::str(report.error_message);
+    copy.max_severity = report.max_severity;
+    return kj::Maybe<ReconciliationReport>(kj::mv(copy));
+  }
+  return kj::none;
+}
+
+kj::Vector<ManualInterventionItem> AccountReconciler::get_pending_interventions() const {
+  auto lock = guarded_.lockExclusive();
+  kj::Vector<ManualInterventionItem> result;
+
+  for (const auto& item : lock->pending_interventions) {
+    if (!item.resolved) {
+      ManualInterventionItem copy;
+      copy.id = kj::str(item.id);
+      copy.client_order_id = kj::str(item.client_order_id);
+      copy.symbol = kj::str(item.symbol);
+      copy.venue = item.venue;
+      copy.description = kj::str(item.description);
+      copy.severity = item.severity;
+      copy.created_ts_ns = item.created_ts_ns;
+      copy.resolved = item.resolved;
+      result.add(kj::mv(copy));
+    }
+  }
+
+  return result;
+}
+
+void AccountReconciler::resolve_intervention(kj::StringPtr intervention_id,
+                                             kj::StringPtr resolution_notes) {
+  auto lock = guarded_.lockExclusive();
+
+  for (auto& item : lock->pending_interventions) {
+    if (item.id == intervention_id && !item.resolved) {
+      item.resolved = true;
+      item.resolved_ts_ns = now_ns();
+      item.resolution_notes = kj::str(resolution_notes);
+
+      KJ_LOG(INFO, "Manual intervention resolved", intervention_id, resolution_notes);
+      return;
+    }
+  }
+
+  KJ_LOG(WARNING, "Intervention not found or already resolved", intervention_id);
+}
+
+void AccountReconciler::add_manual_intervention(ManualInterventionItem item) {
+  // Generate ID and timestamp before acquiring lock to avoid deadlock
+  if (item.id.size() == 0) {
+    item.id = generate_intervention_id();
+  }
+
+  if (item.created_ts_ns == 0) {
+    item.created_ts_ns = now_ns();
+  }
+
+  KJ_LOG(WARNING, "Manual intervention required", item.id.cStr(), item.description.cStr());
+
+  auto lock = guarded_.lockExclusive();
+  lock->pending_interventions.add(kj::mv(item));
+}
+
+kj::Maybe<ManualInterventionItem> AccountReconciler::get_intervention(kj::StringPtr id) const {
+  auto lock = guarded_.lockExclusive();
+
+  for (const auto& item : lock->pending_interventions) {
+    if (item.id == id) {
+      ManualInterventionItem copy;
+      copy.id = kj::str(item.id);
+      copy.client_order_id = kj::str(item.client_order_id);
+      copy.symbol = kj::str(item.symbol);
+      copy.venue = item.venue;
+      copy.description = kj::str(item.description);
+      copy.severity = item.severity;
+      copy.created_ts_ns = item.created_ts_ns;
+      copy.resolved_ts_ns = item.resolved_ts_ns;
+      copy.resolved = item.resolved;
+      copy.resolution_notes = kj::str(item.resolution_notes);
+      return kj::Maybe<ManualInterventionItem>(kj::mv(copy));
+    }
+  }
+
+  return kj::none;
+}
+
+kj::String AccountReconciler::generate_report_summary() const {
+  auto lock = guarded_.lockExclusive();
+
+  kj::Vector<char> buffer;
+  auto append = [&buffer](kj::StringPtr s) {
+    for (char c : s) {
+      buffer.add(c);
+    }
+  };
+
+  append("=== Reconciliation Summary ===\n"_kj);
+
+  // Stats summary
+  append(kj::str("Total reconciliations: ", lock->stats.total_reconciliations, "\n"));
+  append(kj::str("Successful: ", lock->stats.successful_reconciliations, "\n"));
+  append(kj::str("Failed: ", lock->stats.failed_reconciliations, "\n"));
+  append(kj::str("Mismatches detected: ", lock->stats.mismatches_detected, "\n"));
+  append(kj::str("Mismatches corrected: ", lock->stats.mismatches_corrected, "\n"));
+  append(kj::str("Orphaned orders found: ", lock->stats.orphaned_orders_found, "\n"));
+  append(kj::str("Orphaned orders cancelled: ", lock->stats.orphaned_orders_cancelled, "\n"));
+  append(kj::str("Strategy freezes: ", lock->stats.strategy_freezes, "\n"));
+
+  // Pending interventions
+  size_t pending_count = 0;
+  for (const auto& item : lock->pending_interventions) {
+    if (!item.resolved) {
+      pending_count++;
+    }
+  }
+  append(kj::str("Pending interventions: ", pending_count, "\n"));
+
+  // Strategy status
+  append(kj::str("Strategy frozen: ", lock->strategy_frozen ? "YES" : "NO", "\n"));
+
+  buffer.add('\0');
+  return kj::String(buffer.releaseAsArray());
+}
+
+kj::String AccountReconciler::export_report_json(const ReconciliationReport& report) const {
+  // Build JSON manually using kj::str
+  return kj::str("{"
+                 "\"start_ts_ns\":",
+                 report.start_ts_ns,
+                 ","
+                 "\"end_ts_ns\":",
+                 report.end_ts_ns,
+                 ","
+                 "\"duration_ns\":",
+                 report.duration / kj::NANOSECONDS,
+                 ","
+                 "\"venue\":",
+                 static_cast<int>(report.venue),
+                 ","
+                 "\"orders_checked\":",
+                 report.orders_checked,
+                 ","
+                 "\"orders_matched\":",
+                 report.orders_matched,
+                 ","
+                 "\"mismatches_found\":",
+                 report.mismatches_found,
+                 ","
+                 "\"mismatches_auto_resolved\":",
+                 report.mismatches_auto_resolved,
+                 ","
+                 "\"orphaned_orders_found\":",
+                 report.orphaned_orders_found,
+                 ","
+                 "\"orphaned_orders_cancelled\":",
+                 report.orphaned_orders_cancelled,
+                 ","
+                 "\"positions_checked\":",
+                 report.positions_checked,
+                 ","
+                 "\"position_discrepancies\":",
+                 report.position_discrepancies,
+                 ","
+                 "\"manual_interventions_required\":",
+                 report.manual_interventions_required,
+                 ","
+                 "\"success\":",
+                 report.success ? "true" : "false",
+                 ","
+                 "\"max_severity\":\"",
+                 to_string(report.max_severity),
+                 "\""
+                 "}");
+}
+
+ReconciliationSeverity AccountReconciler::determine_severity(const StateMismatch& mismatch) const {
+  // Critical: Large fill quantity difference (>10%)
+  if (mismatch.local_filled_qty > 0 || mismatch.exchange_filled_qty > 0) {
+    double max_qty = std::max(mismatch.local_filled_qty, mismatch.exchange_filled_qty);
+    double diff = std::abs(mismatch.local_filled_qty - mismatch.exchange_filled_qty);
+    if (max_qty > 0 && (diff / max_qty) > 0.1) {
+      return ReconciliationSeverity::Critical;
+    }
+  }
+
+  // Error: Status mismatch where one side shows filled and other doesn't
+  if ((mismatch.local_status == OrderStatus::Filled &&
+       mismatch.exchange_status != OrderStatus::Filled) ||
+      (mismatch.local_status != OrderStatus::Filled &&
+       mismatch.exchange_status == OrderStatus::Filled)) {
+    return ReconciliationSeverity::Error;
+  }
+
+  // Warning: Minor status differences
+  if (mismatch.local_status != mismatch.exchange_status) {
+    return ReconciliationSeverity::Warning;
+  }
+
+  // Info: Price differences only
+  return ReconciliationSeverity::Info;
+}
+
+bool AccountReconciler::requires_manual_intervention(const StateMismatch& mismatch) const {
+  // Require manual intervention for critical severity
+  if (mismatch.severity == ReconciliationSeverity::Critical) {
+    return true;
+  }
+
+  // Require manual intervention if fill quantity differs significantly
+  double qty_diff = std::abs(mismatch.local_filled_qty - mismatch.exchange_filled_qty);
+  if (qty_diff > 0.001) { // More than 0.001 units difference
+    double max_qty = std::max(mismatch.local_filled_qty, mismatch.exchange_filled_qty);
+    if (max_qty > 0 && (qty_diff / max_qty) > 0.05) { // >5% difference
+      return true;
+    }
+  }
+
+  // Require manual intervention if exchange shows filled but local doesn't
+  if (mismatch.exchange_status == OrderStatus::Filled &&
+      mismatch.local_status != OrderStatus::Filled) {
+    return true;
+  }
+
+  return false;
+}
+
+kj::String AccountReconciler::generate_intervention_id() const {
+  auto lock = guarded_.lockExclusive();
+  auto counter = ++lock->intervention_counter;
+  return kj::str("INT-", now_ns(), "-", counter);
 }
 
 } // namespace veloz::exec

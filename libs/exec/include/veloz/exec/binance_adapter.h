@@ -57,6 +57,19 @@ public:
   get_recent_trades_async(const veloz::common::SymbolId& symbol, int limit = 500);
   kj::Promise<kj::Maybe<double>> get_account_balance_async(kj::StringPtr asset);
 
+  // Order query methods (Production Trading - Task #11)
+  kj::Promise<kj::Maybe<ExecutionReport>> get_order_async(const veloz::common::SymbolId& symbol,
+                                                          kj::StringPtr client_order_id);
+  kj::Promise<kj::Maybe<kj::Array<ExecutionReport>>>
+  get_open_orders_async(const veloz::common::SymbolId& symbol);
+  kj::Promise<kj::Maybe<kj::Array<ExecutionReport>>> get_all_open_orders_async();
+
+  // Synchronous order query methods
+  kj::Maybe<ExecutionReport> get_order(const veloz::common::SymbolId& symbol,
+                                       kj::StringPtr client_order_id);
+  kj::Maybe<kj::Array<ExecutionReport>> get_open_orders(const veloz::common::SymbolId& symbol);
+  kj::Maybe<kj::Array<ExecutionReport>> get_all_open_orders();
+
   // Synchronous versions for backward compatibility (blocks on async)
   kj::Maybe<double> get_current_price(const veloz::common::SymbolId& symbol);
   kj::Maybe<kj::Array<PriceLevel>> get_order_book(const veloz::common::SymbolId& symbol,

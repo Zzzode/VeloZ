@@ -1,5 +1,6 @@
 #include "veloz/exec/coinbase_adapter.h"
 
+#include "veloz/core/json.h"
 #include "veloz/exec/hmac_wrapper.h"
 
 #include <chrono>
@@ -8,12 +9,47 @@
 
 namespace veloz::exec {
 
+using veloz::core::JsonDocument;
+
 namespace {
 constexpr const char* COINBASE_REST_URL = "api.coinbase.com";
 constexpr const char* COINBASE_SANDBOX_REST_URL = "api-public.sandbox.exchange.coinbase.com";
 constexpr const char* COINBASE_WS_URL = "advanced-trade-ws.coinbase.com";
 constexpr const char* COINBASE_SANDBOX_WS_URL =
     "advanced-trade-ws-public.sandbox.exchange.coinbase.com";
+
+// Coinbase error handling
+// https://docs.cdp.coinbase.com/advanced-trade/docs/rest-api-error-messages
+void log_coinbase_error(kj::StringPtr error_type, kj::StringPtr message,
+                        kj::StringPtr error_details) {
+  if (error_type == "INVALID_REQUEST") {
+    KJ_LOG(ERROR, "Coinbase: Invalid request", message, error_details);
+  } else if (error_type == "INVALID_ARGUMENT") {
+    KJ_LOG(ERROR, "Coinbase: Invalid argument", message, error_details);
+  } else if (error_type == "UNAUTHORIZED") {
+    KJ_LOG(ERROR, "Coinbase: Unauthorized - check API key", message);
+  } else if (error_type == "FORBIDDEN") {
+    KJ_LOG(ERROR, "Coinbase: Forbidden - permission denied", message);
+  } else if (error_type == "NOT_FOUND") {
+    KJ_LOG(ERROR, "Coinbase: Resource not found", message);
+  } else if (error_type == "RATE_LIMIT_EXCEEDED") {
+    KJ_LOG(WARNING, "Coinbase: Rate limit exceeded", message);
+  } else if (error_type == "INTERNAL") {
+    KJ_LOG(ERROR, "Coinbase: Internal server error", message);
+  } else if (error_type == "INSUFFICIENT_FUNDS") {
+    KJ_LOG(ERROR, "Coinbase: Insufficient funds", message);
+  } else if (error_type == "INVALID_LIMIT_PRICE_POST_ONLY") {
+    KJ_LOG(ERROR, "Coinbase: Invalid limit price for post-only order", message);
+  } else if (error_type == "INVALID_ORDER_SIZE") {
+    KJ_LOG(ERROR, "Coinbase: Invalid order size", message);
+  } else if (error_type == "UNKNOWN_ORDER") {
+    KJ_LOG(ERROR, "Coinbase: Unknown order", message);
+  } else if (error_type == "DUPLICATE_ORDER") {
+    KJ_LOG(ERROR, "Coinbase: Duplicate order", message);
+  } else {
+    KJ_LOG(ERROR, "Coinbase: Unknown error", error_type, message, error_details);
+  }
+}
 } // namespace
 
 CoinbaseAdapter::CoinbaseAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key,
@@ -169,7 +205,7 @@ kj::Promise<kj::Own<kj::HttpClient>> CoinbaseAdapter::get_http_client() {
 
 kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
                                                         kj::StringPtr params) {
-  // Use KJ-only HmacSha256 interface for JWT signature generation
+  // Coinbase Advanced Trade API authentication
   auto timestamp = kj::str(get_timestamp_sec());
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
   auto signature = build_jwt_token("GET"_kj, request_path);
@@ -180,6 +216,11 @@ kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+
+    // Coinbase Advanced Trade API authentication headers
+    headers.addPtrPtr("CB-ACCESS-KEY"_kj, api_key_.asPtr());
+    headers.addPtrPtr("CB-ACCESS-SIGN"_kj, signature.asPtr());
+    headers.addPtrPtr("CB-ACCESS-TIMESTAMP"_kj, timestamp.asPtr());
 
     auto url = params.size() > 0 ? kj::str("https://", base_rest_url_, endpoint, "?", params)
                                  : kj::str("https://", base_rest_url_, endpoint);
@@ -201,9 +242,11 @@ kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
 
 kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
                                                          kj::StringPtr body) {
-  // Use KJ-only HmacSha256 interface for JWT signature generation
+  // Coinbase Advanced Trade API authentication
+  // For POST, signature includes body: timestamp + method + requestPath + body
   auto timestamp = kj::str(get_timestamp_sec());
-  auto signature = build_jwt_token("POST"_kj, endpoint);
+  auto message = kj::str(timestamp, "POST", endpoint, body);
+  auto signature = HmacSha256::sign(api_secret_, message);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), body = kj::str(body),
                                  timestamp = kj::mv(timestamp),
@@ -211,6 +254,11 @@ kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+
+    // Coinbase Advanced Trade API authentication headers
+    headers.addPtrPtr("CB-ACCESS-KEY"_kj, api_key_.asPtr());
+    headers.addPtrPtr("CB-ACCESS-SIGN"_kj, signature.asPtr());
+    headers.addPtrPtr("CB-ACCESS-TIMESTAMP"_kj, timestamp.asPtr());
 
     auto url = kj::str("https://", base_rest_url_, endpoint);
     auto request = client->request(kj::HttpMethod::POST, url, headers, body.size());
@@ -232,7 +280,7 @@ kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
 
 kj::Promise<kj::String> CoinbaseAdapter::http_delete_async(kj::StringPtr endpoint,
                                                            kj::StringPtr params) {
-  // Use KJ-only HmacSha256 interface for JWT signature generation
+  // Coinbase Advanced Trade API authentication
   auto timestamp = kj::str(get_timestamp_sec());
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
   auto signature = build_jwt_token("DELETE"_kj, request_path);
@@ -243,6 +291,11 @@ kj::Promise<kj::String> CoinbaseAdapter::http_delete_async(kj::StringPtr endpoin
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+
+    // Coinbase Advanced Trade API authentication headers
+    headers.addPtrPtr("CB-ACCESS-KEY"_kj, api_key_.asPtr());
+    headers.addPtrPtr("CB-ACCESS-SIGN"_kj, signature.asPtr());
+    headers.addPtrPtr("CB-ACCESS-TIMESTAMP"_kj, timestamp.asPtr());
 
     auto url = params.size() > 0 ? kj::str("https://", base_rest_url_, endpoint, "?", params)
                                  : kj::str("https://", base_rest_url_, endpoint);
@@ -280,21 +333,48 @@ CoinbaseAdapter::place_order_async(const PlaceOrderRequest& req) {
                    "\"}},\"client_order_id\":\"", req.client_order_id, "\"}");
   }
 
-  auto symbol_value = kj::str(req.symbol.value);
+  auto symbol_copy = req.symbol;
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v3/brokerage/orders", body)
-      .then([symbol_value = kj::mv(symbol_value),
-             client_order_id = kj::mv(client_order_id_copy)](kj::String response) mutable {
-        ExecutionReport report;
-        report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
-        report.client_order_id = kj::mv(client_order_id);
-        report.status = OrderStatus::Accepted;
-        report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                std::chrono::system_clock::now().time_since_epoch())
-                                .count();
+      .then([symbol_copy, client_order_id = kj::mv(client_order_id_copy)](
+                kj::String response) mutable -> kj::Maybe<ExecutionReport> {
+        if (response.size() == 0) {
+          KJ_LOG(ERROR, "Coinbase place_order: empty response");
+          return kj::none;
+        }
 
-        return kj::Maybe<ExecutionReport>(kj::mv(report));
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     auto error = root["error"];
+                     if (error.is_string()) {
+                       auto error_type = error.get_string(""_kj);
+                       auto message = root["message"].get_string(""_kj);
+                       auto error_details = root["error_details"].get_string(""_kj);
+                       log_coinbase_error(error_type, message, error_details);
+                       return;
+                     }
+
+                     // Parse successful response
+                     ExecutionReport report;
+                     report.symbol = symbol_copy;
+                     report.client_order_id = kj::mv(client_order_id);
+                     report.venue_order_id = kj::str(root["order_id"].get_string(""_kj));
+                     report.status = OrderStatus::Accepted;
+                     report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
+
+                     result = kj::mv(report);
+                   })) {
+          KJ_LOG(ERROR, "Error parsing Coinbase place_order response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
       });
 }
 
@@ -302,22 +382,55 @@ kj::Promise<kj::Maybe<ExecutionReport>>
 CoinbaseAdapter::cancel_order_async(const CancelOrderRequest& req) {
   auto body = kj::str("{\"order_ids\":[\"", req.client_order_id, "\"]}");
 
-  auto symbol_value = kj::str(req.symbol.value);
+  auto symbol_copy = req.symbol;
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v3/brokerage/orders/batch_cancel", body)
-      .then([symbol_value = kj::mv(symbol_value),
-             client_order_id = kj::mv(client_order_id_copy)](kj::String response) mutable {
-        auto symbol_copy = kj::str(symbol_value);
-        ExecutionReport report;
-        report.symbol = veloz::common::SymbolId{symbol_copy};
-        report.client_order_id = kj::mv(client_order_id);
-        report.status = OrderStatus::Canceled;
-        report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                std::chrono::system_clock::now().time_since_epoch())
-                                .count();
+      .then([symbol_copy, client_order_id = kj::mv(client_order_id_copy)](
+                kj::String response) mutable -> kj::Maybe<ExecutionReport> {
+        if (response.size() == 0) {
+          KJ_LOG(ERROR, "Coinbase cancel_order: empty response");
+          return kj::none;
+        }
 
-        return kj::Maybe<ExecutionReport>(kj::mv(report));
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     auto error = root["error"];
+                     if (error.is_string()) {
+                       auto error_type = error.get_string(""_kj);
+                       auto message = root["message"].get_string(""_kj);
+                       auto error_details = root["error_details"].get_string(""_kj);
+                       log_coinbase_error(error_type, message, error_details);
+                       return;
+                     }
+
+                     // Parse successful response
+                     auto results = root["results"];
+                     ExecutionReport report;
+                     report.symbol = symbol_copy;
+                     report.client_order_id = kj::mv(client_order_id);
+                     if (results.size() > 0) {
+                       auto first_result = results[0];
+                       report.venue_order_id = kj::str(first_result["order_id"].get_string(""_kj));
+                       auto success = first_result["success"].get_bool(false);
+                       report.status = success ? OrderStatus::Canceled : OrderStatus::Rejected;
+                     } else {
+                       report.status = OrderStatus::Canceled;
+                     }
+                     report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
+
+                     result = kj::mv(report);
+                   })) {
+          KJ_LOG(ERROR, "Error parsing Coinbase cancel_order response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
       });
 }
 
@@ -335,7 +448,30 @@ CoinbaseAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) 
   auto endpoint = kj::str("/api/v3/brokerage/products/", formatted_symbol);
 
   return http_get_async(endpoint, nullptr).then([](kj::String response) -> kj::Maybe<double> {
-    return kj::none;
+    if (response.size() == 0) {
+      return kj::none;
+    }
+
+    kj::Maybe<double> result;
+    KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                 auto doc = JsonDocument::parse(response);
+                 auto root = doc.root();
+
+                 // Check for error
+                 auto error = root["error"];
+                 if (error.is_string()) {
+                   log_coinbase_error(error.get_string(""_kj), root["message"].get_string(""_kj),
+                                      root["error_details"].get_string(""_kj));
+                   return;
+                 }
+
+                 // Parse price from product info
+                 result = root["price"].get_double(0.0);
+               })) {
+      KJ_LOG(ERROR, "Error parsing Coinbase product response", exception.getDescription());
+      return kj::none;
+    }
+    return result;
   });
 }
 
@@ -346,7 +482,54 @@ CoinbaseAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int
   auto params = kj::str("limit=", depth);
 
   return http_get_async(endpoint, params)
-      .then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> { return kj::none; });
+      .then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<kj::Array<PriceLevel>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error
+                     auto error = root["error"];
+                     if (error.is_string()) {
+                       log_coinbase_error(error.get_string(""_kj),
+                                          root["message"].get_string(""_kj),
+                                          root["error_details"].get_string(""_kj));
+                       return;
+                     }
+
+                     auto pricebook = root["pricebook"];
+                     auto bids = pricebook["bids"];
+                     auto asks = pricebook["asks"];
+
+                     kj::Vector<PriceLevel> levels;
+                     // Add bids
+                     for (size_t i = 0; i < bids.size(); ++i) {
+                       auto bid = bids[i];
+                       PriceLevel level;
+                       level.price = bid["price"].get_double(0.0);
+                       level.quantity = bid["size"].get_double(0.0);
+                       levels.add(kj::mv(level));
+                     }
+                     // Add asks
+                     for (size_t i = 0; i < asks.size(); ++i) {
+                       auto ask = asks[i];
+                       PriceLevel level;
+                       level.price = ask["price"].get_double(0.0);
+                       level.quantity = ask["size"].get_double(0.0);
+                       levels.add(kj::mv(level));
+                     }
+
+                     result = levels.releaseAsArray();
+                   })) {
+          KJ_LOG(ERROR, "Error parsing Coinbase orderbook response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
 }
 
 kj::Promise<kj::Maybe<kj::Array<TradeData>>>
@@ -355,13 +538,82 @@ CoinbaseAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, 
   auto endpoint = kj::str("/api/v3/brokerage/products/", formatted_symbol, "/ticker");
 
   return http_get_async(endpoint, nullptr)
-      .then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> { return kj::none; });
+      .then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<kj::Array<TradeData>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error
+                     auto error = root["error"];
+                     if (error.is_string()) {
+                       log_coinbase_error(error.get_string(""_kj),
+                                          root["message"].get_string(""_kj),
+                                          root["error_details"].get_string(""_kj));
+                       return;
+                     }
+
+                     auto trades = root["trades"];
+                     kj::Vector<TradeData> trade_list;
+                     for (size_t i = 0; i < trades.size(); ++i) {
+                       auto trade = trades[i];
+                       TradeData data;
+                       data.price = trade["price"].get_double(0.0);
+                       data.quantity = trade["size"].get_double(0.0);
+                       trade_list.add(kj::mv(data));
+                     }
+
+                     result = trade_list.releaseAsArray();
+                   })) {
+          KJ_LOG(ERROR, "Error parsing Coinbase trades response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
 }
 
 kj::Promise<kj::Maybe<double>> CoinbaseAdapter::get_account_balance_async(kj::StringPtr asset) {
-  return http_get_async("/api/v3/brokerage/accounts", nullptr).then([](kj::String response) {
-    return kj::Maybe<double>(0.0);
-  });
+  auto asset_copy = kj::str(asset);
+
+  return http_get_async("/api/v3/brokerage/accounts", nullptr)
+      .then([asset_copy = kj::mv(asset_copy)](kj::String response) mutable -> kj::Maybe<double> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<double> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error
+                     auto error = root["error"];
+                     if (error.is_string()) {
+                       log_coinbase_error(error.get_string(""_kj),
+                                          root["message"].get_string(""_kj),
+                                          root["error_details"].get_string(""_kj));
+                       return;
+                     }
+
+                     auto accounts = root["accounts"];
+                     for (size_t i = 0; i < accounts.size(); ++i) {
+                       auto account = accounts[i];
+                       if (account["currency"].get_string(""_kj) == asset_copy) {
+                         auto available = account["available_balance"];
+                         result = available["value"].get_double(0.0);
+                         return;
+                       }
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing Coinbase accounts response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
 }
 
 kj::Maybe<double> CoinbaseAdapter::get_current_price(const veloz::common::SymbolId& symbol) {

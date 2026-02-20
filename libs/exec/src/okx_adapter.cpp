@@ -1,9 +1,11 @@
 #include "veloz/exec/okx_adapter.h"
 
+#include "veloz/core/json.h"
 #include "veloz/exec/hmac_wrapper.h"
 
 #include <chrono>
 #include <ctime>
+#include <format>
 #include <iomanip>
 #include <kj/compat/tls.h>
 #include <kj/debug.h>
@@ -56,18 +58,48 @@ bool OKXAdapter::is_connected() const {
 }
 
 void OKXAdapter::connect() {
+  // Simple connection state management - does not make network calls
+  // Use connect_async() for actual API connection validation
   connected_ = true;
-  last_activity_time_ = kj::systemCoarseMonotonicClock().now();
+  last_activity_time_ = io_context_.provider->getTimer().now();
 }
 
 void OKXAdapter::disconnect() {
   connected_ = false;
+  KJ_LOG(INFO, "OKX API disconnected");
 }
 
 kj::Promise<void> OKXAdapter::connect_async() {
-  connected_ = true;
-  last_activity_time_ = kj::systemCoarseMonotonicClock().now();
-  return kj::READY_NOW;
+  if (connected_) {
+    return kj::READY_NOW;
+  }
+
+  // Test connection by getting server time
+  return http_get_async("/api/v5/public/time"_kj).then([this](kj::String response) {
+    if (response.size() == 0) {
+      KJ_LOG(ERROR, "Failed to connect to OKX API - empty response");
+      connected_ = false;
+      return;
+    }
+
+    KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                 using veloz::core::JsonDocument;
+                 auto doc = JsonDocument::parse(response);
+                 auto root = doc.root();
+
+                 if (root["code"].get_string("") == "0"_kj) {
+                   connected_ = true;
+                   last_activity_time_ = io_context_.provider->getTimer().now();
+                   KJ_LOG(INFO, "OKX API connected successfully");
+                 } else {
+                   KJ_LOG(ERROR, "OKX API connection failed", root["msg"].get_string(""));
+                   connected_ = false;
+                 }
+               })) {
+      KJ_LOG(ERROR, "Error connecting to OKX API", exception.getDescription());
+      connected_ = false;
+    }
+  });
 }
 
 void OKXAdapter::set_timeout(kj::Duration timeout) {
@@ -83,13 +115,15 @@ kj::String OKXAdapter::get_timestamp_iso() const {
   auto time_t_now = std::chrono::system_clock::to_time_t(now);
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
-  // Build ISO 8601 timestamp using KJ string building
+  // Build ISO 8601 timestamp with zero-padding
   // Format: YYYY-MM-DDTHH:MM:SS.mmmZ
+  // Note: Using std::format for width specifiers as kj::str() doesn't support them
+  // std::format returns std::string, use .c_str() for kj::str() compatibility
   auto tm = std::gmtime(&time_t_now);
-  return kj::str(tm->tm_year + 1900, "-", kj::str(tm->tm_mon + 1), "-", kj::str(tm->tm_mday), "T",
-                 kj::str(tm->tm_hour), ":", kj::str(tm->tm_min), ":", kj::str(tm->tm_sec), ".",
-                 kj::str(ms.count() / 100), kj::str((ms.count() % 100) / 10),
-                 kj::str(ms.count() % 10), "Z");
+  auto formatted = std::format("{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}.{:03d}Z",
+                               tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,
+                               tm->tm_min, tm->tm_sec, static_cast<int>(ms.count()));
+  return kj::str(formatted.c_str());
 }
 
 kj::String OKXAdapter::build_signature(kj::StringPtr timestamp, kj::StringPtr method,
@@ -201,6 +235,17 @@ kj::Promise<kj::String> OKXAdapter::http_get_async(kj::StringPtr endpoint, kj::S
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
 
+    // OKX authentication headers
+    headers.addPtrPtr("OK-ACCESS-KEY"_kj, api_key_.asPtr());
+    headers.addPtrPtr("OK-ACCESS-SIGN"_kj, signature.asPtr());
+    headers.addPtrPtr("OK-ACCESS-TIMESTAMP"_kj, timestamp.asPtr());
+    headers.addPtrPtr("OK-ACCESS-PASSPHRASE"_kj, passphrase_.asPtr());
+
+    // Demo mode header
+    if (demo_) {
+      headers.addPtrPtr("x-simulated-trading"_kj, "1"_kj);
+    }
+
     auto url = params.size() > 0 ? kj::str("https://", base_rest_url_, endpoint, "?", params)
                                  : kj::str("https://", base_rest_url_, endpoint);
 
@@ -230,6 +275,17 @@ kj::Promise<kj::String> OKXAdapter::http_post_async(kj::StringPtr endpoint, kj::
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+
+    // OKX authentication headers
+    headers.addPtrPtr("OK-ACCESS-KEY"_kj, api_key_.asPtr());
+    headers.addPtrPtr("OK-ACCESS-SIGN"_kj, signature.asPtr());
+    headers.addPtrPtr("OK-ACCESS-TIMESTAMP"_kj, timestamp.asPtr());
+    headers.addPtrPtr("OK-ACCESS-PASSPHRASE"_kj, passphrase_.asPtr());
+
+    // Demo mode header
+    if (demo_) {
+      headers.addPtrPtr("x-simulated-trading"_kj, "1"_kj);
+    }
 
     auto url = kj::str("https://", base_rest_url_, endpoint);
     auto request = client->request(kj::HttpMethod::POST, url, headers, body.size());
@@ -262,6 +318,17 @@ kj::Promise<kj::String> OKXAdapter::http_delete_async(kj::StringPtr endpoint,
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+
+    // OKX authentication headers
+    headers.addPtrPtr("OK-ACCESS-KEY"_kj, api_key_.asPtr());
+    headers.addPtrPtr("OK-ACCESS-SIGN"_kj, signature.asPtr());
+    headers.addPtrPtr("OK-ACCESS-TIMESTAMP"_kj, timestamp.asPtr());
+    headers.addPtrPtr("OK-ACCESS-PASSPHRASE"_kj, passphrase_.asPtr());
+
+    // Demo mode header
+    if (demo_) {
+      headers.addPtrPtr("x-simulated-trading"_kj, "1"_kj);
+    }
 
     auto url = params.size() > 0 ? kj::str("https://", base_rest_url_, endpoint, "?", params)
                                  : kj::str("https://", base_rest_url_, endpoint);
@@ -305,19 +372,69 @@ OKXAdapter::place_order_async(const PlaceOrderRequest& req) {
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v5/trade/order", body)
-      .then([symbol_value = kj::mv(symbol_value),
-             client_order_id = kj::mv(client_order_id_copy)](kj::String response) mutable {
-        // Parse response and create execution report
-        auto symbol_copy = kj::str(symbol_value);
-        ExecutionReport report;
-        report.symbol = veloz::common::SymbolId{symbol_copy};
-        report.client_order_id = kj::mv(client_order_id);
-        report.status = OrderStatus::Accepted;
-        report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                std::chrono::system_clock::now().time_since_epoch())
-                                .count();
+      .then([symbol_value = kj::mv(symbol_value), client_order_id = kj::mv(client_order_id_copy)](
+                kj::String response) mutable -> kj::Maybe<ExecutionReport> {
+        if (response.size() == 0) {
+          KJ_LOG(ERROR, "OKX place_order: empty response");
+          return kj::none;
+        }
 
-        return kj::Maybe<ExecutionReport>(kj::mv(report));
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     using veloz::core::JsonDocument;
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     auto code = root["code"].get_string("");
+                     auto msg = root["msg"].get_string("");
+
+                     // OKX error codes:
+                     // 0 = success
+                     // 50001 = API key invalid
+                     // 50011 = Request too frequent (rate limit)
+                     // 51xxx = Trade errors (51000=param error, 51001=instrument not found, etc.)
+                     if (code != "0"_kj) {
+                       KJ_LOG(ERROR, "OKX place_order error", code, msg);
+
+                       // Check for specific error codes
+                       if (code == "50001"_kj) {
+                         KJ_LOG(ERROR, "OKX: Invalid API key");
+                       } else if (code == "50011"_kj) {
+                         KJ_LOG(WARNING, "OKX: Rate limit exceeded");
+                       } else if (code.startsWith("51"_kj)) {
+                         KJ_LOG(ERROR, "OKX: Trade error", code, msg);
+                       }
+                       return;
+                     }
+
+                     auto data = root["data"];
+                     if (data.is_array() && data.size() > 0) {
+                       auto order_data = data[0];
+                       auto sCode = order_data["sCode"].get_string("");
+                       auto sMsg = order_data["sMsg"].get_string("");
+
+                       // Check sub-code for individual order errors
+                       if (sCode != "0"_kj) {
+                         KJ_LOG(ERROR, "OKX place_order sub-error", sCode, sMsg);
+                         return;
+                       }
+
+                       ExecutionReport report;
+                       report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
+                       report.client_order_id = kj::mv(client_order_id);
+                       report.venue_order_id = kj::str(order_data["ordId"].get_string(""));
+                       report.status = OrderStatus::Accepted;
+                       report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+
+                       result = kj::mv(report);
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing OKX place_order response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
       });
 }
 
@@ -330,29 +447,96 @@ OKXAdapter::cancel_order_async(const CancelOrderRequest& req) {
   auto client_order_id_copy = kj::str(req.client_order_id);
 
   return http_post_async("/api/v5/trade/cancel-order", body)
-      .then([symbol_value = kj::mv(symbol_value),
-             client_order_id = kj::mv(client_order_id_copy)](kj::String response) mutable {
-        ExecutionReport report;
-        report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
-        report.client_order_id = kj::mv(client_order_id);
-        report.status = OrderStatus::Canceled;
-        report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                std::chrono::system_clock::now().time_since_epoch())
-                                .count();
+      .then([symbol_value = kj::mv(symbol_value), client_order_id = kj::mv(client_order_id_copy)](
+                kj::String response) mutable -> kj::Maybe<ExecutionReport> {
+        if (response.size() == 0) {
+          KJ_LOG(ERROR, "OKX cancel_order: empty response");
+          return kj::none;
+        }
 
-        return kj::Maybe<ExecutionReport>(kj::mv(report));
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     using veloz::core::JsonDocument;
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     auto code = root["code"].get_string("");
+                     auto msg = root["msg"].get_string("");
+
+                     // OKX error codes:
+                     // 0 = success
+                     // 50001 = API key invalid
+                     // 50011 = Request too frequent (rate limit)
+                     // 51xxx = Trade errors
+                     if (code != "0"_kj) {
+                       KJ_LOG(ERROR, "OKX cancel_order error", code, msg);
+
+                       if (code == "50001"_kj) {
+                         KJ_LOG(ERROR, "OKX: Invalid API key");
+                       } else if (code == "50011"_kj) {
+                         KJ_LOG(WARNING, "OKX: Rate limit exceeded");
+                       } else if (code.startsWith("51"_kj)) {
+                         KJ_LOG(ERROR, "OKX: Trade error", code, msg);
+                       }
+                       return;
+                     }
+
+                     auto data = root["data"];
+                     if (data.is_array() && data.size() > 0) {
+                       auto order_data = data[0];
+                       auto sCode = order_data["sCode"].get_string("");
+                       auto sMsg = order_data["sMsg"].get_string("");
+
+                       // Check sub-code for individual order errors
+                       // 51400 = order does not exist
+                       // 51401 = order already canceled
+                       // 51402 = order already filled
+                       if (sCode != "0"_kj) {
+                         KJ_LOG(ERROR, "OKX cancel_order sub-error", sCode, sMsg);
+
+                         // Still return a report for "already canceled" or "already filled"
+                         if (sCode == "51401"_kj || sCode == "51402"_kj) {
+                           ExecutionReport report;
+                           report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
+                           report.client_order_id = kj::mv(client_order_id);
+                           report.status =
+                               (sCode == "51401"_kj) ? OrderStatus::Canceled : OrderStatus::Filled;
+                           report.ts_recv_ns =
+                               std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::system_clock::now().time_since_epoch())
+                                   .count();
+                           result = kj::mv(report);
+                         }
+                         return;
+                       }
+
+                       ExecutionReport report;
+                       report.symbol = veloz::common::SymbolId{symbol_value.cStr()};
+                       report.client_order_id = kj::mv(client_order_id);
+                       report.venue_order_id = kj::str(order_data["ordId"].get_string(""));
+                       report.status = OrderStatus::Canceled;
+                       report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+
+                       result = kj::mv(report);
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing OKX cancel_order response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
       });
 }
 
 kj::Maybe<ExecutionReport> OKXAdapter::place_order(const PlaceOrderRequest& req) {
-  // Synchronous version - not recommended for production use
-  // This would require blocking on the async operation
-  return {};
+  // Synchronous version - blocks on async operation
+  return place_order_async(req).wait(io_context_.waitScope);
 }
 
 kj::Maybe<ExecutionReport> OKXAdapter::cancel_order(const CancelOrderRequest& req) {
-  // Synchronous version - not recommended for production use
-  return {};
+  // Synchronous version - blocks on async operation
+  return cancel_order_async(req).wait(io_context_.waitScope);
 }
 
 kj::Promise<kj::Maybe<double>>
@@ -361,9 +545,35 @@ OKXAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) {
   auto params = kj::str("instId=", formatted_symbol);
 
   return http_get_async("/api/v5/market/ticker", params)
-      .then([](kj::String response) -> kj::Maybe<double> {
-        // Parse response - in production, use proper JSON parsing
-        return kj::none;
+      .then([this](kj::String response) -> kj::Maybe<double> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<double> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     using veloz::core::JsonDocument;
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // OKX response format: {"code":"0","data":[{"last":"..."}]}
+                     if (root["code"].get_string("") != "0"_kj) {
+                       KJ_LOG(ERROR, "OKX API error", root["msg"].get_string(""));
+                       return;
+                     }
+
+                     auto data = root["data"];
+                     if (data.is_array() && data.size() > 0) {
+                       auto ticker = data[0];
+                       auto last_str = ticker["last"].get_string();
+                       result = last_str.parseAs<double>();
+                       last_activity_time_ = io_context_.provider->getTimer().now();
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing OKX ticker response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
       });
 }
 
@@ -373,7 +583,60 @@ OKXAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int dept
   auto params = kj::str("instId=", formatted_symbol, "&sz=", depth);
 
   return http_get_async("/api/v5/market/books", params)
-      .then([](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> { return kj::none; });
+      .then([this](kj::String response) -> kj::Maybe<kj::Array<PriceLevel>> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<kj::Array<PriceLevel>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     using veloz::core::JsonDocument;
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     if (root["code"].get_string("") != "0"_kj) {
+                       KJ_LOG(ERROR, "OKX API error", root["msg"].get_string(""));
+                       return;
+                     }
+
+                     kj::Vector<PriceLevel> levels;
+                     auto data = root["data"];
+                     if (data.is_array() && data.size() > 0) {
+                       auto book = data[0];
+
+                       // Parse bids
+                       auto bids = book["bids"];
+                       if (bids.is_array()) {
+                         for (size_t i = 0; i < bids.size(); ++i) {
+                           auto bid = bids[i];
+                           PriceLevel level;
+                           level.price = bid[0].get_string().parseAs<double>();
+                           level.quantity = bid[1].get_string().parseAs<double>();
+                           levels.add(kj::mv(level));
+                         }
+                       }
+
+                       // Parse asks
+                       auto asks = book["asks"];
+                       if (asks.is_array()) {
+                         for (size_t i = 0; i < asks.size(); ++i) {
+                           auto ask = asks[i];
+                           PriceLevel level;
+                           level.price = ask[0].get_string().parseAs<double>();
+                           level.quantity = ask[1].get_string().parseAs<double>();
+                           levels.add(kj::mv(level));
+                         }
+                       }
+
+                       last_activity_time_ = io_context_.provider->getTimer().now();
+                       result = levels.releaseAsArray();
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing OKX order book response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
 }
 
 kj::Promise<kj::Maybe<kj::Array<TradeData>>>
@@ -382,32 +645,102 @@ OKXAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, int l
   auto params = kj::str("instId=", formatted_symbol, "&limit=", limit);
 
   return http_get_async("/api/v5/market/trades", params)
-      .then([](kj::String response) -> kj::Maybe<kj::Array<TradeData>> { return kj::none; });
+      .then([this](kj::String response) -> kj::Maybe<kj::Array<TradeData>> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<kj::Array<TradeData>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     using veloz::core::JsonDocument;
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     if (root["code"].get_string("") != "0"_kj) {
+                       KJ_LOG(ERROR, "OKX API error", root["msg"].get_string(""));
+                       return;
+                     }
+
+                     kj::Vector<TradeData> trades;
+                     auto data = root["data"];
+                     if (data.is_array()) {
+                       for (size_t i = 0; i < data.size(); ++i) {
+                         auto trade = data[i];
+                         TradeData td;
+                         td.price = trade["px"].get_string().parseAs<double>();
+                         td.quantity = trade["sz"].get_string().parseAs<double>();
+                         trades.add(kj::mv(td));
+                       }
+                       last_activity_time_ = io_context_.provider->getTimer().now();
+                       result = trades.releaseAsArray();
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing OKX trades response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
 }
 
 kj::Promise<kj::Maybe<double>> OKXAdapter::get_account_balance_async(kj::StringPtr asset) {
   auto params = kj::str("ccy=", asset);
 
   return http_get_async("/api/v5/account/balance", params)
-      .then([](kj::String response) -> kj::Maybe<double> { return kj::none; });
+      .then([this, asset = kj::str(asset)](kj::String response) -> kj::Maybe<double> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<double> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     using veloz::core::JsonDocument;
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     if (root["code"].get_string("") != "0"_kj) {
+                       KJ_LOG(ERROR, "OKX API error", root["msg"].get_string(""));
+                       return;
+                     }
+
+                     auto data = root["data"];
+                     if (data.is_array() && data.size() > 0) {
+                       auto account = data[0];
+                       auto details = account["details"];
+                       if (details.is_array()) {
+                         for (size_t i = 0; i < details.size(); ++i) {
+                           auto detail = details[i];
+                           if (detail["ccy"].get_string("") == asset) {
+                             result = detail["availBal"].get_string().parseAs<double>();
+                             last_activity_time_ = io_context_.provider->getTimer().now();
+                             return;
+                           }
+                         }
+                       }
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error parsing OKX balance response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
 }
 
 kj::Maybe<double> OKXAdapter::get_current_price(const veloz::common::SymbolId& symbol) {
-  return kj::none;
+  return get_current_price_async(symbol).wait(io_context_.waitScope);
 }
 
 kj::Maybe<kj::Array<PriceLevel>> OKXAdapter::get_order_book(const veloz::common::SymbolId& symbol,
                                                             int depth) {
-  return kj::none;
+  return get_order_book_async(symbol, depth).wait(io_context_.waitScope);
 }
 
 kj::Maybe<kj::Array<TradeData>> OKXAdapter::get_recent_trades(const veloz::common::SymbolId& symbol,
                                                               int limit) {
-  return kj::none;
+  return get_recent_trades_async(symbol, limit).wait(io_context_.waitScope);
 }
 
 kj::Maybe<double> OKXAdapter::get_account_balance(kj::StringPtr asset) {
-  return kj::none;
+  return get_account_balance_async(asset).wait(io_context_.waitScope);
 }
 
 } // namespace veloz::exec

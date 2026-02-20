@@ -1,11 +1,9 @@
 #pragma once
 
 #include "veloz/common/types.h"
-#include "veloz/exec/exchange_adapter.h"
 #include "veloz/exec/order_api.h"
 #include "veloz/oms/order_record.h"
 
-#include <chrono>
 #include <cstdint>
 #include <kj/async-io.h>
 #include <kj/async.h>
@@ -42,6 +40,14 @@ enum class ReconciliationAction : std::uint8_t {
   ManualIntervention = 4,
 };
 
+// Severity level for reconciliation issues
+enum class ReconciliationSeverity : std::uint8_t {
+  Info = 0,     // Informational, no action needed
+  Warning = 1,  // Minor discrepancy, auto-corrected
+  Error = 2,    // Significant discrepancy, needs review
+  Critical = 3, // Critical issue, requires manual intervention
+};
+
 // Mismatch details between local and exchange state
 struct StateMismatch {
   kj::String client_order_id;
@@ -53,6 +59,36 @@ struct StateMismatch {
   double local_avg_price{0.0};
   double exchange_avg_price{0.0};
   ReconciliationAction action_taken{ReconciliationAction::None};
+  ReconciliationSeverity severity{ReconciliationSeverity::Warning};
+  std::int64_t detected_ts_ns{0};
+  bool requires_manual_intervention{false};
+  kj::String intervention_reason;
+};
+
+// Item requiring manual intervention
+struct ManualInterventionItem {
+  kj::String id;
+  kj::String client_order_id;
+  kj::String symbol;
+  veloz::common::Venue venue{veloz::common::Venue::Unknown};
+  kj::String description;
+  ReconciliationSeverity severity{ReconciliationSeverity::Critical};
+  std::int64_t created_ts_ns{0};
+  std::int64_t resolved_ts_ns{0};
+  bool resolved{false};
+  kj::String resolution_notes;
+};
+
+// Position discrepancy between local and exchange
+struct PositionDiscrepancy {
+  kj::String symbol;
+  veloz::common::Venue venue{veloz::common::Venue::Unknown};
+  double local_qty{0.0};
+  double exchange_qty{0.0};
+  double qty_diff{0.0};
+  double local_avg_price{0.0};
+  double exchange_avg_price{0.0};
+  ReconciliationSeverity severity{ReconciliationSeverity::Warning};
   std::int64_t detected_ts_ns{0};
 };
 
@@ -64,6 +100,40 @@ struct ReconciliationEvent {
   kj::Maybe<StateMismatch> mismatch;
   kj::Maybe<kj::String> client_order_id;
   kj::Maybe<kj::String> error_message;
+  ReconciliationSeverity severity{ReconciliationSeverity::Info};
+};
+
+// Reconciliation report - summary of a reconciliation cycle
+struct ReconciliationReport {
+  std::int64_t start_ts_ns{0};
+  std::int64_t end_ts_ns{0};
+  kj::Duration duration{0 * kj::NANOSECONDS};
+  veloz::common::Venue venue{veloz::common::Venue::Unknown};
+
+  // Order reconciliation results
+  std::int64_t orders_checked{0};
+  std::int64_t orders_matched{0};
+  std::int64_t mismatches_found{0};
+  std::int64_t mismatches_auto_resolved{0};
+  std::int64_t orphaned_orders_found{0};
+  std::int64_t orphaned_orders_cancelled{0};
+
+  // Position reconciliation results
+  std::int64_t positions_checked{0};
+  std::int64_t position_discrepancies{0};
+
+  // Manual intervention items
+  std::int64_t manual_interventions_required{0};
+  kj::Vector<ManualInterventionItem> intervention_items;
+
+  // Detailed mismatches
+  kj::Vector<StateMismatch> mismatches;
+  kj::Vector<PositionDiscrepancy> position_discrepancies_list;
+
+  // Overall status
+  bool success{true};
+  kj::String error_message;
+  ReconciliationSeverity max_severity{ReconciliationSeverity::Info};
 };
 
 // Configuration for reconciliation loop
@@ -162,6 +232,27 @@ public:
   // Get recent reconciliation events
   [[nodiscard]] kj::Vector<ReconciliationEvent> get_recent_events(size_t max_count = 100) const;
 
+  // Generate reconciliation report for a specific venue
+  [[nodiscard]] kj::Maybe<ReconciliationReport> get_last_report(veloz::common::Venue venue) const;
+
+  // Get all pending manual intervention items
+  [[nodiscard]] kj::Vector<ManualInterventionItem> get_pending_interventions() const;
+
+  // Resolve a manual intervention item
+  void resolve_intervention(kj::StringPtr intervention_id, kj::StringPtr resolution_notes);
+
+  // Add a manual intervention item
+  void add_manual_intervention(ManualInterventionItem item);
+
+  // Get intervention item by ID
+  [[nodiscard]] kj::Maybe<ManualInterventionItem> get_intervention(kj::StringPtr id) const;
+
+  // Generate a text summary of the last reconciliation
+  [[nodiscard]] kj::String generate_report_summary() const;
+
+  // Export report as JSON string
+  [[nodiscard]] kj::String export_report_json(const ReconciliationReport& report) const;
+
 private:
   // Internal reconciliation loop
   kj::Promise<void> reconciliation_loop();
@@ -202,15 +293,27 @@ private:
   // Configuration
   ReconciliationConfig config_;
 
+  // Determine severity based on mismatch details
+  ReconciliationSeverity determine_severity(const StateMismatch& mismatch) const;
+
+  // Check if mismatch requires manual intervention
+  bool requires_manual_intervention(const StateMismatch& mismatch) const;
+
+  // Generate unique intervention ID
+  kj::String generate_intervention_id() const;
+
   // Internal state
   struct ReconcilerState {
     kj::HashMap<veloz::common::Venue, ReconciliationQueryInterface*> exchanges;
     kj::Vector<ReconciliationEvent> event_history;
+    kj::HashMap<veloz::common::Venue, ReconciliationReport> last_reports;
+    kj::Vector<ManualInterventionItem> pending_interventions;
     Stats stats;
     bool running{false};
     bool strategy_frozen{false};
     int consecutive_mismatches{0};
     size_t max_event_history{1000};
+    std::int64_t intervention_counter{0};
   };
 
   kj::MutexGuarded<ReconcilerState> guarded_;
@@ -227,5 +330,6 @@ private:
 // Convert enum to string for logging
 kj::StringPtr to_string(ReconciliationEventType type);
 kj::StringPtr to_string(ReconciliationAction action);
+kj::StringPtr to_string(ReconciliationSeverity severity);
 
 } // namespace veloz::exec
