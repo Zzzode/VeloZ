@@ -288,7 +288,7 @@ KJ_TEST("ResilientExchangeAdapter: Circuit breaker recovery") {
   // After timeout, circuit breaker transitions to HalfOpen (not Closed)
   // It only transitions to Closed after successful requests in HalfOpen state
   // Calling allow_request() triggers auto-reset check
-  resilient_adapter->circuit_breaker().allow_request();
+  (void)resilient_adapter->circuit_breaker().allow_request();
   CircuitState state_after_timeout = resilient_adapter->circuit_breaker().state();
   KJ_EXPECT(state_after_timeout == CircuitState::HalfOpen);
 }

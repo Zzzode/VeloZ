@@ -58,7 +58,8 @@ public:
   }
 
   kj::Promise<kj::Maybe<ExecutionReport>>
-  cancel_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override {
+  cancel_order_async(const veloz::common::SymbolId& symbol,
+                     kj::StringPtr client_order_id) override {
     // Find and remove the order from open_orders
     for (size_t i = 0; i < open_orders.size(); ++i) {
       if (open_orders[i].client_order_id == client_order_id) {
