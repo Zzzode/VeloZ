@@ -176,6 +176,131 @@ Check if the gateway is running.
 
 ---
 
+## Engine Service Mode Endpoints
+
+When the engine runs in service mode (`--service`), these endpoints are available directly on the engine (default port 8080). These are separate from the gateway endpoints.
+
+### GET /api/status
+
+Get engine status and lifecycle state.
+
+**Response:**
+```json
+{
+  "state": "Running",
+  "uptime_ms": 12345,
+  "strategies_loaded": 3,
+  "strategies_running": 2
+}
+```
+
+**Lifecycle States:**
+| State | Description |
+|-------|-------------|
+| `Starting` | Engine is starting up |
+| `Running` | Engine is running normally |
+| `Stopping` | Engine is shutting down gracefully |
+| `Stopped` | Engine has stopped |
+
+### POST /api/start
+
+Start the engine.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "message": "Engine started"
+}
+```
+
+### POST /api/stop
+
+Stop the engine gracefully.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "message": "Engine stopping"
+}
+```
+
+### GET /api/strategies
+
+List all loaded strategies.
+
+**Response:**
+```json
+{
+  "strategies": [
+    {
+      "id": "ma_crossover_1",
+      "name": "MA Crossover",
+      "type": "TrendFollowing",
+      "state": "Running",
+      "pnl": 1250.50,
+      "trade_count": 42
+    }
+  ]
+}
+```
+
+### GET /api/strategies/{id}
+
+Get detailed state of a specific strategy.
+
+**Response:**
+```json
+{
+  "id": "ma_crossover_1",
+  "name": "MA Crossover",
+  "type": "TrendFollowing",
+  "state": "Running",
+  "is_running": true,
+  "pnl": 1250.50,
+  "max_drawdown": 150.25,
+  "trade_count": 42,
+  "win_count": 28,
+  "lose_count": 14,
+  "win_rate": 0.667,
+  "profit_factor": 2.1
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "error": "Strategy not found"
+}
+```
+
+### POST /api/strategies/{id}/start
+
+Start a specific strategy.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "message": "Strategy started"
+}
+```
+
+### POST /api/strategies/{id}/stop
+
+Stop a specific strategy.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "message": "Strategy stopped"
+}
+```
+
+---
+
 ## Configuration
 
 ### GET /api/config
@@ -397,6 +522,72 @@ Get the account balance state.
 
 ---
 
+## Positions
+
+### GET /api/positions
+
+Get all current positions.
+
+**Response:**
+```json
+{
+  "positions": [
+    {
+      "symbol": "BTCUSDT",
+      "venue": "binance",
+      "side": "LONG",
+      "qty": 0.5,
+      "avg_entry_price": 49500.0,
+      "current_price": 50000.0,
+      "unrealized_pnl": 250.0,
+      "realized_pnl": 1200.0,
+      "last_update_ts_ns": 1704067200000000000
+    }
+  ]
+}
+```
+
+**Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `symbol` | string | Trading symbol |
+| `venue` | string | Exchange venue |
+| `side` | string | Position side: `"LONG"` or `"SHORT"` |
+| `qty` | number | Position quantity |
+| `avg_entry_price` | number | Average entry price |
+| `current_price` | number | Current market price |
+| `unrealized_pnl` | number | Unrealized profit/loss |
+| `realized_pnl` | number | Realized profit/loss |
+| `last_update_ts_ns` | int64 | Last update timestamp |
+
+### GET /api/positions/{symbol}
+
+Get position for a specific symbol.
+
+**Response:**
+```json
+{
+  "symbol": "BTCUSDT",
+  "venue": "binance",
+  "side": "LONG",
+  "qty": 0.5,
+  "avg_entry_price": 49500.0,
+  "current_price": 50000.0,
+  "unrealized_pnl": 250.0,
+  "realized_pnl": 1200.0,
+  "last_update_ts_ns": 1704067200000000000
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "error": "Position not found"
+}
+```
+
+---
+
 ## Execution
 
 ### GET /api/execution/ping
@@ -480,6 +671,112 @@ Subscribe to real-time event stream via Server-Sent Events.
 **Keep-Alive:** The server sends a `: keep-alive` message every 10 seconds if no events occur.
 
 **Reconnection:** Use the `last_id` query parameter to resume from the last received event.
+
+---
+
+## WebSocket Endpoints
+
+### GET /ws/market
+
+WebSocket endpoint for real-time market data streaming.
+
+**Connection:**
+```javascript
+const ws = new WebSocket('ws://127.0.0.1:8080/ws/market');
+```
+
+**Subscribe to symbols:**
+```json
+{
+  "action": "subscribe",
+  "symbols": ["BTCUSDT", "ETHUSDT"],
+  "channels": ["trade", "book_top", "kline"]
+}
+```
+
+**Unsubscribe:**
+```json
+{
+  "action": "unsubscribe",
+  "symbols": ["BTCUSDT"],
+  "channels": ["trade"]
+}
+```
+
+**Incoming Messages:**
+
+Trade data:
+```json
+{
+  "type": "trade",
+  "symbol": "BTCUSDT",
+  "price": 50000.0,
+  "qty": 0.5,
+  "is_buyer_maker": true,
+  "ts_ns": 1704067200000000000
+}
+```
+
+Book top data:
+```json
+{
+  "type": "book_top",
+  "symbol": "BTCUSDT",
+  "bid_price": 49999.0,
+  "bid_qty": 1.5,
+  "ask_price": 50001.0,
+  "ask_qty": 2.0,
+  "ts_ns": 1704067200000000000
+}
+```
+
+### GET /ws/orders
+
+WebSocket endpoint for real-time order updates.
+
+**Connection:**
+```javascript
+const ws = new WebSocket('ws://127.0.0.1:8080/ws/orders');
+```
+
+**Incoming Messages:**
+
+Order update:
+```json
+{
+  "type": "order_update",
+  "client_order_id": "web-1234567890",
+  "status": "FILLED",
+  "symbol": "BTCUSDT",
+  "side": "BUY",
+  "qty": 0.001,
+  "price": 50000.0,
+  "ts_ns": 1704067200000000000
+}
+```
+
+Fill notification:
+```json
+{
+  "type": "fill",
+  "client_order_id": "web-1234567890",
+  "symbol": "BTCUSDT",
+  "qty": 0.001,
+  "price": 50000.0,
+  "ts_ns": 1704067200000000000
+}
+```
+
+### WebSocket vs SSE
+
+| Feature | WebSocket | SSE |
+|---------|-----------|-----|
+| Direction | Bidirectional | Server to client only |
+| Protocol | ws:// / wss:// | HTTP |
+| Reconnection | Manual | Automatic (EventSource) |
+| Use case | Interactive subscriptions | Simple event streaming |
+
+**Recommendation:** Use SSE (`/api/stream`) for simple event consumption. Use WebSocket for interactive market data subscriptions with dynamic symbol management.
 
 ---
 
@@ -632,6 +929,33 @@ curl http://127.0.0.1:8080/api/account
 
 # Listen to SSE events
 curl -N http://127.0.0.1:8080/api/stream
+
+# Engine service mode endpoints (when engine runs with --service)
+
+# Get engine status
+curl http://127.0.0.1:8080/api/status
+
+# Start/stop engine
+curl -X POST http://127.0.0.1:8080/api/start
+curl -X POST http://127.0.0.1:8080/api/stop
+
+# List strategies
+curl http://127.0.0.1:8080/api/strategies
+
+# Get specific strategy
+curl http://127.0.0.1:8080/api/strategies/ma_crossover_1
+
+# Start/stop strategy
+curl -X POST http://127.0.0.1:8080/api/strategies/ma_crossover_1/start
+curl -X POST http://127.0.0.1:8080/api/strategies/ma_crossover_1/stop
+
+# Get positions
+curl http://127.0.0.1:8080/api/positions
+curl http://127.0.0.1:8080/api/positions/BTCUSDT
+
+# WebSocket connection (using websocat)
+websocat ws://127.0.0.1:8080/ws/market
+websocat ws://127.0.0.1:8080/ws/orders
 
 # Authentication examples (when auth is enabled)
 

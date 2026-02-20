@@ -599,7 +599,7 @@ auto lock = mutex.lockShared();          // Shared lock
 
 // kj::Function (callable wrapper)
 kj::Function<void(int)> callback;
-callback = [](int x) { /* ... */ };
+callback = [](../../int x) { /* ... */ };
 
 // kj::String (string handling)
 kj::String str = kj::str("hello ", name);  // Concatenation

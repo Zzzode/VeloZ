@@ -33,6 +33,6 @@ Token bucket rate limiting is enabled when authentication is active:
 
 ## Quick Links
 
-- [Getting Started](../user/getting-started.md) - Quick start guide with API examples
-- [Design Documents](../design/) - System architecture and design details
+- [Getting Started](../guides/user/getting-started.md) - Quick start guide with API examples
+- [Design Documents](../design) - System architecture and design details
 - [KJ Library Usage](../kj/library_usage_guide.md) - KJ type patterns used in VeloZ

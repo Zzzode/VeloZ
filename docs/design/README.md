@@ -20,5 +20,5 @@ This directory contains technical design documents for VeloZ architecture and sy
 
 ## Related
 
-- [Implementation Plans](../plans/) - Detailed implementation roadmaps
-- [Architecture Review](../reviews/ARCHITECTURE_REVIEW.md) - Architecture evaluation notes
+- [Implementation Plans](../project/plans) - Detailed implementation roadmaps
+- [Architecture Review](../project/reviews/ARCHITECTURE_REVIEW.md) - Architecture evaluation notes
