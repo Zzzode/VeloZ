@@ -2,12 +2,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <kj/array.h>
 #include <kj/common.h>
 #include <kj/map.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <vector> // std::vector used for bucket_counts return type compatibility
 
 namespace veloz::core {
 
@@ -37,8 +37,7 @@ private:
 // Counter metric (monotonically increasing)
 class Counter final : public Metric {
 public:
-  explicit Counter(kj::StringPtr name, kj::StringPtr description)
-      : Metric(name, description) {}
+  explicit Counter(kj::StringPtr name, kj::StringPtr description) : Metric(name, description) {}
   void increment(int64_t value = 1) noexcept {
     count_ += value;
   }
@@ -58,8 +57,7 @@ private:
 // Gauge metric (can increase or decrease)
 class Gauge final : public Metric {
 public:
-  explicit Gauge(kj::StringPtr name, kj::StringPtr description)
-      : Metric(name, description) {}
+  explicit Gauge(kj::StringPtr name, kj::StringPtr description) : Metric(name, description) {}
   void increment(int64_t value = 1) noexcept {
     value_ += value;
   }
@@ -116,13 +114,11 @@ private:
 class Histogram final : public Metric {
 public:
   explicit Histogram(kj::StringPtr name, kj::StringPtr description,
-                     std::vector<double> buckets = default_buckets())
-      : Metric(name, description), buckets_(kj::mv(buckets)) {
-    // Initialize bucket counts using unique_ptr array for atomic values
-    bucket_count_ = buckets_.size();
-    bucket_counts_vec_ = std::make_unique<std::atomic<int64_t>[]>(bucket_count_);
-    for (size_t i = 0; i < bucket_count_; ++i) {
-      bucket_counts_vec_[i].store(0);
+                     kj::Vector<double> buckets = default_buckets())
+      : Metric(name, description), buckets_(kj::mv(buckets)),
+        bucket_counts_(kj::heapArray<std::atomic<int64_t>>(buckets_.size())) {
+    for (size_t i = 0; i < bucket_counts_.size(); ++i) {
+      bucket_counts_[i].store(0);
     }
   }
 
@@ -131,9 +127,9 @@ public:
   void observe(double value) noexcept {
     count_++;
     sum_ += value;
-    for (size_t i = 0; i < bucket_count_; ++i) {
+    for (size_t i = 0; i < buckets_.size(); ++i) {
       if (value <= buckets_[i]) {
-        bucket_counts_vec_[i].fetch_add(1);
+        bucket_counts_[i].fetch_add(1);
       }
     }
   }
@@ -144,14 +140,14 @@ public:
   [[nodiscard]] double sum() const noexcept {
     return sum_.load();
   }
-  [[nodiscard]] const std::vector<double>& buckets() const noexcept {
+  [[nodiscard]] const kj::Vector<double>& buckets() const noexcept {
     return buckets_;
   }
-  [[nodiscard]] std::vector<int64_t> bucket_counts() const {
-    std::vector<int64_t> counts;
-    counts.reserve(bucket_count_);
-    for (size_t i = 0; i < bucket_count_; ++i) {
-      counts.push_back(bucket_counts_vec_[i].load());
+  [[nodiscard]] kj::Vector<int64_t> bucket_counts() const {
+    kj::Vector<int64_t> counts;
+    counts.reserve(bucket_counts_.size());
+    for (size_t i = 0; i < bucket_counts_.size(); ++i) {
+      counts.add(bucket_counts_[i].load());
     }
     return counts;
   }
@@ -160,16 +156,32 @@ public:
     return MetricType::Histogram;
   }
 
-  static std::vector<double> default_buckets() {
-    return {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1,   0.2,   0.5,
-            1.0,   2.0,   5.0,   10.0, 30.0, 60.0, 120.0, 300.0, 600.0};
+  static kj::Vector<double> default_buckets() {
+    kj::Vector<double> buckets;
+    buckets.add(0.001);
+    buckets.add(0.002);
+    buckets.add(0.005);
+    buckets.add(0.01);
+    buckets.add(0.02);
+    buckets.add(0.05);
+    buckets.add(0.1);
+    buckets.add(0.2);
+    buckets.add(0.5);
+    buckets.add(1.0);
+    buckets.add(2.0);
+    buckets.add(5.0);
+    buckets.add(10.0);
+    buckets.add(30.0);
+    buckets.add(60.0);
+    buckets.add(120.0);
+    buckets.add(300.0);
+    buckets.add(600.0);
+    return buckets;
   }
 
 private:
-  std::vector<double> buckets_;
-  // Use std::unique_ptr array for atomic values (std::atomic is not movable)
-  std::unique_ptr<std::atomic<int64_t>[]> bucket_counts_vec_;
-  size_t bucket_count_{0};
+  kj::Vector<double> buckets_;
+  kj::Array<std::atomic<int64_t>> bucket_counts_;
   std::atomic<int64_t> count_{0};
   std::atomic<double> sum_{0.0};
 };
@@ -180,7 +192,6 @@ public:
   MetricsRegistry() = default;
 
   // Register metrics
-  // Note: std::map<std::string, ...> kept for ordered map semantics (KJ HashMap is unordered)
   void register_counter(kj::StringPtr name, kj::StringPtr description) {
     auto lock = guarded_.lockExclusive();
     lock->counters.insert(kj::str(name), kj::heap<Counter>(name, description));
@@ -192,10 +203,9 @@ public:
   }
 
   void register_histogram(kj::StringPtr name, kj::StringPtr description,
-                          std::vector<double> buckets = Histogram::default_buckets()) {
+                          kj::Vector<double> buckets = Histogram::default_buckets()) {
     auto lock = guarded_.lockExclusive();
-    lock->histograms.insert(kj::str(name),
-                            kj::heap<Histogram>(name, description, kj::mv(buckets)));
+    lock->histograms.insert(kj::str(name), kj::heap<Histogram>(name, description, kj::mv(buckets)));
   }
 
   // Get metrics

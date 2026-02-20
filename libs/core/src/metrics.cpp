@@ -1,28 +1,26 @@
 #include "veloz/core/metrics.h"
 
-#include <iomanip>
 #include <kj/common.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
-#include <sstream>
+#include <kj/string-tree.h>
 
 namespace veloz::core {
 
 kj::String MetricsRegistry::to_prometheus() const {
   auto lock = guarded_.lockExclusive();
 
-  // std::ostringstream used for Prometheus text format generation
-  std::ostringstream oss;
+  kj::Vector<kj::StringTree> lines;
 
   // Export counters
   for (const auto& entry : lock->counters) {
     const auto& name = entry.key;
     const auto& counter = entry.value;
     if (counter->description().size() > 0) {
-      oss << "# HELP " << name.cStr() << " " << counter->description().cStr() << "\n";
+      lines.add(kj::strTree("# HELP "_kj, name, " "_kj, counter->description(), "\n"_kj));
     }
-    oss << "# TYPE " << name.cStr() << " counter\n";
-    oss << name.cStr() << " " << counter->value() << "\n";
+    lines.add(kj::strTree("# TYPE "_kj, name, " counter\n"_kj));
+    lines.add(kj::strTree(name, " "_kj, counter->value(), "\n"_kj));
   }
 
   // Export gauges
@@ -30,10 +28,10 @@ kj::String MetricsRegistry::to_prometheus() const {
     const auto& name = entry.key;
     const auto& gauge = entry.value;
     if (gauge->description().size() > 0) {
-      oss << "# HELP " << name.cStr() << " " << gauge->description().cStr() << "\n";
+      lines.add(kj::strTree("# HELP "_kj, name, " "_kj, gauge->description(), "\n"_kj));
     }
-    oss << "# TYPE " << name.cStr() << " gauge\n";
-    oss << name.cStr() << " " << gauge->value() << "\n";
+    lines.add(kj::strTree("# TYPE "_kj, name, " gauge\n"_kj));
+    lines.add(kj::strTree(name, " "_kj, gauge->value(), "\n"_kj));
   }
 
   // Export histograms
@@ -41,20 +39,20 @@ kj::String MetricsRegistry::to_prometheus() const {
     const auto& name = entry.key;
     const auto& histogram = entry.value;
     if (histogram->description().size() > 0) {
-      oss << "# HELP " << name.cStr() << " " << histogram->description().cStr() << "\n";
+      lines.add(kj::strTree("# HELP "_kj, name, " "_kj, histogram->description(), "\n"_kj));
     }
-    oss << "# TYPE " << name.cStr() << " histogram\n";
+    lines.add(kj::strTree("# TYPE "_kj, name, " histogram\n"_kj));
     auto bucket_counts = histogram->bucket_counts();
     for (size_t i = 0; i < histogram->buckets().size(); ++i) {
-      oss << name.cStr() << "_bucket{le=\"" << histogram->buckets()[i] << "\"} "
-          << bucket_counts[i] << "\n";
+      lines.add(kj::strTree(name, "_bucket{le=\""_kj, histogram->buckets()[i], "\"} "_kj,
+                            bucket_counts[i], "\n"_kj));
     }
-    oss << name.cStr() << "_bucket{le=\"+Inf\"} " << histogram->count() << "\n";
-    oss << name.cStr() << "_sum " << histogram->sum() << "\n";
-    oss << name.cStr() << "_count " << histogram->count() << "\n";
+    lines.add(kj::strTree(name, "_bucket{le=\"+Inf\"} "_kj, histogram->count(), "\n"_kj));
+    lines.add(kj::strTree(name, "_sum "_kj, histogram->sum(), "\n"_kj));
+    lines.add(kj::strTree(name, "_count "_kj, histogram->count(), "\n"_kj));
   }
 
-  return kj::str(oss.str().c_str());
+  return kj::StringTree(lines.releaseAsArray(), ""_kj).flatten();
 }
 
 // Thread-safe global metrics registry using KJ MutexGuarded (no bare pointers)

@@ -24,15 +24,16 @@ namespace veloz::core {
  * This struct is move-only because kj::Function is not copyable.
  */
 struct RetryConfig {
-  int max_attempts = 3;                                       // Maximum number of retry attempts
-  std::chrono::milliseconds initial_delay{100};               // Initial delay before first retry
-  std::chrono::milliseconds max_delay{30000};                 // Maximum delay between retries
-  double backoff_multiplier = 2.0;                            // Exponential backoff multiplier
-  double jitter_factor = 0.1;                                 // Random jitter factor (0.0 - 1.0)
-  bool retry_on_timeout = true;                               // Retry on timeout errors
-  bool retry_on_network_error = true;                         // Retry on network errors
-  bool retry_on_rate_limit = true;                            // Retry on rate limit errors
-  kj::Maybe<kj::Function<bool(const kj::Exception&)>> should_retry;  // Custom retry predicate (KJ-based)
+  int max_attempts = 3;                         // Maximum number of retry attempts
+  std::chrono::milliseconds initial_delay{100}; // Initial delay before first retry
+  std::chrono::milliseconds max_delay{30000};   // Maximum delay between retries
+  double backoff_multiplier = 2.0;              // Exponential backoff multiplier
+  double jitter_factor = 0.1;                   // Random jitter factor (0.0 - 1.0)
+  bool retry_on_timeout = true;                 // Retry on timeout errors
+  bool retry_on_network_error = true;           // Retry on network errors
+  bool retry_on_rate_limit = true;              // Retry on rate limit errors
+  kj::Maybe<kj::Function<bool(const kj::Exception&)>>
+      should_retry; // Custom retry predicate (KJ-based)
 
   // Default constructor
   RetryConfig() = default;

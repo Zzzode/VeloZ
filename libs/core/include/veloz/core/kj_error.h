@@ -2,8 +2,8 @@
 
 #include <kj/common.h>
 #include <kj/exception.h>
-#include <kj/string.h>
 #include <kj/string-tree.h>
+#include <kj/string.h>
 #include <source_location>
 
 namespace veloz::core {
@@ -12,17 +12,11 @@ namespace veloz::core {
 class VeloZException {
 public:
   explicit VeloZException(kj::StringPtr message,
-                        const std::source_location& location = std::source_location::current())
-      : exception_(kj::Exception(
-            kj::Exception::Type::FAILED,
-            location.file_name(),
-            location.line(),
-            kj::str(message))),
-        message_(kj::str(message)),
-        file_(kj::str(location.file_name())),
-        line_(location.line()),
-        column_(location.column()),
-        function_(kj::str(location.function_name())) {}
+                          const std::source_location& location = std::source_location::current())
+      : exception_(kj::Exception(kj::Exception::Type::FAILED, location.file_name(), location.line(),
+                                 kj::str(message))),
+        message_(kj::str(message)), file_(kj::str(location.file_name())), line_(location.line()),
+        column_(location.column()), function_(kj::str(location.function_name())) {}
 
   [[nodiscard]] const kj::Exception& kj_exception() const noexcept {
     return exception_;
@@ -65,7 +59,7 @@ private:
 class NetworkException : public VeloZException {
 public:
   explicit NetworkException(kj::StringPtr message, int error_code = 0,
-                          const std::source_location& location = std::source_location::current())
+                            const std::source_location& location = std::source_location::current())
       : VeloZException(message, location), error_code_(error_code) {}
 
   [[nodiscard]] int error_code() const noexcept {
@@ -85,22 +79,22 @@ public:
 
 class ValidationException : public VeloZException {
 public:
-  explicit ValidationException(kj::StringPtr message,
-                              const std::source_location& location = std::source_location::current())
+  explicit ValidationException(
+      kj::StringPtr message, const std::source_location& location = std::source_location::current())
       : VeloZException(message, location) {}
 };
 
 class TimeoutException : public VeloZException {
 public:
   explicit TimeoutException(kj::StringPtr message,
-                           const std::source_location& location = std::source_location::current())
+                            const std::source_location& location = std::source_location::current())
       : VeloZException(message, location) {}
 };
 
 class ResourceException : public VeloZException {
 public:
   explicit ResourceException(kj::StringPtr message,
-                            const std::source_location& location = std::source_location::current())
+                             const std::source_location& location = std::source_location::current())
       : VeloZException(message, location) {}
 };
 
@@ -152,7 +146,7 @@ private:
 class ProtocolException : public VeloZException {
 public:
   explicit ProtocolException(kj::StringPtr message, int protocol_version = 0,
-                           const std::source_location& location = std::source_location::current())
+                             const std::source_location& location = std::source_location::current())
       : VeloZException(message, location), protocol_version_(protocol_version) {}
 
   [[nodiscard]] int protocol_version() const noexcept {
@@ -164,32 +158,33 @@ private:
 };
 
 // Helper macros for creating KJ-style exceptions
-#define VELOZ_THROW_EXCEPTION(message) \
+#define VELOZ_THROW_EXCEPTION(message)                                                             \
   KJ_THROW(kj::Exception(kj::Exception::Type::FAILED, __FILE__, __LINE__, kj::str(message)))
 
-#define VELOZ_REQUIRE(condition, ...) \
-  KJ_REQUIRE(condition, __VA_ARGS__)
+#define VELOZ_REQUIRE(condition, ...) KJ_REQUIRE(condition, __VA_ARGS__)
 
-#define VELOZ_ASSERT(condition, ...) \
-  KJ_ASSERT(condition, __VA_ARGS__)
+#define VELOZ_ASSERT(condition, ...) KJ_ASSERT(condition, __VA_ARGS__)
 
 // Helper to convert std::source_location to readable filename
 inline kj::String getFilename(const std::source_location& location) {
   kj::StringPtr file_name = location.file_name();
   KJ_IF_SOME(last_slash, file_name.findLast('/')) {
     return kj::str(file_name.slice(last_slash + 1));
-  } else KJ_IF_SOME(last_slash, file_name.findLast('\\')) {
+  }
+  else KJ_IF_SOME(last_slash, file_name.findLast('\\')) {
     return kj::str(file_name.slice(last_slash + 1));
-  } else {
+  }
+  else {
     return kj::str(file_name);
   }
 }
 
 // Helper to format exception with location
-inline kj::String formatException(kj::StringPtr message,
-                                  const std::source_location& location = std::source_location::current()) {
-  return kj::str(message, " (", getFilename(location), ":", location.line(),
-                  ":", location.column(), ")");
+inline kj::String
+formatException(kj::StringPtr message,
+                const std::source_location& location = std::source_location::current()) {
+  return kj::str(message, " (", getFilename(location), ":", location.line(), ":", location.column(),
+                 ")");
 }
 
 } // namespace veloz::core

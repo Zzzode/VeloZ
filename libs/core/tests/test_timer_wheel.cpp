@@ -3,7 +3,7 @@
 
 #include <atomic>
 #include <kj/function.h>
-#include <vector>
+#include <kj/vector.h>
 
 using namespace veloz::core;
 
@@ -81,10 +81,10 @@ KJ_TEST("HierarchicalTimerWheel: Multiple timers same slot") {
 KJ_TEST("HierarchicalTimerWheel: Timers fire in order") {
   HierarchicalTimerWheel wheel;
 
-  std::vector<int> order;
-  wheel.schedule(3, makeCallback([&order]() { order.push_back(1); }));
-  wheel.schedule(1, makeCallback([&order]() { order.push_back(2); }));
-  wheel.schedule(2, makeCallback([&order]() { order.push_back(3); }));
+  kj::Vector<int> order;
+  wheel.schedule(3, makeCallback([&order]() { order.add(1); }));
+  wheel.schedule(1, makeCallback([&order]() { order.add(2); }));
+  wheel.schedule(2, makeCallback([&order]() { order.add(3); }));
 
   // Need 4 ticks to fire all timers (process ticks 0,1,2,3)
   wheel.advance(4);
@@ -326,9 +326,9 @@ KJ_TEST("HierarchicalTimerWheel: Many timers performance") {
 KJ_TEST("HierarchicalTimerWheel: Rapid schedule and cancel") {
   HierarchicalTimerWheel wheel;
 
-  std::vector<uint64_t> ids;
+  kj::Vector<uint64_t> ids;
   for (int i = 0; i < 1000; ++i) {
-    ids.push_back(wheel.schedule(100, makeCallback([]() {})));
+    ids.add(wheel.schedule(100, makeCallback([]() {})));
   }
 
   KJ_EXPECT(wheel.timer_count() == 1000);

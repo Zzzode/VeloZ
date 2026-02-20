@@ -132,8 +132,8 @@ public:
  */
 class ValidationException : public VeloZException {
 public:
-  explicit ValidationException(kj::StringPtr message,
-                               const std::source_location& location = std::source_location::current())
+  explicit ValidationException(
+      kj::StringPtr message, const std::source_location& location = std::source_location::current())
       : VeloZException(message, kj::Exception::Type::FAILED, location) {}
 };
 
@@ -185,8 +185,9 @@ private:
  */
 class RateLimitException : public VeloZException {
 public:
-  explicit RateLimitException(kj::StringPtr message, int64_t retry_after_ms = 0,
-                              const std::source_location& location = std::source_location::current())
+  explicit RateLimitException(
+      kj::StringPtr message, int64_t retry_after_ms = 0,
+      const std::source_location& location = std::source_location::current())
       : VeloZException(message, kj::Exception::Type::OVERLOADED, location),
         retry_after_ms_(retry_after_ms) {}
 
@@ -203,8 +204,9 @@ private:
  */
 class RetryExhaustedException : public VeloZException {
 public:
-  explicit RetryExhaustedException(kj::StringPtr message, int attempts = 0,
-                                   const std::source_location& location = std::source_location::current())
+  explicit RetryExhaustedException(
+      kj::StringPtr message, int attempts = 0,
+      const std::source_location& location = std::source_location::current())
       : VeloZException(message, kj::Exception::Type::FAILED, location), attempts_(attempts) {}
 
   [[nodiscard]] int attempts() const noexcept {
