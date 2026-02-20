@@ -5,18 +5,19 @@
 // =======================================================================================
 // - std::chrono::steady_clock: Monotonic time for task queue wait time measurement
 // - std::iomanip/std::sstream: String formatting (kj::str() lacks width specifiers)
+// - std::regex: Pattern matching for event tag filters (KJ lacks regex support)
 // - std::thread::sleep_for: Brief sleep during timer polling (KJ timer requires manual advance)
 // =======================================================================================
 
-#include <chrono>   // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
-#include <iomanip>  // std::setprecision - kj::str() lacks width/precision specifiers
-#include <sstream>  // std::ostringstream - kj::str() lacks width/precision specifiers
-#include <thread>   // std::this_thread::sleep_for - for timer polling with kj::TimerImpl
+#include <chrono> // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
+#include <iomanip> // std::setprecision - kj::str() lacks width/precision specifiers
 #include <kj/async.h>
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/string.h>
 #include <kj/time.h>
+#include <sstream> // std::ostringstream - kj::str() lacks width/precision specifiers
+#include <thread>  // std::this_thread::sleep_for - for timer polling with kj::TimerImpl
 
 namespace veloz::core {
 
@@ -52,24 +53,24 @@ EventLoop::~EventLoop() {
   stop();
 }
 
-void EventLoop::post(std::function<void()> task) {
+void EventLoop::post(kj::Function<void()> task) {
   post(kj::mv(task), EventPriority::Normal);
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay) {
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay) {
   post_delayed(kj::mv(task), delay, EventPriority::Normal);
 }
 
-void EventLoop::post(std::function<void()> task, EventPriority priority) {
+void EventLoop::post(kj::Function<void()> task, EventPriority priority) {
   post_with_tags(kj::mv(task), priority, {});
 }
 
-void EventLoop::post_with_tags(std::function<void()> task, std::vector<EventTag> tags) {
+void EventLoop::post_with_tags(kj::Function<void()> task, kj::Vector<EventTag> tags) {
   post_with_tags(kj::mv(task), EventPriority::Normal, kj::mv(tags));
 }
 
-void EventLoop::post_with_tags(std::function<void()> task, EventPriority priority,
-                               std::vector<EventTag> tags) {
+void EventLoop::post_with_tags(kj::Function<void()> task, EventPriority priority,
+                               kj::Vector<EventTag> tags) {
   Task t;
   t.task = kj::mv(task);
   t.priority = priority;
@@ -92,18 +93,18 @@ void EventLoop::post_with_tags(std::function<void()> task, EventPriority priorit
   }
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
                              EventPriority priority) {
   post_delayed(kj::mv(task), delay, priority, {});
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                             std::vector<EventTag> tags) {
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
+                             kj::Vector<EventTag> tags) {
   post_delayed(kj::mv(task), delay, EventPriority::Normal, kj::mv(tags));
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                             EventPriority priority, std::vector<EventTag> tags) {
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
+                             EventPriority priority, kj::Vector<EventTag> tags) {
   auto deadline = std::chrono::steady_clock::now() + delay;
   Task t;
   t.task = kj::mv(task);
@@ -127,34 +128,35 @@ void EventLoop::post_delayed(std::function<void()> task, std::chrono::millisecon
 }
 
 bool EventLoop::should_process_task(const Task& task) {
+  auto tags = task.tags.asPtr();
+
   // Check priority-based filters
   auto lock = filter_state_.lockExclusive();
-  for (const auto& entry : lock->filters) {
+  for (auto& entry : lock->filters) {
     uint64_t id = entry.key;
-    const auto& filter_pair = entry.value;
     if (lock->active_filters.find(id) == kj::none) {
       continue;
     }
-    const auto& [filter, priority_filter] = filter_pair;
-    KJ_IF_SOME(pf, priority_filter) {
+    auto& filter_entry = entry.value;
+    KJ_IF_SOME(pf, filter_entry.priority) {
       if (pf != task.priority) {
         continue;
       }
     }
-    if (filter(task.tags)) {
+    if (filter_entry.filter(tags)) {
       stats_.events_filtered++;
       return false;
     }
   }
 
   // Check tag pattern filters
-  for (const auto& entry : lock->tag_filters) {
+  for (auto& entry : lock->tag_filters) {
     uint64_t id = entry.key;
     const auto& pattern = entry.value;
     if (lock->active_filters.find(id) == kj::none) {
       continue;
     }
-    for (const auto& tag : task.tags) {
+    for (const auto& tag : tags) {
       try {
         if (std::regex_search(tag.cStr(), pattern)) {
           stats_.events_filtered++;
@@ -169,10 +171,10 @@ bool EventLoop::should_process_task(const Task& task) {
   return true;
 }
 
-void EventLoop::route_task(Task& task, std::function<void()> wrapped) {
+void EventLoop::route_task(Task& task, kj::Function<void()> wrapped) {
   auto lock = filter_state_.lockExclusive();
   KJ_IF_SOME(router, lock->router) {
-    router(task.tags, [&task] { task.task(); });
+    router(task.tags.asPtr(), kj::mv(wrapped));
   }
   else {
     wrapped();
@@ -195,13 +197,8 @@ void EventLoop::execute_task(Task& task) {
   // Execute task with timing
   auto start = std::chrono::steady_clock::now();
   try {
-    auto lock = filter_state_.lockExclusive();
-    KJ_IF_SOME(router, lock->router) {
-      router(task.tags, [&task] { task.task(); });
-    }
-    else {
-      task.task();
-    }
+    kj::Function<void()> wrapped = kj::mv(task.task);
+    route_task(task, kj::mv(wrapped));
     stats_.events_processed++;
   } catch (...) {
     stats_.events_failed++;
@@ -226,10 +223,9 @@ kj::Promise<void> EventLoop::process_next_task() {
     auto now = std::chrono::steady_clock::now();
 
     while (!lock->delayed_tasks.empty() && lock->delayed_tasks.top().deadline <= now) {
-      Task delayed_task = kj::mv(const_cast<Task&>(lock->delayed_tasks.top().task));
-      lock->delayed_tasks.pop();
-      if (should_process_task(delayed_task)) {
-        lock->tasks.push(kj::mv(delayed_task));
+      DelayedTask delayed_task = lock->delayed_tasks.popValue();
+      if (should_process_task(delayed_task.task)) {
+        lock->tasks.push(kj::mv(delayed_task.task));
       }
     }
   }
@@ -239,8 +235,7 @@ kj::Promise<void> EventLoop::process_next_task() {
   {
     auto lock = queue_state_.lockExclusive();
     if (!lock->tasks.empty()) {
-      Task task = kj::mv(const_cast<Task&>(lock->tasks.top()));
-      lock->tasks.pop();
+      Task task = lock->tasks.popValue();
       if (should_process_task(task)) {
         maybe_task = kj::mv(task);
       }
@@ -308,10 +303,9 @@ void EventLoop::run() {
 
         // Move ready delayed tasks to the main queue
         while (!lock->delayed_tasks.empty() && lock->delayed_tasks.top().deadline <= now) {
-          Task delayed_task = kj::mv(const_cast<Task&>(lock->delayed_tasks.top().task));
-          lock->delayed_tasks.pop();
-          if (should_process_task(delayed_task)) {
-            lock->tasks.push(kj::mv(delayed_task));
+          DelayedTask delayed_task = lock->delayed_tasks.popValue();
+          if (should_process_task(delayed_task.task)) {
+            lock->tasks.push(kj::mv(delayed_task.task));
           }
         }
 
@@ -323,8 +317,7 @@ void EventLoop::run() {
         {
           auto lock = queue_state_.lockExclusive();
           if (!lock->tasks.empty()) {
-            Task task = kj::mv(const_cast<Task&>(lock->tasks.top()));
-            lock->tasks.pop();
+            Task task = lock->tasks.popValue();
             if (should_process_task(task)) {
               maybe_task = kj::mv(task);
             }
@@ -385,15 +378,12 @@ void EventLoop::run() {
     // Note: kj::TimerImpl requires manual time advancement, so we use poll() + advanceTo()
     // instead of wait() which would block indefinitely with a mock timer
     if (!stop_requested_.load()) {
-      // Advance timer to current time to trigger any expired timeouts
-      kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
-
-      // Poll the event loop to process pending promises
-      // This processes any ready promises without blocking
-      while (!wait_scope.poll() && !stop_requested_.load()) {
-        // If no promises are ready, sleep briefly and advance timer
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      while (!stop_requested_.load()) {
         kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
+        if (combined.poll(wait_scope)) {
+          break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     }
 
@@ -435,14 +425,14 @@ size_t EventLoop::pending_tasks() const {
 size_t EventLoop::pending_tasks_by_priority(EventPriority priority) const {
   auto lock = queue_state_.lockExclusive();
   size_t count = 0;
-  // Note: We can't efficiently count by priority in a priority_queue without iterating
+  // Note: We can't efficiently count by priority in a priority queue without iterating
   // This is O(n) but acceptable for status queries
-  auto temp_tasks = lock->tasks;
-  while (!temp_tasks.empty()) {
-    if (temp_tasks.top().priority == priority) {
+  // Use underlying data() to iterate without copying (PriorityQueue is move-only)
+  const auto& tasks_data = lock->tasks.data();
+  for (const auto& task : tasks_data) {
+    if (task.priority == priority) {
       count++;
     }
-    temp_tasks.pop();
   }
   return count;
 }
@@ -475,7 +465,7 @@ kj::String EventLoop::stats_to_string() const {
 uint64_t EventLoop::add_filter(EventFilter filter, kj::Maybe<EventPriority> priority) {
   auto lock = filter_state_.lockExclusive();
   uint64_t id = lock->next_filter_id++;
-  lock->filters.insert(id, {kj::mv(filter), priority});
+  lock->filters.insert(id, FilterState::FilterEntry{kj::mv(filter), priority});
   lock->active_filters.insert(id);
   return id;
 }
@@ -492,7 +482,7 @@ void EventLoop::clear_filters() {
   auto lock = filter_state_.lockExclusive();
   // KJ containers don't have clear(), recreate empty containers
   lock->active_filters = kj::HashSet<uint64_t>();
-  lock->filters = kj::HashMap<uint64_t, std::pair<EventFilter, kj::Maybe<EventPriority>>>();
+  lock->filters = kj::HashMap<uint64_t, FilterState::FilterEntry>();
   lock->tag_filters = kj::HashMap<uint64_t, std::regex>();
 }
 

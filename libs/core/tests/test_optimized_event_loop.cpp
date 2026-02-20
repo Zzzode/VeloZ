@@ -4,9 +4,10 @@
 
 #include <atomic>
 #include <chrono>
-#include <mutex>
+#include <kj/mutex.h>
+#include <kj/thread.h>
+#include <kj/vector.h>
 #include <thread>
-#include <vector>
 
 using namespace veloz::core;
 
@@ -22,13 +23,14 @@ KJ_TEST("OptimizedEventLoop: Basic post and run") {
   std::atomic<bool> executed{false};
   loop.post([&executed]() { executed = true; });
 
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    loop.stop();
-  });
+  {
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      loop.stop();
+    });
 
-  loop.run();
-  runner.join();
+    loop.run();
+  }
 
   KJ_EXPECT(executed.load());
 }
@@ -43,13 +45,14 @@ KJ_TEST("OptimizedEventLoop: Multiple tasks") {
     loop.post([&counter]() { counter++; });
   }
 
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    loop.stop();
-  });
+  {
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      loop.stop();
+    });
 
-  loop.run();
-  runner.join();
+    loop.run();
+  }
 
   KJ_EXPECT(counter.load() == NUM_TASKS);
 }
@@ -57,47 +60,27 @@ KJ_TEST("OptimizedEventLoop: Multiple tasks") {
 KJ_TEST("OptimizedEventLoop: Priority ordering") {
   OptimizedEventLoop loop;
 
-  std::vector<int> order;
-  std::mutex order_mutex;
+  kj::MutexGuarded<kj::Vector<int>> order;
 
   // Post in reverse priority order
-  loop.post(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(1);
-      },
-      EventPriority::Low);
+  loop.post([&]() { order.lockExclusive()->add(1); }, EventPriority::Low);
 
-  loop.post(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(2);
-      },
-      EventPriority::Normal);
+  loop.post([&]() { order.lockExclusive()->add(2); }, EventPriority::Normal);
 
-  loop.post(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(3);
-      },
-      EventPriority::High);
+  loop.post([&]() { order.lockExclusive()->add(3); }, EventPriority::High);
 
-  loop.post(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(4);
-      },
-      EventPriority::Critical);
+  loop.post([&]() { order.lockExclusive()->add(4); }, EventPriority::Critical);
 
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    loop.stop();
-  });
+  {
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      loop.stop();
+    });
 
-  loop.run();
-  runner.join();
+    loop.run();
+  }
 
-  KJ_EXPECT(order.size() == 4);
+  KJ_EXPECT(order.lockShared()->size() == 4);
   // Note: Lock-free queue doesn't guarantee strict priority ordering
   // Tasks are processed in FIFO order within the queue
 }
@@ -110,13 +93,14 @@ KJ_TEST("OptimizedEventLoop: Delayed task") {
 
   loop.post_delayed([&executed]() { executed = true; }, std::chrono::milliseconds(50));
 
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    loop.stop();
-  });
+  {
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      loop.stop();
+    });
 
-  loop.run();
-  runner.join();
+    loop.run();
+  }
 
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - start);
@@ -128,42 +112,30 @@ KJ_TEST("OptimizedEventLoop: Delayed task") {
 KJ_TEST("OptimizedEventLoop: Multiple delayed tasks") {
   OptimizedEventLoop loop;
 
-  std::vector<int> order;
-  std::mutex order_mutex;
+  kj::MutexGuarded<kj::Vector<int>> order;
 
-  loop.post_delayed(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(3);
-      },
-      std::chrono::milliseconds(30));
+  loop.post_delayed([&]() { order.lockExclusive()->add(3); }, std::chrono::milliseconds(30));
 
-  loop.post_delayed(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(1);
-      },
-      std::chrono::milliseconds(10));
+  loop.post_delayed([&]() { order.lockExclusive()->add(1); }, std::chrono::milliseconds(10));
 
-  loop.post_delayed(
-      [&]() {
-        std::lock_guard<std::mutex> lock(order_mutex);
-        order.push_back(2);
-      },
-      std::chrono::milliseconds(20));
+  loop.post_delayed([&]() { order.lockExclusive()->add(2); }, std::chrono::milliseconds(20));
 
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    loop.stop();
-  });
+  {
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      loop.stop();
+    });
 
-  loop.run();
-  runner.join();
+    loop.run();
+  }
 
-  KJ_EXPECT(order.size() == 3);
-  KJ_EXPECT(order[0] == 1);
-  KJ_EXPECT(order[1] == 2);
-  KJ_EXPECT(order[2] == 3);
+  {
+    auto lock = order.lockShared();
+    KJ_EXPECT(lock->size() == 3);
+    KJ_EXPECT((*lock)[0] == 1);
+    KJ_EXPECT((*lock)[1] == 2);
+    KJ_EXPECT((*lock)[2] == 3);
+  }
 }
 
 KJ_TEST("OptimizedEventLoop: Statistics tracking") {
@@ -176,13 +148,14 @@ KJ_TEST("OptimizedEventLoop: Statistics tracking") {
     loop.post([&counter]() { counter++; });
   }
 
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    loop.stop();
-  });
+  {
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      loop.stop();
+    });
 
-  loop.run();
-  runner.join();
+    loop.run();
+  }
 
   const auto& stats = loop.stats();
   KJ_EXPECT(stats.total_events.load() == NUM_TASKS);
@@ -204,26 +177,23 @@ KJ_TEST("OptimizedEventLoop: Concurrent producers") {
   constexpr int NUM_THREADS = 4;
   constexpr int TASKS_PER_THREAD = 100;
 
-  std::vector<std::thread> producers;
-  for (int t = 0; t < NUM_THREADS; ++t) {
-    producers.emplace_back([&loop, &counter]() {
-      for (int i = 0; i < TASKS_PER_THREAD; ++i) {
-        loop.post([&counter]() { counter++; });
-      }
+  {
+    kj::Vector<kj::Own<kj::Thread>> producers;
+    for (int t = 0; t < NUM_THREADS; ++t) {
+      producers.add(kj::heap<kj::Thread>([&loop, &counter]() {
+        for (int i = 0; i < TASKS_PER_THREAD; ++i) {
+          loop.post([&counter]() { counter++; });
+        }
+      }));
+    }
+
+    kj::Thread runner([&loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      loop.stop();
     });
+
+    loop.run();
   }
-
-  std::thread runner([&loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    loop.stop();
-  });
-
-  loop.run();
-
-  for (auto& t : producers) {
-    t.join();
-  }
-  runner.join();
 
   KJ_EXPECT(counter.load() == NUM_THREADS * TASKS_PER_THREAD);
 }
@@ -247,13 +217,14 @@ KJ_TEST("OptimizedEventLoop: Performance benchmark - immediate tasks") {
     opt_loop.post([&opt_counter]() { opt_counter++; });
   }
 
-  std::thread opt_runner([&opt_loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    opt_loop.stop();
-  });
+  {
+    kj::Thread opt_runner([&opt_loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      opt_loop.stop();
+    });
 
-  opt_loop.run();
-  opt_runner.join();
+    opt_loop.run();
+  }
 
   auto opt_end = std::chrono::high_resolution_clock::now();
   auto opt_duration =
@@ -266,13 +237,14 @@ KJ_TEST("OptimizedEventLoop: Performance benchmark - immediate tasks") {
     std_loop.post([&std_counter]() { std_counter++; });
   }
 
-  std::thread std_runner([&std_loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    std_loop.stop();
-  });
+  {
+    kj::Thread std_runner([&std_loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      std_loop.stop();
+    });
 
-  std_loop.run();
-  std_runner.join();
+    std_loop.run();
+  }
 
   auto std_end = std::chrono::high_resolution_clock::now();
   auto std_duration =
@@ -304,13 +276,14 @@ KJ_TEST("OptimizedEventLoop: Performance benchmark - delayed tasks") {
     opt_loop.post_delayed([&opt_counter]() { opt_counter++; }, std::chrono::milliseconds(i % 100));
   }
 
-  std::thread opt_runner([&opt_loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    opt_loop.stop();
-  });
+  {
+    kj::Thread opt_runner([&opt_loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      opt_loop.stop();
+    });
 
-  opt_loop.run();
-  opt_runner.join();
+    opt_loop.run();
+  }
 
   auto opt_end = std::chrono::high_resolution_clock::now();
   auto opt_duration =
@@ -323,13 +296,14 @@ KJ_TEST("OptimizedEventLoop: Performance benchmark - delayed tasks") {
     std_loop.post_delayed([&std_counter]() { std_counter++; }, std::chrono::milliseconds(i % 100));
   }
 
-  std::thread std_runner([&std_loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    std_loop.stop();
-  });
+  {
+    kj::Thread std_runner([&std_loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      std_loop.stop();
+    });
 
-  std_loop.run();
-  std_runner.join();
+    std_loop.run();
+  }
 
   auto std_end = std::chrono::high_resolution_clock::now();
   auto std_duration =
@@ -352,26 +326,23 @@ KJ_TEST("OptimizedEventLoop: Performance benchmark - concurrent posting") {
   // Benchmark optimized event loop with concurrent posting
   auto opt_start = std::chrono::high_resolution_clock::now();
 
-  std::vector<std::thread> opt_producers;
-  for (int t = 0; t < NUM_THREADS; ++t) {
-    opt_producers.emplace_back([&opt_loop, &opt_counter]() {
-      for (int i = 0; i < TASKS_PER_THREAD; ++i) {
-        opt_loop.post([&opt_counter]() { opt_counter++; });
-      }
+  {
+    kj::Vector<kj::Own<kj::Thread>> opt_producers;
+    for (int t = 0; t < NUM_THREADS; ++t) {
+      opt_producers.add(kj::heap<kj::Thread>([&opt_loop, &opt_counter]() {
+        for (int i = 0; i < TASKS_PER_THREAD; ++i) {
+          opt_loop.post([&opt_counter]() { opt_counter++; });
+        }
+      }));
+    }
+
+    kj::Thread opt_runner([&opt_loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      opt_loop.stop();
     });
+
+    opt_loop.run();
   }
-
-  std::thread opt_runner([&opt_loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    opt_loop.stop();
-  });
-
-  opt_loop.run();
-
-  for (auto& t : opt_producers) {
-    t.join();
-  }
-  opt_runner.join();
 
   auto opt_end = std::chrono::high_resolution_clock::now();
   auto opt_duration =
@@ -380,26 +351,23 @@ KJ_TEST("OptimizedEventLoop: Performance benchmark - concurrent posting") {
   // Benchmark standard event loop with concurrent posting
   auto std_start = std::chrono::high_resolution_clock::now();
 
-  std::vector<std::thread> std_producers;
-  for (int t = 0; t < NUM_THREADS; ++t) {
-    std_producers.emplace_back([&std_loop, &std_counter]() {
-      for (int i = 0; i < TASKS_PER_THREAD; ++i) {
-        std_loop.post([&std_counter]() { std_counter++; });
-      }
+  {
+    kj::Vector<kj::Own<kj::Thread>> std_producers;
+    for (int t = 0; t < NUM_THREADS; ++t) {
+      std_producers.add(kj::heap<kj::Thread>([&std_loop, &std_counter]() {
+        for (int i = 0; i < TASKS_PER_THREAD; ++i) {
+          std_loop.post([&std_counter]() { std_counter++; });
+        }
+      }));
+    }
+
+    kj::Thread std_runner([&std_loop]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      std_loop.stop();
     });
+
+    std_loop.run();
   }
-
-  std::thread std_runner([&std_loop]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    std_loop.stop();
-  });
-
-  std_loop.run();
-
-  for (auto& t : std_producers) {
-    t.join();
-  }
-  std_runner.join();
 
   auto std_end = std::chrono::high_resolution_clock::now();
   auto std_duration =
