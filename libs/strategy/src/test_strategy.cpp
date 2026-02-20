@@ -1,14 +1,58 @@
 #include "veloz/strategy/strategy.h"
 
 #include <cmath>
-#include <deque>
+#include <kj/vector.h>
 
 namespace veloz::strategy {
+
+namespace {
+
+template <typename T> class RingBuffer {
+public:
+  explicit RingBuffer(size_t capacity) : buffer_(kj::heapArray<T>(capacity)), capacity_(capacity) {}
+
+  void add(T value) {
+    buffer_[tail_] = value;
+    tail_ = (tail_ + 1) % capacity_;
+    if (size_ < capacity_) {
+      size_++;
+    } else {
+      head_ = (head_ + 1) % capacity_;
+    }
+  }
+
+  T operator[](size_t index) const {
+    KJ_IREQUIRE(index < size_);
+    return buffer_[(head_ + index) % capacity_];
+  }
+
+  size_t size() const {
+    return size_;
+  }
+  bool full() const {
+    return size_ == capacity_;
+  }
+
+  T front() const {
+    KJ_IREQUIRE(size_ > 0);
+    return buffer_[head_];
+  }
+
+private:
+  kj::Array<T> buffer_;
+  size_t capacity_;
+  size_t head_ = 0;
+  size_t tail_ = 0;
+  size_t size_ = 0;
+};
+
+} // namespace
 
 // Trend following strategy implementation
 class TrendFollowingStrategy : public BaseStrategy {
 public:
-  explicit TrendFollowingStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  explicit TrendFollowingStrategy(const StrategyConfig& config)
+      : BaseStrategy(config), recent_prices_(20) {}
   ~TrendFollowingStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
@@ -21,12 +65,9 @@ public:
       // Track recent prices for moving average calculation
       if (event.data.is<market::TradeData>()) {
         const auto& trade_data = event.data.get<market::TradeData>();
-        recent_prices_.push_back(trade_data.price);
-        if (recent_prices_.size() > 20) { // Simple 20-period moving average
-          recent_prices_.pop_front();
-        }
+        recent_prices_.add(trade_data.price);
 
-        if (recent_prices_.size() == 20) {
+        if (recent_prices_.full()) {
           double ma = calculate_moving_average(recent_prices_);
           // If price crosses above MA, buy; if crosses below, sell
           if (trade_data.price > ma && last_price_ <= ma) {
@@ -67,15 +108,15 @@ public:
   }
 
 private:
-  double calculate_moving_average(const std::deque<double>& prices) const {
+  double calculate_moving_average(const RingBuffer<double>& prices) const {
     double sum = 0.0;
-    for (double price : prices) {
-      sum += price;
+    for (size_t i = 0; i < prices.size(); ++i) {
+      sum += prices[i];
     }
     return sum / prices.size();
   }
 
-  std::deque<double> recent_prices_;
+  RingBuffer<double> recent_prices_;
   double last_price_ = 0.0;
   kj::Vector<exec::PlaceOrderRequest> signals_;
 };
@@ -83,7 +124,8 @@ private:
 // Mean reversion strategy implementation
 class MeanReversionStrategy : public BaseStrategy {
 public:
-  explicit MeanReversionStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  explicit MeanReversionStrategy(const StrategyConfig& config)
+      : BaseStrategy(config), recent_prices_(20) {}
   ~MeanReversionStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
@@ -95,12 +137,9 @@ public:
     if (event.type == market::MarketEventType::Ticker) {
       if (event.data.is<market::TradeData>()) {
         const auto& trade_data = event.data.get<market::TradeData>();
-        recent_prices_.push_back(trade_data.price);
-        if (recent_prices_.size() > 20) { // 20-period Bollinger Bands
-          recent_prices_.pop_front();
-        }
+        recent_prices_.add(trade_data.price);
 
-        if (recent_prices_.size() == 20) {
+        if (recent_prices_.full()) {
           double ma = calculate_moving_average(recent_prices_);
           double std_dev = calculate_standard_deviation(recent_prices_, ma);
           double upper_band = ma + 2 * std_dev;
@@ -142,31 +181,32 @@ public:
   }
 
 private:
-  double calculate_moving_average(const std::deque<double>& prices) const {
+  double calculate_moving_average(const RingBuffer<double>& prices) const {
     double sum = 0.0;
-    for (double price : prices) {
-      sum += price;
+    for (size_t i = 0; i < prices.size(); ++i) {
+      sum += prices[i];
     }
     return sum / prices.size();
   }
 
-  double calculate_standard_deviation(const std::deque<double>& prices, double mean) const {
+  double calculate_standard_deviation(const RingBuffer<double>& prices, double mean) const {
     double sum = 0.0;
-    for (double price : prices) {
-      sum += std::pow(price - mean, 2);
+    for (size_t i = 0; i < prices.size(); ++i) {
+      sum += std::pow(prices[i] - mean, 2);
     }
     double variance = sum / prices.size();
     return std::sqrt(variance);
   }
 
-  std::deque<double> recent_prices_;
+  RingBuffer<double> recent_prices_;
   kj::Vector<exec::PlaceOrderRequest> signals_;
 };
 
 // Momentum strategy implementation
 class MomentumStrategy : public BaseStrategy {
 public:
-  explicit MomentumStrategy(const StrategyConfig& config) : BaseStrategy(config) {}
+  explicit MomentumStrategy(const StrategyConfig& config)
+      : BaseStrategy(config), recent_prices_(10) {}
   ~MomentumStrategy() noexcept override = default;
 
   StrategyType get_type() const override {
@@ -178,12 +218,9 @@ public:
     if (event.type == market::MarketEventType::Ticker) {
       if (event.data.is<market::TradeData>()) {
         const auto& trade_data = event.data.get<market::TradeData>();
-        recent_prices_.push_back(trade_data.price);
-        if (recent_prices_.size() > 10) { // 10-period momentum
-          recent_prices_.pop_front();
-        }
+        recent_prices_.add(trade_data.price);
 
-        if (recent_prices_.size() == 10) {
+        if (recent_prices_.full()) {
           double momentum = trade_data.price - recent_prices_.front();
           // Buy if positive momentum, sell if negative momentum
           if (momentum > 0.0) {
@@ -221,7 +258,7 @@ public:
   }
 
 private:
-  std::deque<double> recent_prices_;
+  RingBuffer<double> recent_prices_;
   kj::Vector<exec::PlaceOrderRequest> signals_;
 };
 

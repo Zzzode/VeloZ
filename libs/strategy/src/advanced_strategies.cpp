@@ -8,8 +8,6 @@
 #include <algorithm>
 // std::numeric_limits for numeric bounds (standard C++ library)
 #include <limits>
-// std::vector: iterator/erase support needed for sliding window operations
-#include <vector>
 
 namespace veloz::strategy {
 
@@ -24,6 +22,29 @@ double get_param_or_default(const kj::TreeMap<kj::String, double>& params, kj::S
   return default_value;
 }
 } // anonymous namespace
+
+// TechnicalIndicatorStrategy helper implementations
+kj::Array<double> TechnicalIndicatorStrategy::get_ordered_prices(kj::Vector<double>& buffer,
+                                                                 size_t& start_idx) const {
+  if (buffer.size() == 0) {
+    return kj::Array<double>();
+  }
+
+  kj::Vector<double> ordered;
+  ordered.reserve(buffer.size());
+
+  // Copy from start_idx to end
+  for (size_t i = start_idx; i < buffer.size(); ++i) {
+    ordered.add(buffer[i]);
+  }
+
+  // Copy from 0 to start_idx (wrap-around)
+  for (size_t i = 0; i < start_idx; ++i) {
+    ordered.add(buffer[i]);
+  }
+
+  return ordered.releaseAsArray();
+}
 
 // TechnicalIndicatorStrategy implementation
 double TechnicalIndicatorStrategy::calculate_rsi(kj::ArrayPtr<const double> prices,
@@ -148,14 +169,20 @@ void RsiStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
     if (event.data.is<market::TradeData>()) {
       const auto& trade_data = event.data.get<market::TradeData>();
-      recent_prices_.push_back(trade_data.price);
-      // Remove oldest price if we have too many
-      while (recent_prices_.size() > static_cast<size_t>(rsi_period_ + 1)) {
-        recent_prices_.erase(recent_prices_.begin());
+
+      // Add price to circular buffer using kj::Vector
+      size_t max_size = static_cast<size_t>(rsi_period_ + 1);
+      if (recent_prices_.size() < max_size) {
+        recent_prices_.add(trade_data.price);
+      } else {
+        // Overwrite oldest price (circular buffer)
+        recent_prices_[price_start_] = trade_data.price;
+        price_start_ = (price_start_ + 1) % max_size;
       }
 
-      if (recent_prices_.size() >= static_cast<size_t>(rsi_period_ + 1)) {
-        kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
+      if (recent_prices_.size() >= max_size) {
+        kj::Array<double> ordered_prices = get_ordered_prices(recent_prices_, price_start_);
+        kj::ArrayPtr<const double> prices_ptr = ordered_prices;
         double rsi = calculate_rsi(prices_ptr, rsi_period_);
 
         if (rsi > overbought_level_ && current_position_.size() > 0) {
@@ -208,14 +235,22 @@ StrategyType MacdStrategy::get_type() const {
 
 void MacdStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    recent_prices_.push_back(event.data.get<market::TradeData>().price);
+    double price = event.data.get<market::TradeData>().price;
+
+    // Add price to circular buffer using kj::Vector
     int max_period = std::max({fast_period_, slow_period_, signal_period_});
-    while (recent_prices_.size() > static_cast<size_t>(max_period + 1)) {
-      recent_prices_.erase(recent_prices_.begin());
+    size_t max_size = static_cast<size_t>(max_period + 1);
+    if (recent_prices_.size() < max_size) {
+      recent_prices_.add(price);
+    } else {
+      // Overwrite oldest price (circular buffer)
+      recent_prices_[price_start_] = price;
+      price_start_ = (price_start_ + 1) % max_size;
     }
 
-    if (recent_prices_.size() >= static_cast<size_t>(max_period + 1)) {
-      kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
+    if (recent_prices_.size() >= max_size) {
+      kj::Array<double> ordered_prices = get_ordered_prices(recent_prices_, price_start_);
+      kj::ArrayPtr<const double> prices_ptr = ordered_prices;
       double signal;
       double macd = calculate_macd(prices_ptr, signal, fast_period_, slow_period_, signal_period_);
 
@@ -226,13 +261,13 @@ void MacdStrategy::on_event(const market::MarketEvent& event) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
-                                             .price = event.data.get<market::TradeData>().price,
+                                             .price = price,
                                              .type = exec::OrderType::Market});
       } else if (macd < signal && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
-                                             .price = event.data.get<market::TradeData>().price,
+                                             .price = price,
                                              .type = exec::OrderType::Market});
       }
     }
@@ -263,30 +298,37 @@ StrategyType BollingerBandsStrategy::get_type() const {
 
 void BollingerBandsStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    recent_prices_.push_back(event.data.get<market::TradeData>().price);
-    while (recent_prices_.size() > static_cast<size_t>(period_ + 1)) {
-      recent_prices_.erase(recent_prices_.begin());
+    double price = event.data.get<market::TradeData>().price;
+
+    // Add price to circular buffer using kj::Vector
+    size_t max_size = static_cast<size_t>(period_ + 1);
+    if (recent_prices_.size() < max_size) {
+      recent_prices_.add(price);
+    } else {
+      // Overwrite oldest price (circular buffer)
+      recent_prices_[price_start_] = price;
+      price_start_ = (price_start_ + 1) % max_size;
     }
 
-    if (recent_prices_.size() >= static_cast<size_t>(period_ + 1)) {
-      kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
+    if (recent_prices_.size() >= max_size) {
+      kj::Array<double> ordered_prices = get_ordered_prices(recent_prices_, price_start_);
+      kj::ArrayPtr<const double> prices_ptr = ordered_prices;
       double upper, middle, lower;
       calculate_bollinger_bands(prices_ptr, upper, middle, lower, period_, std_dev_);
 
-      if (event.data.get<market::TradeData>().price <= lower && current_position_.size() == 0) {
+      if (price <= lower && current_position_.size() == 0) {
         double quantity = config_.max_position_size *
                           get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
-                                             .price = event.data.get<market::TradeData>().price,
+                                             .price = price,
                                              .type = exec::OrderType::Market});
-      } else if (event.data.get<market::TradeData>().price >= upper &&
-                 current_position_.size() > 0) {
+      } else if (price >= upper && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
-                                             .price = event.data.get<market::TradeData>().price,
+                                             .price = price,
                                              .type = exec::OrderType::Market});
       }
     }
@@ -319,13 +361,21 @@ StrategyType StochasticOscillatorStrategy::get_type() const {
 
 void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
   if (event.type == market::MarketEventType::Ticker) {
-    recent_prices_.push_back(event.data.get<market::TradeData>().price);
-    while (recent_prices_.size() > static_cast<size_t>(k_period_ + 1)) {
-      recent_prices_.erase(recent_prices_.begin());
+    double price = event.data.get<market::TradeData>().price;
+
+    // Add price to circular buffer using kj::Vector
+    size_t max_size = static_cast<size_t>(k_period_ + 1);
+    if (recent_prices_.size() < max_size) {
+      recent_prices_.add(price);
+    } else {
+      // Overwrite oldest price (circular buffer)
+      recent_prices_[price_start_] = price;
+      price_start_ = (price_start_ + 1) % max_size;
     }
 
-    if (recent_prices_.size() >= static_cast<size_t>(k_period_ + 1)) {
-      kj::ArrayPtr<const double> prices_ptr(recent_prices_.data(), recent_prices_.size());
+    if (recent_prices_.size() >= max_size) {
+      kj::Array<double> ordered_prices = get_ordered_prices(recent_prices_, price_start_);
+      kj::ArrayPtr<const double> prices_ptr = ordered_prices;
       double k, d;
       calculate_stochastic_oscillator(prices_ptr, k, d, k_period_, d_period_);
 
@@ -335,13 +385,13 @@ void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
                                              .qty = quantity,
-                                             .price = event.data.get<market::TradeData>().price,
+                                             .price = price,
                                              .type = exec::OrderType::Market});
       } else if (k > overbought_level_ && d > overbought_level_ && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
                                              .qty = current_position_.size(),
-                                             .price = event.data.get<market::TradeData>().price,
+                                             .price = price,
                                              .type = exec::OrderType::Market});
       }
     }

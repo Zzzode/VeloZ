@@ -8,8 +8,6 @@
 #include <kj/refcount.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-// std::vector for iterator/erase support needed for sliding window operations
-#include <vector>
 
 namespace veloz::strategy {
 
@@ -70,6 +68,11 @@ public:
                                        int k_period = 14, int d_period = 3) const;
   double calculate_exponential_moving_average(kj::ArrayPtr<const double> prices, int period) const;
   double calculate_standard_deviation(kj::ArrayPtr<const double> prices) const;
+
+protected:
+  // Helper to add price to circular buffer using kj::Vector
+  // Returns a kj::ArrayPtr to the current prices (in order from oldest to newest)
+  kj::Array<double> get_ordered_prices(kj::Vector<double>& buffer, size_t& start_idx) const;
 };
 
 // RSI (Relative Strength Index) strategy
@@ -84,7 +87,9 @@ public:
   static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  // Circular buffer for recent prices using kj::Vector with manual management
+  kj::Vector<double> recent_prices_;
+  size_t price_start_{0}; // Start index for circular buffer
   kj::Vector<exec::PlaceOrderRequest> signals_;
   int rsi_period_;
   double overbought_level_;
@@ -103,7 +108,9 @@ public:
   static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  // Circular buffer for recent prices using kj::Vector with manual management
+  kj::Vector<double> recent_prices_;
+  size_t price_start_{0}; // Start index for circular buffer
   kj::Vector<exec::PlaceOrderRequest> signals_;
   int fast_period_;
   int slow_period_;
@@ -122,7 +129,9 @@ public:
   static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  // Circular buffer for recent prices using kj::Vector with manual management
+  kj::Vector<double> recent_prices_;
+  size_t price_start_{0}; // Start index for circular buffer
   kj::Vector<exec::PlaceOrderRequest> signals_;
   int period_;
   double std_dev_;
@@ -140,7 +149,9 @@ public:
   static kj::StringPtr get_strategy_type();
 
 private:
-  std::vector<double> recent_prices_; // std::vector for iterator/erase support
+  // Circular buffer for recent prices using kj::Vector with manual management
+  kj::Vector<double> recent_prices_;
+  size_t price_start_{0}; // Start index for circular buffer
   kj::Vector<exec::PlaceOrderRequest> signals_;
   int k_period_;
   int d_period_;
