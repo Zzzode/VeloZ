@@ -4,15 +4,14 @@
 #include <kj/string.h>
 #include <kj/test.h>
 #include <kj/vector.h>
-#include <string>
 
 using namespace veloz::backtest;
 
 namespace {
 
 // Helper function to check if kj::String contains a substring
-bool contains(kj::StringPtr str, const char* substr) {
-  return std::string(str.cStr()).find(substr) != std::string::npos;
+bool contains(kj::StringPtr str, kj::StringPtr substr) {
+  return str.contains(substr);
 }
 
 // Helper to create sample trades

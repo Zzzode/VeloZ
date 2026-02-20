@@ -4,7 +4,6 @@
 
 // std library includes with justifications
 #include <fstream> // std::ofstream - file I/O (no KJ equivalent)
-#include <sstream> // std::stringstream - string building (no KJ equivalent)
 
 // KJ library includes
 #include <kj/common.h>
@@ -12,6 +11,7 @@
 #include <kj/exception.h>
 #include <kj/memory.h>
 #include <kj/string.h>
+#include <kj/vector.h>
 
 namespace veloz::backtest {
 
@@ -35,7 +35,8 @@ bool BacktestReporter::generate_report(const BacktestResult& result, kj::StringP
   KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
                std::ofstream out_file(output_path.cStr());
                if (!out_file.is_open()) {
-                 impl_->logger->error(kj::str("Failed to open file for writing: ", output_path).cStr());
+                 impl_->logger->error(
+                     kj::str("Failed to open file for writing: ", output_path).cStr());
                  return;
                }
 
@@ -52,9 +53,82 @@ bool BacktestReporter::generate_report(const BacktestResult& result, kj::StringP
 }
 
 kj::String BacktestReporter::generate_html_report(const BacktestResult& result) {
-  std::stringstream html;
+  // Build trade rows for the table
+  kj::Vector<kj::String> trade_rows;
+  for (const auto& trade : result.trades) {
+    trade_rows.add(kj::str(
+        R"(
+                                <tr>
+                                    <td>)",
+        trade.timestamp,
+        R"(</td>
+                                    <td>)",
+        trade.symbol,
+        R"(</td>
+                                    <td>)",
+        trade.side,
+        R"(</td>
+                                    <td>$)",
+        trade.price,
+        R"(</td>
+                                    <td>)",
+        trade.quantity,
+        R"(</td>
+                                    <td>$)",
+        trade.fee,
+        R"(</td>
+                                    <td class=)",
+        (trade.pnl >= 0 ? "positive" : "negative"), ">$", trade.pnl,
+        R"(</td>
+                                </tr>)"));
+  }
 
-  html << R"(
+  // Build trade markers data for JavaScript
+  kj::Vector<kj::String> trade_markers;
+  for (const auto& trade : result.trades) {
+    trade_markers.add(kj::str("{timestamp:", trade.timestamp, ",side:'", trade.side, "',price:",
+                              trade.price, ",quantity:", trade.quantity, ",pnl:", trade.pnl, "}"));
+  }
+
+  // Build equity curve labels and values
+  kj::Vector<kj::String> equity_labels;
+  kj::Vector<kj::String> equity_values;
+  for (const auto& point : result.equity_curve) {
+    equity_labels.add(kj::str(point.timestamp));
+    equity_values.add(kj::str(point.equity));
+  }
+
+  // Build drawdown curve labels and values
+  kj::Vector<kj::String> drawdown_labels;
+  kj::Vector<kj::String> drawdown_values;
+  for (const auto& point : result.drawdown_curve) {
+    drawdown_labels.add(kj::str(point.timestamp));
+    drawdown_values.add(kj::str(point.drawdown * 100));
+  }
+
+  // Join arrays with commas
+  auto join_strings = [](const kj::Vector<kj::String>& vec) -> kj::String {
+    if (vec.size() == 0)
+      return kj::str("");
+    kj::Vector<kj::String> parts;
+    for (size_t i = 0; i < vec.size(); ++i) {
+      if (i > 0) {
+        parts.add(kj::str(","));
+      }
+      parts.add(kj::str(vec[i]));
+    }
+    return kj::strArray(parts, "");
+  };
+
+  kj::String trade_rows_str = kj::strArray(trade_rows, "");
+  kj::String trade_markers_str = join_strings(trade_markers);
+  kj::String equity_labels_str = join_strings(equity_labels);
+  kj::String equity_values_str = join_strings(equity_values);
+  kj::String drawdown_labels_str = join_strings(drawdown_labels);
+  kj::String drawdown_values_str = join_strings(drawdown_values);
+
+  return kj::str(
+      R"(
         <!DOCTYPE html>
         <html lang="en">
         <head>
@@ -285,50 +359,55 @@ kj::String BacktestReporter::generate_html_report(const BacktestResult& result) 
             <div class="container">
                 <div class="header">
                     <h1>VeloZ Backtest Report</h1>
-                    <p>Strategy Name: )"
-       << result.strategy_name.cStr() << R"( | Trading Pair: )" << result.symbol.cStr() << R"(</p>
-                    <p>Backtest Period: )"
-       << result.start_time << R"( - )" << result.end_time << R"(</p>
+                    <p>Strategy Name: )",
+      result.strategy_name, R"( | Trading Pair: )", result.symbol,
+      R"(</p>
+                    <p>Backtest Period: )",
+      result.start_time, R"( - )", result.end_time,
+      R"(</p>
                 </div>
 
                 <div class="summary">
                     <div class="stat-card">
                         <h3>Initial Balance</h3>
-                        <div class="value">\$)"
-       << result.initial_balance << R"(</div>
+                        <div class="value">\$)",
+      result.initial_balance,
+      R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Final Balance</h3>
-                        <div class="value">$)"
-       << result.final_balance << R"(</div>
+                        <div class="value">$)",
+      result.final_balance,
+      R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Total Return</h3>
-                        <div class="value )"
-       << (result.total_return >= 0 ? "positive" : "negative") << ">" << (result.total_return * 100)
-       << R"(%</div>
+                        <div class="value )",
+      (result.total_return >= 0 ? "positive" : "negative"), ">", (result.total_return * 100),
+      R"(%</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Max Drawdown</h3>
-                        <div class="value )"
-       << (result.max_drawdown >= 0 ? "negative" : "positive") << ">" << (result.max_drawdown * 100)
-       << R"(%</div>
+                        <div class="value )",
+      (result.max_drawdown >= 0 ? "negative" : "positive"), ">", (result.max_drawdown * 100),
+      R"(%</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Sharpe Ratio</h3>
-                        <div class="value">)"
-       << result.sharpe_ratio << R"(</div>
+                        <div class="value">)",
+      result.sharpe_ratio,
+      R"(</div>
                     </div>
 
                     <div class="stat-card">
                         <h3>Win Rate</h3>
-                        <div class="value )"
-       << (result.win_rate >= 0.5 ? "positive" : "negative") << ">" << (result.win_rate * 100)
-       << R"(%</div>
+                        <div class="value )",
+      (result.win_rate >= 0.5 ? "positive" : "negative"), ">", (result.win_rate * 100),
+      R"(%</div>
                     </div>
                 </div>
 
@@ -344,34 +423,39 @@ kj::String BacktestReporter::generate_html_report(const BacktestResult& result) 
                                 </tr>
                                 <tr>
                                     <td>Total Trades</td>
-                                    <td>)"
-       << result.trade_count << R"()</td>
+                                    <td>)",
+      result.trade_count,
+      R"()</td>
                                 </tr>
                                 <tr>
                                     <td>Winning Trades</td>
-                                    <td>)"
-       << result.win_count << R"()</td>
+                                    <td>)",
+      result.win_count,
+      R"()</td>
                                 </tr>
                                 <tr>
                                     <td>Losing Trades</td>
-                                    <td>)"
-       << result.lose_count << R"()</td>
+                                    <td>)",
+      result.lose_count,
+      R"()</td>
                                 </tr>
                                 <tr>
                                     <td>Profit Factor</td>
-                                    <td>)"
-       << result.profit_factor << R"(</td>
+                                    <td>)",
+      result.profit_factor,
+      R"(</td>
                                 </tr>
                                 <tr>
                                     <td>Average Win</td>
-                                    <td>$)"
-       << result.avg_win << R"(</td>
+                                    <td>$)",
+      result.avg_win,
+      R"(</td>
                                 </tr>
                                 <tr>
                                     <td>Average Loss</td>
-                                    <td class=")"
-       << (result.avg_lose < 0 ? "negative" : "positive") << ">" << "$)" << result.avg_lose
-       << R"(</td>
+                                    <td class=")",
+      (result.avg_lose < 0 ? "negative" : "positive"), ">$", result.avg_lose,
+      R"(</td>
                                 </tr>
                             </table>
                         </div>
@@ -421,30 +505,9 @@ kj::String BacktestReporter::generate_html_report(const BacktestResult& result) 
                                     <th>Quantity</th>
                                     <th>Fee</th>
                                     <th>P&L</th>
-                                </tr>)";
-
-  // Add trade records to table
-  for (const auto& trade : result.trades) {
-    html << R"(
-                                <tr>
-                                    <td>)"
-         << trade.timestamp << R"(</td>
-                                    <td>)"
-         << trade.symbol.cStr() << R"(</td>
-                                    <td>)"
-         << trade.side.cStr() << R"(</td>
-                                    <td>$)"
-         << trade.price << R"(</td>
-                                    <td>)"
-         << trade.quantity << R"(</td>
-                                    <td>$)"
-         << trade.fee << R"(</td>
-                                    <td class=)"
-         << (trade.pnl >= 0 ? "positive" : "negative") << ">$" << trade.pnl << R"(</td>
-                                </tr>)";
-  }
-
-  html << R"(
+                                </tr>)",
+      trade_rows_str,
+      R"(
                             </table>
                         </div>
                     </div>
@@ -459,72 +522,25 @@ kj::String BacktestReporter::generate_html_report(const BacktestResult& result) 
                 }
 
                 // Trade markers data
-                const tradeMarkers = [)";
-
-  // Add trade markers data
-  bool first_trade_marker = true;
-  for (const auto& trade : result.trades) {
-    if (!first_trade_marker)
-      html << ",";
-    first_trade_marker = false;
-    html << R"({timestamp:)" << trade.timestamp << R"(,side:')" << trade.side.cStr()
-         << R"(',price:)" << trade.price << R"(,quantity:)" << trade.quantity << R"(,pnl:)"
-         << trade.pnl << R"(})";
-  }
-
-  html << R"(];
+                const tradeMarkers = [)",
+      trade_markers_str,
+      R"(];
 
                 // Generate equity curve data
-                const equityLabels = [)";
-
-  // Add equity curve labels (timestamps)
-  bool first_equity = true;
-  for (const auto& point : result.equity_curve) {
-    if (!first_equity)
-      html << ",";
-    first_equity = false;
-    html << point.timestamp;
-  }
-
-  html << R"(];
-                const equityValues = [)";
-
-  // Add equity curve values
-  first_equity = true;
-  for (const auto& point : result.equity_curve) {
-    if (!first_equity)
-      html << ",";
-    first_equity = false;
-    html << point.equity;
-  }
-
-  html << R"(];
+                const equityLabels = [)",
+      equity_labels_str,
+      R"(];
+                const equityValues = [)",
+      equity_values_str,
+      R"(];
 
                 // Generate drawdown curve data
-                const drawdownLabels = [)";
-
-  // Add drawdown curve labels (timestamps)
-  bool first_drawdown = true;
-  for (const auto& point : result.drawdown_curve) {
-    if (!first_drawdown)
-      html << ",";
-    first_drawdown = false;
-    html << point.timestamp;
-  }
-
-  html << R"(];
-                const drawdownValues = [)";
-
-  // Add drawdown curve values (as percentages)
-  first_drawdown = true;
-  for (const auto& point : result.drawdown_curve) {
-    if (!first_drawdown)
-      html << ",";
-    first_drawdown = false;
-    html << (point.drawdown * 100);
-  }
-
-  html << R"(];
+                const drawdownLabels = [)",
+      drawdown_labels_str,
+      R"(];
+                const drawdownValues = [)",
+      drawdown_values_str,
+      R"(];
 
                 // Find nearest equity value for a given timestamp
                 function findNearestEquity(timestamp) {
@@ -842,81 +858,73 @@ kj::String BacktestReporter::generate_html_report(const BacktestResult& result) 
             </script>
         </body>
         </html>
-    )";
-
-  return kj::str(html.str().c_str());
+    )");
 }
 
 kj::String BacktestReporter::generate_json_report(const BacktestResult& result) {
-  std::stringstream json;
-
-  json << R"({
-        "strategy_name": ")"
-       << result.strategy_name.cStr() << R"(",
-        "symbol": ")"
-       << result.symbol.cStr() << R"(",
-        "start_time": )"
-       << result.start_time << R"(,
-        "end_time": )"
-       << result.end_time << R"(,
-        "initial_balance": )"
-       << result.initial_balance << R"(,
-        "final_balance": )"
-       << result.final_balance << R"(,
-        "total_return": )"
-       << result.total_return << R"(,
-        "max_drawdown": )"
-       << result.max_drawdown << R"(,
-        "sharpe_ratio": )"
-       << result.sharpe_ratio << R"(,
-        "win_rate": )"
-       << result.win_rate << R"(,
-        "profit_factor": )"
-       << result.profit_factor << R"(,
-        "trade_count": )"
-       << result.trade_count << R"(,
-        "win_count": )"
-       << result.win_count << R"(,
-        "lose_count": )"
-       << result.lose_count << R"(,
-        "avg_win": )"
-       << result.avg_win << R"(,
-        "avg_lose": )"
-       << result.avg_lose << R"(,
-        "trades": [)";
-
-  // Add trade records
-  bool first_trade = true;
+  // Build trade records array
+  kj::Vector<kj::String> trade_records;
   for (const auto& trade : result.trades) {
-    if (!first_trade)
-      json << ",";
-    first_trade = false;
-    json << R"(
+    trade_records.add(kj::str(R"(
             {
-                "timestamp": )"
-         << trade.timestamp << R"(,
-                "symbol": ")"
-         << trade.symbol.cStr() << R"(",
-                "side": ")"
-         << trade.side.cStr() << R"(",
-                "price": )"
-         << trade.price << R"(,
-                "quantity": )"
-         << trade.quantity << R"(,
-                "fee": )"
-         << trade.fee << R"(,
-                "pnl": )"
-         << trade.pnl << R"(,
-                "strategy_id": ")"
-         << trade.strategy_id.cStr() << R"("
-            })";
+                "timestamp": )",
+                              trade.timestamp, R"(,
+                "symbol": ")",
+                              trade.symbol, R"(",
+                "side": ")",
+                              trade.side, R"(",
+                "price": )",
+                              trade.price, R"(,
+                "quantity": )",
+                              trade.quantity, R"(,
+                "fee": )",
+                              trade.fee, R"(,
+                "pnl": )",
+                              trade.pnl, R"(,
+                "strategy_id": ")",
+                              trade.strategy_id, R"("
+            })"));
   }
 
-  json << R"(
-        ]
-    })";
+  kj::String trades_str = kj::strArray(trade_records, ",");
 
-  return kj::str(json.str().c_str());
+  return kj::str(R"({
+        "strategy_name": ")",
+                 result.strategy_name, R"(",
+        "symbol": ")",
+                 result.symbol, R"(",
+        "start_time": )",
+                 result.start_time, R"(,
+        "end_time": )",
+                 result.end_time, R"(,
+        "initial_balance": )",
+                 result.initial_balance, R"(,
+        "final_balance": )",
+                 result.final_balance, R"(,
+        "total_return": )",
+                 result.total_return, R"(,
+        "max_drawdown": )",
+                 result.max_drawdown, R"(,
+        "sharpe_ratio": )",
+                 result.sharpe_ratio, R"(,
+        "win_rate": )",
+                 result.win_rate, R"(,
+        "profit_factor": )",
+                 result.profit_factor, R"(,
+        "trade_count": )",
+                 result.trade_count, R"(,
+        "win_count": )",
+                 result.win_count, R"(,
+        "lose_count": )",
+                 result.lose_count, R"(,
+        "avg_win": )",
+                 result.avg_win, R"(,
+        "avg_lose": )",
+                 result.avg_lose, R"(,
+        "trades": [)",
+                 trades_str, R"(
+        ]
+    })");
 }
 
 } // namespace veloz::backtest

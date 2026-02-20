@@ -240,10 +240,9 @@ bool BacktestEngine::run() {
 
           // Check max position size constraint (both long and short)
           if (std::abs(new_size) > impl_->config.max_position_size) {
-            impl_->logger->warn(
-                kj::str("Order rejected: would exceed max position size ",
-                        impl_->config.max_position_size)
-                    .cStr());
+            impl_->logger->warn(kj::str("Order rejected: would exceed max position size ",
+                                        impl_->config.max_position_size)
+                                    .cStr());
             continue;
           }
 
@@ -280,11 +279,10 @@ bool BacktestEngine::run() {
 
           impl_->result.trades.add(kj::mv(trade_record));
 
-          impl_->logger->info(
-              kj::str("Order filled: ", impl_->result.trades.back().side, " ", qty, " @ ",
-                      fill_price, ", fee: ", fee, ", PnL: ", trade_pnl,
-                      ", equity: ", impl_->current_equity)
-                  .cStr());
+          impl_->logger->info(kj::str("Order filled: ", impl_->result.trades.back().side, " ", qty,
+                                      " @ ", fill_price, ", fee: ", fee, ", PnL: ", trade_pnl,
+                                      ", equity: ", impl_->current_equity)
+                                  .cStr());
 
           // Notify strategy of position update
           impl_->strategy->on_position_update(position);

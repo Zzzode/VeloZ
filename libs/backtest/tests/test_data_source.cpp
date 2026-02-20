@@ -1,11 +1,12 @@
 #include "veloz/backtest/data_source.h"
 
 #include <cstdlib>
-#include <filesystem>
 #include <fstream>
+#include <kj/filesystem.h>
 #include <kj/refcount.h>
+#include <kj/string.h>
 #include <kj/test.h>
-#include <string>
+#include <string> // Kept for std::getline file reading pattern
 
 using namespace veloz::backtest;
 
@@ -14,12 +15,12 @@ namespace {
 // Helper to check if network tests should run
 bool should_run_network_tests() {
   const char* run_network_tests = std::getenv("VELOZ_RUN_NETWORK_TESTS");
-  return run_network_tests && std::string(run_network_tests) == "1";
+  return run_network_tests && kj::StringPtr(run_network_tests) == "1"_kj;
 }
 
-// Helper to check if string contains substring (for std::string)
-bool contains(const std::string& str, const char* substr) {
-  return str.find(substr) != std::string::npos;
+// Helper to check if string contains substring (for kj::StringPtr)
+bool contains(kj::StringPtr str, kj::StringPtr substr) {
+  return str.contains(substr);
 }
 
 // ============================================================================
@@ -55,33 +56,48 @@ KJ_TEST("CSVDataSource: GetData") {
 
 KJ_TEST("CSVDataSource: DownloadData") {
   auto csv_data_source = kj::rc<CSVDataSource>();
-  const std::string test_file = "/tmp/test_csv_data_BTCUSDT_trade.csv";
+  kj::StringPtr test_file = "/tmp/test_csv_data_BTCUSDT_trade.csv"_kj;
   std::int64_t start_time = 1704067200000; // 2024-01-01 00:00:00 UTC
   std::int64_t end_time = 1704068100000;   // 2024-01-01 00:15:00 UTC (15 minutes)
 
+  // KJ Filesystem access
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getRoot();
+  kj::Path path = kj::Path::parse(test_file.slice(1)); // Remove leading / for KJ
+
   // Clean up test file if it exists
-  std::filesystem::remove(test_file);
+  if (root.exists(path)) {
+    root.remove(path);
+  }
 
   // Test successful download for trade data
   bool result = csv_data_source->download_data("BTCUSDT", start_time, end_time, "trade", "",
-                                               test_file.c_str());
+                                               test_file.cStr());
   KJ_EXPECT(result);
 
   // Verify file was created
-  KJ_EXPECT(std::filesystem::exists(test_file));
+  KJ_EXPECT(root.exists(path));
 
   // Verify file has content (should have header + some data)
-  std::ifstream file(test_file);
-  std::string line;
+  auto content = root.openFile(path)->readAllText();
   int line_count = 0;
-  while (std::getline(file, line)) {
-    line_count++;
+  kj::StringPtr rest = content;
+  while (rest.size() > 0) {
+    KJ_IF_SOME(idx, rest.findFirst('\n')) {
+      line_count++;
+      rest = rest.slice(idx + 1);
+    }
+    else {
+      line_count++;
+      break;
+    }
   }
   KJ_EXPECT(line_count > 1); // At least header + 1 data line
-  file.close();
 
   // Clean up test file
-  std::filesystem::remove(test_file);
+  if (root.exists(path)) {
+    root.remove(path);
+  }
 }
 
 KJ_TEST("CSVDataSource: DownloadDataInvalidParams") {
