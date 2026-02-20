@@ -12,21 +12,19 @@
  *
  *   auto builder = JsonBuilder::object();
  *   builder.put("symbol", "BTCUSDT").put("price", 50000.5);
- *   std::string json = builder.build();
+ *   kj::String json = builder.build();
  */
 
 #pragma once
 
 #include <cstdint>
-#include <functional> // std::function used for callback APIs (for_each_array, for_each_object)
 #include <kj/common.h>
+#include <kj/filesystem.h>
 #include <kj/function.h>
 #include <kj/memory.h>
 #include <kj/string.h>
-#include <string> // std::string used for yyjson C API compatibility
-#include <string_view>
+#include <kj/vector.h>
 #include <type_traits>
-#include <vector> // std::vector used for keys() and parse_as_vector return types
 
 // Forward declarations for yyjson types to avoid including C header
 struct yyjson_doc;
@@ -275,7 +273,7 @@ public:
    * @return JsonDocument with parsed content
    * @throws std::runtime_error if parsing fails
    */
-  static JsonDocument parse(const std::string& str);
+  static JsonDocument parse(kj::StringPtr str);
 
   /**
    * @brief Parse JSON from file
@@ -283,7 +281,7 @@ public:
    * @return JsonDocument with parsed content
    * @throws std::runtime_error if file read or parsing fails
    */
-  static JsonDocument parse_file(const std::string& path);
+  static JsonDocument parse_file(const kj::Path& path);
 
   /**
    * @brief Get root JSON value
@@ -307,7 +305,7 @@ public:
    * Usage: auto price = JsonDocument::parse(json_str).parse_as<double>();
    *
    * @tparam T The type to parse as (bool, int, int32_t, int64_t, uint32_t, uint64_t, float, double,
-   * std::string)
+   * kj::String)
    * @return The parsed value or nullptr if type mismatch
    */
   template <typename T> kj::Maybe<T> parse_as() const;
@@ -381,13 +379,8 @@ public:
    * @brief Get string value
    * @param default_val Value to return if not a string
    */
-  std::string get_string(const std::string& default_val = "") const;
-
-  /**
-   * @brief Get string as string_view for zero-copy access
-   * @param default_val Value to return if not a string
-   */
-  std::string_view get_string_view(const std::string_view& default_val = "") const;
+  kj::String get_string(kj::StringPtr default_val = ""_kj) const;
+  kj::Maybe<kj::StringPtr> get_string_ptr() const;
 
   /**
    * @brief Get array size
@@ -410,7 +403,7 @@ public:
    * @param key Property key
    * @return JsonValue for the property, or invalid JsonValue if not found
    */
-  JsonValue operator[](const std::string& key) const;
+  JsonValue operator[](kj::StringPtr key) const;
   JsonValue operator[](const char* key) const;
 
   /**
@@ -418,25 +411,25 @@ public:
    * @param key Property key
    * @return JsonValue wrapped in kj::Maybe, or nullptr if not found
    */
-  kj::Maybe<JsonValue> get(const std::string& key) const;
+  kj::Maybe<JsonValue> get(kj::StringPtr key) const;
 
   /**
    * @brief Iterate over array elements
    * @param callback Function to call for each element
    */
-  void for_each_array(std::function<void(const JsonValue&)> callback) const;
+  void for_each_array(kj::Function<void(const JsonValue&)> callback) const;
 
   /**
    * @brief Iterate over object key-value pairs
    * @param callback Function to call for each pair
    */
-  void for_each_object(std::function<void(const std::string&, const JsonValue&)> callback) const;
+  void for_each_object(kj::Function<void(kj::StringPtr, const JsonValue&)> callback) const;
 
   /**
    * @brief Get all keys from object
    * @return Vector of keys, empty if not an object
    */
-  std::vector<std::string> keys() const;
+  kj::Vector<kj::String> keys() const;
 
   /**
    * @brief Check if value is valid
@@ -461,7 +454,7 @@ public:
    * Usage: double price = value.parse_as<double>();
    *
    * @tparam T The type to parse as (bool, int, int32_t, int64_t, uint32_t, uint64_t, float, double,
-   * std::string)
+   * kj::String)
    * @return The parsed value or nullptr if type mismatch
    */
   template <typename T> kj::Maybe<T> parse_as() const {
@@ -491,7 +484,7 @@ public:
       if (!is_real() && !is_int() && !is_uint())
         return kj::none;
       return static_cast<DecayT>(get_double());
-    } else if constexpr (std::is_same_v<DecayT, std::string>) {
+    } else if constexpr (std::is_same_v<DecayT, kj::String>) {
       if (!is_string())
         return kj::none;
       return get_string();
@@ -523,12 +516,12 @@ public:
    * Usage: auto numbers = value.parse_as_vector<double>();
    *
    * @tparam T The element type (bool, int, int32_t, int64_t, uint32_t, uint64_t, float, double,
-   * std::string)
+   * kj::String)
    * @return Vector of parsed values or empty vector on failure
    */
-  template <typename T> std::vector<T> parse_as_vector() const {
+  template <typename T> kj::Vector<T> parse_as_vector() const {
     using DecayT = std::decay_t<T>;
-    std::vector<T> result;
+    kj::Vector<T> result;
 
     if (!is_array()) {
       return result;
@@ -537,47 +530,47 @@ public:
     if constexpr (std::is_same_v<DecayT, bool>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_bool()) {
-          result.push_back(val.get_bool());
+          result.add(val.get_bool());
         }
       });
     } else if constexpr (std::is_same_v<DecayT, int> || std::is_same_v<DecayT, int32_t>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_int() || val.is_uint()) {
-          result.push_back(static_cast<int>(val.get_int()));
+          result.add(static_cast<int>(val.get_int()));
         }
       });
     } else if constexpr (std::is_same_v<DecayT, int64_t>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_int() || val.is_uint()) {
-          result.push_back(val.get_int());
+          result.add(val.get_int());
         }
       });
     } else if constexpr (std::is_same_v<DecayT, uint32_t> || std::is_same_v<DecayT, unsigned int>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_uint()) {
-          result.push_back(static_cast<uint32_t>(val.get_uint()));
+          result.add(static_cast<uint32_t>(val.get_uint()));
         } else if (val.is_int()) {
-          result.push_back(static_cast<uint32_t>(val.get_int()));
+          result.add(static_cast<uint32_t>(val.get_int()));
         }
       });
     } else if constexpr (std::is_same_v<DecayT, uint64_t>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_uint()) {
-          result.push_back(val.get_uint());
+          result.add(val.get_uint());
         } else if (val.is_int()) {
-          result.push_back(static_cast<uint64_t>(val.get_int()));
+          result.add(static_cast<uint64_t>(val.get_int()));
         }
       });
     } else if constexpr (std::is_same_v<DecayT, float> || std::is_same_v<DecayT, double>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_real() || val.is_int() || val.is_uint()) {
-          result.push_back(static_cast<DecayT>(val.get_double()));
+          result.add(static_cast<DecayT>(val.get_double()));
         }
       });
-    } else if constexpr (std::is_same_v<DecayT, std::string>) {
+    } else if constexpr (std::is_same_v<DecayT, kj::String>) {
       for_each_array([&result](const JsonValue& val) {
         if (val.is_string()) {
-          result.push_back(val.get_string());
+          result.add(val.get_string());
         }
       });
     } else {
@@ -629,34 +622,32 @@ public:
   /**
    * @brief Add key-value pair to object
    */
-  JsonBuilder& put(const std::string& key, const char* value);
-  JsonBuilder& put(const std::string& key, const std::string& value);
-  JsonBuilder& put(const std::string& key, std::string_view value);
-  JsonBuilder& put(const std::string& key, bool value);
-  JsonBuilder& put(const std::string& key, int value);
-  JsonBuilder& put(const std::string& key, int64_t value);
-  JsonBuilder& put(const std::string& key, uint64_t value);
-  JsonBuilder& put(const std::string& key, double value);
-  JsonBuilder& put(const std::string& key, std::nullptr_t);
-  JsonBuilder& put(const std::string& key, const std::vector<int>& value);
-  JsonBuilder& put(const std::string& key, const std::vector<std::string>& value);
+  JsonBuilder& put(kj::StringPtr key, const char* value);
+  JsonBuilder& put(kj::StringPtr key, kj::StringPtr value);
+  JsonBuilder& put(kj::StringPtr key, bool value);
+  JsonBuilder& put(kj::StringPtr key, int value);
+  JsonBuilder& put(kj::StringPtr key, int64_t value);
+  JsonBuilder& put(kj::StringPtr key, uint64_t value);
+  JsonBuilder& put(kj::StringPtr key, double value);
+  JsonBuilder& put(kj::StringPtr key, std::nullptr_t);
+  JsonBuilder& put(kj::StringPtr key, kj::ArrayPtr<const int> value);
+  JsonBuilder& put(kj::StringPtr key, kj::ArrayPtr<const kj::StringPtr> value);
 
   /**
    * @brief Add nested object
    */
-  JsonBuilder& put_object(const std::string& key, std::function<void(JsonBuilder&)> builder);
+  JsonBuilder& put_object(kj::StringPtr key, kj::Function<void(JsonBuilder&)> builder);
 
   /**
    * @brief Add nested array
    */
-  JsonBuilder& put_array(const std::string& key, std::function<void(JsonBuilder&)> builder);
+  JsonBuilder& put_array(kj::StringPtr key, kj::Function<void(JsonBuilder&)> builder);
 
   /**
    * @brief Add value to array
    */
   JsonBuilder& add(const char* value);
-  JsonBuilder& add(const std::string& value);
-  JsonBuilder& add(std::string_view value);
+  JsonBuilder& add(kj::StringPtr value);
   JsonBuilder& add(bool value);
   JsonBuilder& add(int value);
   JsonBuilder& add(int64_t value);
@@ -667,19 +658,19 @@ public:
   /**
    * @brief Add nested object to array
    */
-  JsonBuilder& add_object(std::function<void(JsonBuilder&)> builder);
+  JsonBuilder& add_object(kj::Function<void(JsonBuilder&)> builder);
 
   /**
    * @brief Add nested array to array
    */
-  JsonBuilder& add_array(std::function<void(JsonBuilder&)> builder);
+  JsonBuilder& add_array(kj::Function<void(JsonBuilder&)> builder);
 
   /**
    * @brief Build JSON string
    * @param pretty Pretty print with indentation
    * @return JSON string
    */
-  std::string build(bool pretty = false) const;
+  kj::String build(bool pretty = false) const;
 
 private:
   enum class Type { Object, Array };
@@ -697,18 +688,18 @@ namespace json_utils {
 /**
  * @brief Escape string for JSON
  */
-std::string escape_string(std::string_view str);
+kj::String escape_string(kj::StringPtr str);
 
 /**
  * @brief Unescape JSON string
  */
-std::string unescape_string(std::string_view str);
+kj::String unescape_string(kj::StringPtr str);
 
 /**
  * @brief Validate JSON string without parsing
  * @return true if valid JSON
  */
-bool is_valid_json(std::string_view str);
+bool is_valid_json(kj::StringPtr str);
 
 } // namespace json_utils
 
