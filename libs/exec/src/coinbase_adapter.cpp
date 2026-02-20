@@ -6,14 +6,6 @@
 #include <kj/compat/tls.h>
 #include <kj/debug.h>
 
-#ifndef VELOZ_NO_OPENSSL
-// OpenSSL is used internally by HmacSha256 wrapper for HMAC-SHA256 signature generation.
-// This is required for Coinbase API authentication and KJ does not provide HMAC functionality.
-// Per CLAUDE.md guidelines, this is an acceptable use of external library for API compatibility.
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#endif
-
 namespace veloz::exec {
 
 namespace {
@@ -26,8 +18,8 @@ constexpr const char* COINBASE_SANDBOX_WS_URL =
 
 CoinbaseAdapter::CoinbaseAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key,
                                  kj::StringPtr api_secret, bool sandbox)
-    : io_context_(io_context), api_key_(api_key.cStr()), api_secret_(api_secret.cStr()),
-      connected_(false), sandbox_(sandbox),
+    : io_context_(io_context), api_key_(kj::heapString(api_key)),
+      api_secret_(kj::heapString(api_secret)), connected_(false), sandbox_(sandbox),
       last_activity_time_(kj::systemCoarseMonotonicClock().now()),
       request_timeout_(30 * kj::SECONDS), rate_limit_window_(1 * kj::SECONDS),
       rate_limit_per_window_(30), max_retries_(3), retry_delay_(1 * kj::SECONDS) {
@@ -89,19 +81,14 @@ int64_t CoinbaseAdapter::get_timestamp_sec() const {
       .count();
 }
 
-std::string CoinbaseAdapter::build_jwt_token(const std::string& method,
-                                             const std::string& request_path) {
-#ifdef VELOZ_NO_OPENSSL
-  return "";
-#else
+kj::String CoinbaseAdapter::build_jwt_token(kj::StringPtr method, kj::StringPtr request_path) {
   // Coinbase Advanced Trade API uses HMAC-SHA256 for signing
   // Format: timestamp + method + requestPath + body
-  auto timestamp = std::to_string(get_timestamp_sec());
-  std::string message = timestamp + method + request_path;
+  auto timestamp = kj::str(get_timestamp_sec());
+  auto message = kj::str(timestamp, method, request_path);
 
-  // Use HmacSha256 wrapper for HMAC-SHA256 signature
+  // Use HmacSha256 wrapper for HMAC-SHA256 signature with KJ-only interface
   return HmacSha256::sign(api_secret_, message);
-#endif
 }
 
 kj::String CoinbaseAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
@@ -182,10 +169,10 @@ kj::Promise<kj::Own<kj::HttpClient>> CoinbaseAdapter::get_http_client() {
 
 kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
                                                         kj::StringPtr params) {
-  // std::string used for timestamp/signature due to JWT generation requiring std::string
+  // Use KJ-only HmacSha256 interface for JWT signature generation
   auto timestamp = kj::str(get_timestamp_sec());
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = kj::heapString(build_jwt_token("GET", std::string(request_path.cStr())).c_str());
+  auto signature = build_jwt_token("GET"_kj, request_path);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
                                  timestamp = kj::mv(timestamp),
@@ -214,9 +201,9 @@ kj::Promise<kj::String> CoinbaseAdapter::http_get_async(kj::StringPtr endpoint,
 
 kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
                                                          kj::StringPtr body) {
-  // std::string used for timestamp/signature due to JWT generation requiring std::string
+  // Use KJ-only HmacSha256 interface for JWT signature generation
   auto timestamp = kj::str(get_timestamp_sec());
-  auto signature = kj::heapString(build_jwt_token("POST", std::string(endpoint.cStr())).c_str());
+  auto signature = build_jwt_token("POST"_kj, endpoint);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), body = kj::str(body),
                                  timestamp = kj::mv(timestamp),
@@ -245,11 +232,10 @@ kj::Promise<kj::String> CoinbaseAdapter::http_post_async(kj::StringPtr endpoint,
 
 kj::Promise<kj::String> CoinbaseAdapter::http_delete_async(kj::StringPtr endpoint,
                                                            kj::StringPtr params) {
-  // std::string used for timestamp/signature due to JWT generation requiring std::string
+  // Use KJ-only HmacSha256 interface for JWT signature generation
   auto timestamp = kj::str(get_timestamp_sec());
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature =
-      kj::heapString(build_jwt_token("DELETE", std::string(request_path.cStr())).c_str());
+  auto signature = build_jwt_token("DELETE"_kj, request_path);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
                                  timestamp = kj::mv(timestamp),

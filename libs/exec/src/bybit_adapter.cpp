@@ -6,14 +6,6 @@
 #include <kj/compat/tls.h>
 #include <kj/debug.h>
 
-#ifndef VELOZ_NO_OPENSSL
-// OpenSSL is used internally by HmacSha256 wrapper for HMAC-SHA256 signature generation.
-// This is required for Bybit API authentication and KJ does not provide HMAC functionality.
-// Per CLAUDE.md guidelines, this is an acceptable use of external library for API compatibility.
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#endif
-
 namespace veloz::exec {
 
 namespace {
@@ -99,15 +91,11 @@ int64_t BybitAdapter::get_timestamp_ms() const {
 }
 
 kj::String BybitAdapter::build_signature(kj::StringPtr timestamp, kj::StringPtr params) {
-#ifdef VELOZ_NO_OPENSSL
-  return ""_kj;
-#else
   // Bybit V5 API signature: HMAC_SHA256(timestamp + api_key + recv_window + params)
   auto prehash = kj::str(timestamp, api_key_, kj::str(recv_window_), params);
 
   // Use HmacSha256 wrapper for HMAC-SHA256 signature
   return HmacSha256::sign(secret_key_, prehash);
-#endif
 }
 
 kj::String BybitAdapter::format_symbol(const veloz::common::SymbolId& symbol) {

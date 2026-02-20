@@ -1,5 +1,7 @@
 #include "veloz/exec/binance_adapter.h"
+#include "veloz/exec/hmac_wrapper.h"
 
+#include <kj/array.h>
 #include <kj/async-io.h>
 #include <kj/test.h>
 
@@ -63,6 +65,19 @@ KJ_TEST("BinanceAdapter: Disconnect behavior") {
   // Disconnect should be safe to call even when not connected
   adapter.disconnect();
   KJ_EXPECT(!adapter.is_connected());
+}
+
+KJ_TEST("hex_encode: uses high-nibble then low-nibble") {
+  uint8_t bytes[] = {0x00, 0x01, 0x02, 0x0f, 0x10, 0xab, 0xcd, 0xef};
+  kj::String hex = veloz::exec::hex_encode(kj::arrayPtr(bytes, sizeof(bytes)));
+  KJ_EXPECT(kj::StringPtr(hex) == "0001020f10abcdef");
+}
+
+KJ_TEST("HmacSha256: matches known test vector") {
+  kj::String signature =
+      veloz::exec::HmacSha256::sign("key"_kj, "The quick brown fox jumps over the lazy dog"_kj);
+  KJ_EXPECT(kj::StringPtr(signature) ==
+            "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
 }
 
 } // namespace

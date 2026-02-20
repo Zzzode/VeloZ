@@ -9,7 +9,6 @@
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/time.h>
-#include <string> // std::string required for OpenSSL external API compatibility
 
 namespace kj {
 class TlsContext;
@@ -18,8 +17,7 @@ class TlsContext;
 namespace veloz::exec {
 
 // BybitAdapter uses KJ async I/O for HTTP operations.
-// std::string is still used for OpenSSL HMAC signature generation (external API requirement).
-// This is an exception to the KJ-first rule per CLAUDE.md guidelines.
+// HMAC signatures use kj::String interface through HmacSha256 wrapper.
 // Supports both spot and derivatives (linear perpetual) trading.
 class BybitAdapter final : public ExchangeAdapter {
 public:
@@ -88,8 +86,7 @@ private:
   kj::Promise<kj::Own<kj::HttpClient>> get_http_client();
 
   // Helper methods
-  // OpenSSL is used for HMAC-SHA256 signature generation - this is required for Bybit API
-  // authentication. KJ does not provide HMAC functionality, so we use OpenSSL (external API).
+  // Build HMAC signature using KJ string interface via HmacSha256 wrapper
   kj::String build_signature(kj::StringPtr timestamp, kj::StringPtr params);
 
   // KJ version of build_signature for Bybit V5 API

@@ -9,14 +9,6 @@
 #include <kj/debug.h>
 #include <sstream>
 
-#ifndef VELOZ_NO_OPENSSL
-// OpenSSL is used internally by HmacSha256 wrapper for HMAC-SHA256 signature generation.
-// This is required for OKX API authentication and KJ does not provide HMAC functionality.
-// Per CLAUDE.md guidelines, this is an acceptable use of external library for API compatibility.
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#endif
-
 namespace veloz::exec {
 
 namespace {
@@ -29,9 +21,9 @@ constexpr int DEFAULT_RECV_WINDOW = 5000;
 
 OKXAdapter::OKXAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key,
                        kj::StringPtr secret_key, kj::StringPtr passphrase, bool demo)
-    : io_context_(io_context), api_key_(api_key.cStr()), secret_key_(secret_key.cStr()),
-      passphrase_(passphrase.cStr()), connected_(false), demo_(demo),
-      last_activity_time_(kj::systemCoarseMonotonicClock().now()),
+    : io_context_(io_context), api_key_(kj::heapString(api_key)),
+      secret_key_(kj::heapString(secret_key)), passphrase_(kj::heapString(passphrase)),
+      connected_(false), demo_(demo), last_activity_time_(kj::systemCoarseMonotonicClock().now()),
       request_timeout_(30 * kj::SECONDS), rate_limit_window_(1 * kj::SECONDS),
       rate_limit_per_window_(20), max_retries_(3), retry_delay_(1 * kj::SECONDS) {
 
@@ -86,33 +78,34 @@ kj::Duration OKXAdapter::get_timeout() const {
   return request_timeout_;
 }
 
-std::string OKXAdapter::get_timestamp_iso() const {
+kj::String OKXAdapter::get_timestamp_iso() const {
   auto now = std::chrono::system_clock::now();
   auto time_t_now = std::chrono::system_clock::to_time_t(now);
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
-  std::ostringstream oss;
-  oss << std::put_time(std::gmtime(&time_t_now), "%Y-%m-%dT%H:%M:%S");
-  oss << '.' << std::setfill('0') << std::setw(3) << ms.count() << 'Z';
-  return oss.str();
+  // Build ISO 8601 timestamp using KJ string building
+  // Format: YYYY-MM-DDTHH:MM:SS.mmmZ
+  auto tm = std::gmtime(&time_t_now);
+  return kj::str(tm->tm_year + 1900, "-", kj::str(tm->tm_mon + 1), "-", kj::str(tm->tm_mday), "T",
+                 kj::str(tm->tm_hour), ":", kj::str(tm->tm_min), ":", kj::str(tm->tm_sec), ".",
+                 kj::str(ms.count() / 100), kj::str((ms.count() % 100) / 10),
+                 kj::str(ms.count() % 10), "Z");
 }
 
-std::string OKXAdapter::build_signature(const std::string& timestamp, const std::string& method,
-                                        const std::string& request_path, const std::string& body) {
-#ifdef VELOZ_NO_OPENSSL
-  return "";
-#else
-  std::string prehash = timestamp + method + request_path + body;
+kj::String OKXAdapter::build_signature(kj::StringPtr timestamp, kj::StringPtr method,
+                                       kj::StringPtr request_path, kj::StringPtr body) {
+  // Build prehash string
+  kj::String prehash = kj::str(timestamp, method, request_path, body);
 
   // Use HmacSha256 wrapper for HMAC-SHA256 signature
-  std::string signature = HmacSha256::sign(secret_key_, prehash);
+  auto signature = HmacSha256::sign(secret_key_, prehash);
 
   // Base64 encode the signature
   static const char base64_chars[] =
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-  std::string result;
-  result.reserve(((signature.size() + 2) / 3) * 4);
+  kj::Vector<char> result_chars;
+  result_chars.reserve(((signature.size() + 2) / 3) * 4);
 
   for (size_t i = 0; i < signature.size(); i += 3) {
     unsigned int n = (static_cast<unsigned int>(static_cast<unsigned char>(signature[i])) << 16);
@@ -121,14 +114,13 @@ std::string OKXAdapter::build_signature(const std::string& timestamp, const std:
     if (i + 2 < signature.size())
       n |= static_cast<unsigned int>(static_cast<unsigned char>(signature[i + 2]));
 
-    result.push_back(base64_chars[(n >> 18) & 0x3F]);
-    result.push_back(base64_chars[(n >> 12) & 0x3F]);
-    result.push_back((i + 1 < signature.size()) ? base64_chars[(n >> 6) & 0x3F] : '=');
-    result.push_back((i + 2 < signature.size()) ? base64_chars[n & 0x3F] : '=');
+    result_chars.add(base64_chars[(n >> 18) & 0x3F]);
+    result_chars.add(base64_chars[(n >> 12) & 0x3F]);
+    result_chars.add((i + 1 < signature.size()) ? base64_chars[(n >> 6) & 0x3F] : '=');
+    result_chars.add((i + 2 < signature.size()) ? base64_chars[n & 0x3F] : '=');
   }
 
-  return result;
-#endif
+  return kj::heapString(result_chars.begin(), result_chars.size());
 }
 
 kj::String OKXAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
@@ -197,15 +189,14 @@ kj::Promise<kj::Own<kj::HttpClient>> OKXAdapter::get_http_client() {
 }
 
 kj::Promise<kj::String> OKXAdapter::http_get_async(kj::StringPtr endpoint, kj::StringPtr params) {
-  // std::string used for timestamp/signature due to HMAC generation requiring std::string
+  // Use KJ-only HmacSha256 interface for signature generation
   auto timestamp = get_timestamp_iso();
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = build_signature(timestamp, "GET", std::string(request_path.cStr()));
+  auto signature = build_signature(timestamp, "GET"_kj, request_path);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::heapString(timestamp.c_str()),
-                                 signature = kj::heapString(signature.c_str())](
-                                    kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -229,15 +220,13 @@ kj::Promise<kj::String> OKXAdapter::http_get_async(kj::StringPtr endpoint, kj::S
 }
 
 kj::Promise<kj::String> OKXAdapter::http_post_async(kj::StringPtr endpoint, kj::StringPtr body) {
-  // std::string used for timestamp/signature due to HMAC generation requiring std::string
+  // Use KJ-only HmacSha256 interface for signature generation
   auto timestamp = get_timestamp_iso();
-  auto signature =
-      build_signature(timestamp, "POST", std::string(endpoint.cStr()), std::string(body.cStr()));
+  auto signature = build_signature(timestamp, "POST"_kj, endpoint, body);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), body = kj::str(body),
-                                 timestamp = kj::heapString(timestamp.c_str()),
-                                 signature = kj::heapString(signature.c_str())](
-                                    kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
@@ -262,15 +251,14 @@ kj::Promise<kj::String> OKXAdapter::http_post_async(kj::StringPtr endpoint, kj::
 
 kj::Promise<kj::String> OKXAdapter::http_delete_async(kj::StringPtr endpoint,
                                                       kj::StringPtr params) {
-  // std::string used for timestamp/signature due to HMAC generation requiring std::string
+  // Use KJ-only HmacSha256 interface for signature generation
   auto timestamp = get_timestamp_iso();
   auto request_path = params != nullptr ? kj::str(endpoint, "?", params) : kj::str(endpoint);
-  auto signature = build_signature(timestamp, "DELETE", std::string(request_path.cStr()));
+  auto signature = build_signature(timestamp, "DELETE"_kj, request_path);
 
   return get_http_client().then([this, endpoint = kj::str(endpoint), params = kj::str(params),
-                                 timestamp = kj::heapString(timestamp.c_str()),
-                                 signature = kj::heapString(signature.c_str())](
-                                    kj::Own<kj::HttpClient> client) {
+                                 timestamp = kj::mv(timestamp),
+                                 signature = kj::mv(signature)](kj::Own<kj::HttpClient> client) {
     kj::HttpHeaders headers(*header_table_);
     headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
     headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
