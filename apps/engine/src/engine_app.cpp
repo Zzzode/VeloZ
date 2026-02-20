@@ -2,11 +2,16 @@
 
 #include "veloz/core/event_loop.h"
 #include "veloz/core/logger.h"
+#include "veloz/engine/http_service.h"
+#include "veloz/engine/market_data_manager.h"
 #include "veloz/engine/stdio_engine.h"
+#include "veloz/strategy/advanced_strategies.h"
+#include "veloz/strategy/strategy.h"
 
 // std::signal for POSIX signal handling (standard C library, KJ lacks signal API)
 #include <csignal>
 #include <kj/async-io.h>
+#include <kj/compat/http.h>
 #include <kj/debug.h>
 #include <kj/io.h>
 #include <kj/memory.h>
@@ -73,29 +78,158 @@ int EngineApp::run_service() {
   // Use KJ async I/O for the service mode
   auto io = kj::setupAsyncIo();
   auto& timer = io.provider->getTimer();
+  auto& network = io.provider->getNetwork();
 
-  veloz::core::EventLoop loop;
-
-  // Create a promise that runs the event loop
-  auto loopPromise = kj::evalLater([&loop]() { loop.run(); });
-
-  // Heartbeat using KJ timer
-  kj::Promise<void> heartbeatPromise = kj::READY_NOW;
-  auto runHeartbeat = [&]() -> kj::Promise<void> {
-    while (!*stop_.lockShared()) {
-      loop.post([&] { /* heartbeat */ });
-      co_await timer.afterDelay(1 * kj::SECONDS);
-    }
-  };
-  heartbeatPromise = runHeartbeat();
-
-  // Main loop using KJ timer
-  while (!*stop_.lockShared()) {
-    timer.afterDelay(50 * kj::MILLISECONDS).wait(io.waitScope);
+  KJ_IF_SOME(l, logger_) {
+    l.info(kj::str("Starting service mode on port ", config_.http_port).cStr());
   }
 
-  loop.stop();
+  // Create HTTP header table
+  auto headerTable = kj::heap<kj::HttpHeaderTable>();
+
+  // Create HTTP service
+  auto httpService = kj::heap<EngineHttpService>(*headerTable, stop_);
+
+  // Create and configure strategy manager
+  strategy_manager_ = kj::heap<veloz::strategy::StrategyManager>();
+  KJ_IF_SOME(sm, strategy_manager_) {
+    // Register built-in strategy factories
+    sm->register_strategy_factory(kj::rc<veloz::strategy::RsiStrategyFactory>());
+    sm->register_strategy_factory(kj::rc<veloz::strategy::MacdStrategyFactory>());
+    sm->register_strategy_factory(kj::rc<veloz::strategy::BollingerBandsStrategyFactory>());
+    sm->register_strategy_factory(kj::rc<veloz::strategy::StochasticOscillatorStrategyFactory>());
+    sm->register_strategy_factory(kj::rc<veloz::strategy::MarketMakingHFTStrategyFactory>());
+    sm->register_strategy_factory(kj::rc<veloz::strategy::CrossExchangeArbitrageStrategyFactory>());
+
+    // Set strategy manager on HTTP service for API access
+    httpService->set_strategy_manager(sm.get());
+
+    KJ_IF_SOME(l, logger_) {
+      l.info("Strategy manager initialized with built-in factories");
+    }
+  }
+
+  // Set up stop callback to trigger graceful shutdown
+  httpService->set_stop_callback([this]() -> bool {
+    *stop_.lockExclusive() = true;
+    return true;
+  });
+
+  // Set up start callback
+  httpService->set_start_callback([&httpService]() -> bool {
+    httpService->set_engine_state(EngineLifecycleState::Running);
+    return true;
+  });
+
+  // Create HTTP server settings
+  kj::HttpServerSettings settings;
+  settings.headerTimeout = 30 * kj::SECONDS;
+  settings.pipelineTimeout = 5 * kj::SECONDS;
+
+  // Create HTTP server
+  auto httpServer = kj::heap<kj::HttpServer>(timer, *headerTable, *httpService, settings);
+
+  // Set engine state to running
+  httpService->set_engine_state(EngineLifecycleState::Running);
+
+  KJ_IF_SOME(l, logger_) {
+    l.info(kj::str("HTTP server listening on port ", config_.http_port).cStr());
+  }
+
+  // Parse address and start listening
+  auto listenPromise =
+      network.parseAddress(kj::str("0.0.0.0:", config_.http_port))
+          .then([&httpServer](kj::Own<kj::NetworkAddress> addr) {
+            auto receiver = addr->listen();
+            return httpServer->listenHttp(*receiver).attach(kj::mv(receiver), kj::mv(addr));
+          });
+
+  // Main loop - check stop flag periodically
+  auto mainLoopPromise = run_main_loop(timer);
+
+  // Start market data manager if enabled
+  kj::Promise<void> marketDataPromise = kj::READY_NOW;
+  if (config_.enable_market_data) {
+    KJ_IF_SOME(l, logger_) {
+      l.info("Starting market data integration...");
+    }
+    marketDataPromise = run_market_data(io);
+  }
+
+  // Wait for either the main loop to complete (stop flag set) or listen to fail
+  auto combinedPromise =
+      mainLoopPromise.exclusiveJoin(kj::mv(listenPromise)).exclusiveJoin(kj::mv(marketDataPromise));
+
+  try {
+    combinedPromise.wait(io.waitScope);
+  } catch (const kj::Exception& e) {
+    KJ_IF_SOME(l, logger_) {
+      l.error(kj::str("Service error: ", e.getDescription()).cStr());
+    }
+    return 1;
+  }
+
+  // Graceful shutdown
+  KJ_IF_SOME(l, logger_) {
+    l.info("Draining HTTP server...");
+  }
+
+  httpService->set_engine_state(EngineLifecycleState::Stopping);
+
+  // Stop market data manager
+  KJ_IF_SOME(mdm, market_data_manager_) {
+    KJ_IF_SOME(l, logger_) {
+      l.info("Stopping market data manager...");
+    }
+    mdm->stop();
+  }
+
+  httpServer->drain().wait(io.waitScope);
+
+  httpService->set_engine_state(EngineLifecycleState::Stopped);
+
+  KJ_IF_SOME(l, logger_) {
+    l.info("Service mode stopped");
+  }
+
   return 0;
+}
+
+kj::Promise<void> EngineApp::run_http_server(kj::AsyncIoContext& io, EngineHttpServer& server) {
+  return server.listen(io.provider->getNetwork());
+}
+
+kj::Promise<void> EngineApp::run_main_loop(kj::Timer& timer) {
+  // Poll stop flag periodically
+  while (!*stop_.lockShared()) {
+    co_await timer.afterDelay(100 * kj::MILLISECONDS);
+  }
+}
+
+kj::Promise<void> EngineApp::run_market_data(kj::AsyncIoContext& io) {
+  // Create event emitter for market data output
+  emitter_ = kj::heap<EventEmitter>(out_);
+
+  KJ_IF_SOME(emitter, emitter_) {
+    // Create market data manager configuration
+    MarketDataManager::Config mdConfig;
+    mdConfig.use_testnet = config_.use_testnet;
+    mdConfig.auto_reconnect = true;
+
+    // Create market data manager
+    market_data_manager_ = kj::heap<MarketDataManager>(io, *emitter, mdConfig);
+
+    KJ_IF_SOME(mdm, market_data_manager_) {
+      KJ_IF_SOME(l, logger_) {
+        l.info("Starting market data manager...");
+      }
+
+      // Start the market data manager
+      return mdm->start();
+    }
+  }
+
+  return kj::READY_NOW;
 }
 
 } // namespace veloz::engine

@@ -1,10 +1,14 @@
 #include "veloz/engine/stdio_engine.h"
 
 #include "veloz/core/logger.h"
+#include "veloz/strategy/advanced_strategies.h"
+#include "veloz/strategy/mean_reversion_strategy.h"
+#include "veloz/strategy/trend_following_strategy.h"
 
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/io.h>
+#include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/vector.h>
 
@@ -48,7 +52,20 @@ kj::Maybe<kj::String> read_line(kj::InputStream& in) {
 } // namespace
 
 StdioEngine::StdioEngine(kj::OutputStream& out, kj::InputStream& in)
-    : out_(out), in_(in), output_mutex_(0), command_count_(0) {}
+    : out_(out), in_(in), output_mutex_(0), command_count_(0),
+      strategy_manager_(kj::heap<veloz::strategy::StrategyManager>()) {
+  // Register built-in strategy factories
+  strategy_manager_->register_strategy_factory(kj::rc<strategy::TrendFollowingStrategyFactory>());
+  strategy_manager_->register_strategy_factory(kj::rc<strategy::MeanReversionStrategyFactory>());
+  strategy_manager_->register_strategy_factory(kj::rc<strategy::RsiStrategyFactory>());
+  strategy_manager_->register_strategy_factory(kj::rc<strategy::MacdStrategyFactory>());
+  strategy_manager_->register_strategy_factory(kj::rc<strategy::BollingerBandsStrategyFactory>());
+  strategy_manager_->register_strategy_factory(
+      kj::rc<strategy::StochasticOscillatorStrategyFactory>());
+  strategy_manager_->register_strategy_factory(kj::rc<strategy::MarketMakingHFTStrategyFactory>());
+  strategy_manager_->register_strategy_factory(
+      kj::rc<strategy::CrossExchangeArbitrageStrategyFactory>());
+}
 
 void StdioEngine::emit_event(kj::StringPtr event_json) {
   auto lock = output_mutex_.lockExclusive();
@@ -65,7 +82,10 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
   // Write startup messages
   kj::String banner = kj::str("VeloZ StdioEngine started - press Ctrl+C to stop\n",
                               "Commands: ORDER <SIDE> <SYMBOL> <QTY> <PRICE> <ID> [TYPE] [TIF]\n",
-                              "          CANCEL <ID>\n", "          QUERY <TYPE> [PARAMS]\n\n");
+                              "          CANCEL <ID>\n", "          QUERY <TYPE> [PARAMS]\n",
+                              "          STRATEGY LOAD <TYPE> <NAME> [PARAMS...]\n",
+                              "          STRATEGY START|STOP|PAUSE|RESUME|UNLOAD <STRATEGY_ID>\n",
+                              "          STRATEGY LIST|STATUS [STRATEGY_ID]\n\n");
   out_.write(banner.asBytes());
 
   // Send startup event
@@ -143,10 +163,36 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
         }
         break;
 
+      case CommandType::Strategy:
+        KJ_IF_SOME(strategy_cmd, command.strategy) {
+          // Emit strategy command received event
+          kj::String json =
+              kj::str(R"({"type":"strategy_command_received","command_id":)", command_count_,
+                      R"(,"subcommand":")", static_cast<int>(strategy_cmd.subcommand), R"("})");
+          emit_event(json);
+
+          // Handle strategy command internally
+          handle_strategy_command(strategy_cmd);
+
+          // Call handler if registered
+          KJ_IF_SOME(handler, strategy_handler_) {
+            handler(strategy_cmd);
+          }
+        }
+        else {
+          emit_error(kj::str("Failed to parse STRATEGY command: ", command.error));
+        }
+        break;
+
       case CommandType::Unknown:
         if (command.error.size() > 0) {
           emit_error(command.error);
         }
+        break;
+
+      default:
+        // Handle any other command types (Subscribe, Unsubscribe, etc.)
+        emit_error(kj::str("Unhandled command type"));
         break;
       }
     }
@@ -162,6 +208,201 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
   emit_event(shutdown_json);
 
   return 0;
+}
+
+void StdioEngine::handle_strategy_command(const ParsedStrategy& cmd) {
+  // Error isolation: wrap all strategy operations in exception handling
+  // to prevent strategy errors from crashing the engine
+  try {
+    switch (cmd.subcommand) {
+    case StrategySubCommand::Load: {
+      // Create strategy config from command
+      strategy::StrategyConfig config;
+      config.name = kj::str(cmd.strategy_name);
+      config.risk_per_trade = 0.02;
+      config.max_position_size = 1.0;
+      config.stop_loss = 0.05;
+      config.take_profit = 0.1;
+      config.symbols.add(kj::str("BTCUSDT"));
+
+      // Map type string to StrategyType enum
+      kj::String type_lower = kj::str(cmd.strategy_type);
+      // Convert to lowercase for comparison
+      for (size_t i = 0; i < type_lower.size(); ++i) {
+        if (type_lower[i] >= 'A' && type_lower[i] <= 'Z') {
+          const_cast<char*>(type_lower.begin())[i] = type_lower[i] + 32;
+        }
+      }
+
+      if (type_lower == "rsistrategy"_kj || type_lower == "rsi"_kj) {
+        config.type = strategy::StrategyType::Custom;
+      } else if (type_lower == "macdstrategy"_kj || type_lower == "macd"_kj) {
+        config.type = strategy::StrategyType::Custom;
+      } else if (type_lower == "bollingerbandsstrategy"_kj || type_lower == "bollinger"_kj) {
+        config.type = strategy::StrategyType::Custom;
+      } else if (type_lower == "stochasticoscillatorstrategy"_kj || type_lower == "stochastic"_kj) {
+        config.type = strategy::StrategyType::Custom;
+      } else if (type_lower == "marketmakinghftstrategy"_kj || type_lower == "marketmaking"_kj ||
+                 type_lower == "mm"_kj) {
+        config.type = strategy::StrategyType::MarketMaking;
+      } else if (type_lower == "crossexchangearbitragestrategy"_kj ||
+                 type_lower == "arbitrage"_kj) {
+        config.type = strategy::StrategyType::Arbitrage;
+      } else if (type_lower == "trendfollowing"_kj || type_lower == "trend"_kj) {
+        config.type = strategy::StrategyType::TrendFollowing;
+      } else if (type_lower == "meanreversion"_kj || type_lower == "reversion"_kj) {
+        config.type = strategy::StrategyType::MeanReversion;
+      } else if (type_lower == "momentum"_kj) {
+        config.type = strategy::StrategyType::Momentum;
+      } else if (type_lower == "grid"_kj) {
+        config.type = strategy::StrategyType::Grid;
+      } else {
+        config.type = strategy::StrategyType::Custom;
+      }
+
+      // Create a logger for the strategy
+      auto console_output = kj::heap<veloz::core::ConsoleOutput>(true);
+      veloz::core::Logger logger(kj::heap<veloz::core::TextFormatter>(), kj::mv(console_output));
+
+      kj::String strategy_id = strategy_manager_->load_strategy(config, logger);
+      if (strategy_id.size() > 0) {
+        kj::String json =
+            kj::str(R"({"type":"strategy_loaded","strategy_id":")", strategy_id, R"(","name":")",
+                    cmd.strategy_name, R"(","strategy_type":")", cmd.strategy_type, R"("})");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to load strategy: ", cmd.strategy_name));
+      }
+      break;
+    }
+
+    case StrategySubCommand::Start: {
+      bool success = strategy_manager_->start_strategy(cmd.strategy_id);
+      if (success) {
+        kj::String json =
+            kj::str(R"({"type":"strategy_started","strategy_id":")", cmd.strategy_id, R"("})");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to start strategy: ", cmd.strategy_id));
+      }
+      break;
+    }
+
+    case StrategySubCommand::Stop: {
+      bool success = strategy_manager_->stop_strategy(cmd.strategy_id);
+      if (success) {
+        kj::String json =
+            kj::str(R"({"type":"strategy_stopped","strategy_id":")", cmd.strategy_id, R"("})");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to stop strategy: ", cmd.strategy_id));
+      }
+      break;
+    }
+
+    case StrategySubCommand::Pause: {
+      bool success = strategy_manager_->pause_strategy(cmd.strategy_id);
+      if (success) {
+        kj::String json =
+            kj::str(R"({"type":"strategy_paused","strategy_id":")", cmd.strategy_id, R"("})");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to pause strategy: ", cmd.strategy_id));
+      }
+      break;
+    }
+
+    case StrategySubCommand::Resume: {
+      bool success = strategy_manager_->resume_strategy(cmd.strategy_id);
+      if (success) {
+        kj::String json =
+            kj::str(R"({"type":"strategy_resumed","strategy_id":")", cmd.strategy_id, R"("})");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to resume strategy: ", cmd.strategy_id));
+      }
+      break;
+    }
+
+    case StrategySubCommand::Unload: {
+      bool success = strategy_manager_->unload_strategy(cmd.strategy_id);
+      if (success) {
+        kj::String json =
+            kj::str(R"({"type":"strategy_unloaded","strategy_id":")", cmd.strategy_id, R"("})");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to unload strategy: ", cmd.strategy_id));
+      }
+      break;
+    }
+
+    case StrategySubCommand::List: {
+      auto ids = strategy_manager_->get_all_strategy_ids();
+      kj::String ids_json = kj::str("[");
+      for (size_t i = 0; i < ids.size(); ++i) {
+        if (i > 0) {
+          ids_json = kj::str(ids_json, ",");
+        }
+        ids_json = kj::str(ids_json, "\"", ids[i], "\"");
+      }
+      ids_json = kj::str(ids_json, "]");
+
+      kj::String json = kj::str(R"({"type":"strategy_list","count":)", ids.size(),
+                                R"(,"strategies":)", ids_json, "}");
+      emit_event(json);
+      break;
+    }
+
+    case StrategySubCommand::Status: {
+      if (cmd.strategy_id.size() > 0) {
+        // Get status for specific strategy
+        auto strategy = strategy_manager_->get_strategy(cmd.strategy_id);
+        if (strategy != nullptr) {
+          auto state = strategy->get_state();
+          kj::String json = kj::str(R"({"type":"strategy_status","strategy_id":")",
+                                    state.strategy_id, R"(","name":")", state.strategy_name,
+                                    R"(","is_running":)", (state.is_running ? "true" : "false"),
+                                    R"(,"pnl":)", state.pnl, R"(,"trade_count":)",
+                                    state.trade_count, R"(,"win_rate":)", state.win_rate, "}");
+          emit_event(json);
+        } else {
+          emit_error(kj::str("Strategy not found: ", cmd.strategy_id));
+        }
+      } else {
+        // Get status for all strategies
+        auto states = strategy_manager_->get_all_strategy_states();
+        kj::String json = kj::str(R"({"type":"strategy_status_all","count":)", states.size(),
+                                  R"(,"strategies":[)");
+        for (size_t i = 0; i < states.size(); ++i) {
+          if (i > 0) {
+            json = kj::str(json, ",");
+          }
+          json = kj::str(json, R"({"strategy_id":")", states[i].strategy_id, R"(","name":")",
+                         states[i].strategy_name, R"(","is_running":)",
+                         (states[i].is_running ? "true" : "false"), R"(,"pnl":)", states[i].pnl,
+                         R"(,"trade_count":)", states[i].trade_count, "}");
+        }
+        json = kj::str(json, "]}");
+        emit_event(json);
+      }
+      break;
+    }
+
+    case StrategySubCommand::Unknown:
+    default:
+      emit_error(kj::str("Unknown strategy subcommand"));
+      break;
+    }
+  } catch (const kj::Exception& e) {
+    // KJ exception - strategy operation failed
+    emit_error(kj::str("Strategy error (KJ): ", e.getDescription()));
+  } catch (const std::exception& e) {
+    // Standard exception - strategy operation failed
+    emit_error(kj::str("Strategy error: ", e.what()));
+  } catch (...) {
+    // Unknown exception - strategy operation failed
+    emit_error(kj::str("Strategy error: unknown exception"));
+  }
 }
 
 } // namespace engine

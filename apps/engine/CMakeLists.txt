@@ -3,6 +3,9 @@ add_library(veloz_engine_lib
   src/engine_app.cpp
   src/engine_state.cpp
   src/event_emitter.cpp
+  src/http_service.cpp
+  src/market_data_manager.cpp
+  src/state_persistence.cpp
   src/stdio_engine.cpp
 )
 
@@ -14,8 +17,10 @@ target_link_libraries(veloz_engine_lib
     veloz_exec
     veloz_oms
     veloz_risk
+    veloz_strategy
     kj           # KJ core types (Vector, HashMap, Own, Maybe, String)
     kj-async     # KJ async primitives (Promise, Timer)
+    kj-http      # KJ HTTP server/client
   PRIVATE
     veloz_core
     veloz_common

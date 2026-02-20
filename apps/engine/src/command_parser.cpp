@@ -162,6 +162,38 @@ ParsedCommand parse_command(kj::StringPtr line) {
     else {
       result.error = kj::str("Failed to parse QUERY command");
     }
+    // Check for STRATEGY command
+  } else if (verb_lower == "strategy"_kj || verb_lower == "strat"_kj) {
+    auto strategy = parse_strategy_command(trimmed_line);
+    KJ_IF_SOME(s, strategy) {
+      result.type = CommandType::Strategy;
+      result.strategy = kj::mv(s);
+    }
+    else {
+      result.error = kj::str("Failed to parse STRATEGY command");
+    }
+  }
+  // Check for SUBSCRIBE command
+  else if (verb_lower == "subscribe"_kj || verb_lower == "sub"_kj) {
+    auto subscribe = parse_subscribe_command(trimmed_line);
+    KJ_IF_SOME(s, subscribe) {
+      result.type = CommandType::Subscribe;
+      result.subscribe = kj::mv(s);
+    }
+    else {
+      result.error = kj::str("Failed to parse SUBSCRIBE command");
+    }
+  }
+  // Check for UNSUBSCRIBE command
+  else if (verb_lower == "unsubscribe"_kj || verb_lower == "unsub"_kj) {
+    auto unsubscribe = parse_unsubscribe_command(trimmed_line);
+    KJ_IF_SOME(u, unsubscribe) {
+      result.type = CommandType::Unsubscribe;
+      result.unsubscribe = kj::mv(u);
+    }
+    else {
+      result.error = kj::str("Failed to parse UNSUBSCRIBE command");
+    }
   } else {
     result.error = kj::str("Unknown command: ", tokens[0]);
   }
@@ -319,6 +351,203 @@ kj::Maybe<ParsedQuery> parse_query_command(kj::StringPtr line) {
   ParsedQuery result;
   result.query_type = kj::str(tokens[1]);
   result.params = kj::String(params_buf.releaseAsArray());
+  result.raw_command = kj::str(line);
+  return result;
+}
+
+// Parse STRATEGY command
+// Formats:
+//   STRATEGY LOAD <TYPE> <NAME> [PARAMS...]
+//   STRATEGY START <STRATEGY_ID>
+//   STRATEGY STOP <STRATEGY_ID>
+//   STRATEGY UNLOAD <STRATEGY_ID>
+//   STRATEGY LIST
+//   STRATEGY STATUS [STRATEGY_ID]
+//   STRAT <SUBCOMMAND> ...
+kj::Maybe<ParsedStrategy> parse_strategy_command(kj::StringPtr line) {
+  auto tokens = tokenize(line);
+  if (tokens.size() < 2) {
+    return kj::none;
+  }
+
+  kj::String verb_lower = to_lower(tokens[0]);
+  if (verb_lower != "strategy"_kj && verb_lower != "strat"_kj) {
+    return kj::none;
+  }
+
+  kj::String subcommand_lower = to_lower(tokens[1]);
+  ParsedStrategy result;
+  result.raw_command = kj::str(line);
+
+  // Parse subcommand
+  if (subcommand_lower == "load"_kj || subcommand_lower == "l"_kj) {
+    result.subcommand = StrategySubCommand::Load;
+    // STRATEGY LOAD <TYPE> <NAME> [PARAMS...]
+    if (tokens.size() < 4) {
+      return kj::none;
+    }
+    result.strategy_type = kj::str(tokens[2]);
+    result.strategy_name = kj::str(tokens[3]);
+
+    // Collect remaining parameters
+    kj::Vector<char> params_buf;
+    for (size_t i = 4; i < tokens.size(); ++i) {
+      if (params_buf.size() > 0) {
+        params_buf.add(' ');
+      }
+      for (char c : tokens[i]) {
+        params_buf.add(c);
+      }
+    }
+    params_buf.add('\0');
+    result.params = kj::String(params_buf.releaseAsArray());
+  } else if (subcommand_lower == "start"_kj) {
+    result.subcommand = StrategySubCommand::Start;
+    // STRATEGY START <STRATEGY_ID>
+    if (tokens.size() < 3) {
+      return kj::none;
+    }
+    result.strategy_id = kj::str(tokens[2]);
+  } else if (subcommand_lower == "stop"_kj) {
+    result.subcommand = StrategySubCommand::Stop;
+    // STRATEGY STOP <STRATEGY_ID>
+    if (tokens.size() < 3) {
+      return kj::none;
+    }
+    result.strategy_id = kj::str(tokens[2]);
+  } else if (subcommand_lower == "pause"_kj || subcommand_lower == "p"_kj) {
+    result.subcommand = StrategySubCommand::Pause;
+    // STRATEGY PAUSE <STRATEGY_ID>
+    if (tokens.size() < 3) {
+      return kj::none;
+    }
+    result.strategy_id = kj::str(tokens[2]);
+  } else if (subcommand_lower == "resume"_kj || subcommand_lower == "r"_kj) {
+    result.subcommand = StrategySubCommand::Resume;
+    // STRATEGY RESUME <STRATEGY_ID>
+    if (tokens.size() < 3) {
+      return kj::none;
+    }
+    result.strategy_id = kj::str(tokens[2]);
+  } else if (subcommand_lower == "unload"_kj || subcommand_lower == "u"_kj) {
+    result.subcommand = StrategySubCommand::Unload;
+    // STRATEGY UNLOAD <STRATEGY_ID>
+    if (tokens.size() < 3) {
+      return kj::none;
+    }
+    result.strategy_id = kj::str(tokens[2]);
+  } else if (subcommand_lower == "list"_kj || subcommand_lower == "ls"_kj) {
+    result.subcommand = StrategySubCommand::List;
+    // STRATEGY LIST - no additional parameters required
+  } else if (subcommand_lower == "status"_kj || subcommand_lower == "stat"_kj) {
+    result.subcommand = StrategySubCommand::Status;
+    // STRATEGY STATUS [STRATEGY_ID]
+    if (tokens.size() >= 3) {
+      result.strategy_id = kj::str(tokens[2]);
+    }
+  } else {
+    result.subcommand = StrategySubCommand::Unknown;
+    return kj::none;
+  }
+
+  return result;
+}
+
+// Parse market event type string to enum
+veloz::market::MarketEventType parse_market_event_type(kj::StringPtr type_str) {
+  kj::String lower = to_lower(type_str);
+  if (lower == "trade"_kj || lower == "t"_kj) {
+    return veloz::market::MarketEventType::Trade;
+  } else if (lower == "booktop"_kj || lower == "book_top"_kj || lower == "ticker"_kj) {
+    return veloz::market::MarketEventType::BookTop;
+  } else if (lower == "bookdelta"_kj || lower == "book_delta"_kj || lower == "depth"_kj) {
+    return veloz::market::MarketEventType::BookDelta;
+  } else if (lower == "kline"_kj || lower == "k"_kj || lower == "candle"_kj) {
+    return veloz::market::MarketEventType::Kline;
+  }
+  return veloz::market::MarketEventType::Unknown;
+}
+
+// Parse SUBSCRIBE command
+// Formats:
+//   SUBSCRIBE <VENUE> <SYMBOL> <EVENT_TYPE>
+//   SUB <VENUE> <SYMBOL> <EVENT_TYPE>
+// Examples:
+//   SUBSCRIBE binance BTCUSDT trade
+//   SUB binance ETHUSDT depth
+kj::Maybe<ParsedSubscribe> parse_subscribe_command(kj::StringPtr line) {
+  auto tokens = tokenize(line);
+  if (tokens.size() < 4) {
+    return kj::none;
+  }
+
+  kj::String verb_lower = to_lower(tokens[0]);
+  if (verb_lower != "subscribe"_kj && verb_lower != "sub"_kj) {
+    return kj::none;
+  }
+
+  // Validate venue
+  if (tokens[1].size() == 0) {
+    return kj::none;
+  }
+
+  // Validate symbol
+  if (tokens[2].size() == 0) {
+    return kj::none;
+  }
+
+  // Parse event type
+  auto event_type = parse_market_event_type(tokens[3]);
+  if (event_type == veloz::market::MarketEventType::Unknown) {
+    return kj::none;
+  }
+
+  ParsedSubscribe result;
+  result.venue = kj::str(tokens[1]);
+  result.symbol = kj::str(tokens[2]);
+  result.event_type = event_type;
+  result.raw_command = kj::str(line);
+  return result;
+}
+
+// Parse UNSUBSCRIBE command
+// Formats:
+//   UNSUBSCRIBE <VENUE> <SYMBOL> <EVENT_TYPE>
+//   UNSUB <VENUE> <SYMBOL> <EVENT_TYPE>
+// Examples:
+//   UNSUBSCRIBE binance BTCUSDT trade
+//   UNSUB binance ETHUSDT depth
+kj::Maybe<ParsedUnsubscribe> parse_unsubscribe_command(kj::StringPtr line) {
+  auto tokens = tokenize(line);
+  if (tokens.size() < 4) {
+    return kj::none;
+  }
+
+  kj::String verb_lower = to_lower(tokens[0]);
+  if (verb_lower != "unsubscribe"_kj && verb_lower != "unsub"_kj) {
+    return kj::none;
+  }
+
+  // Validate venue
+  if (tokens[1].size() == 0) {
+    return kj::none;
+  }
+
+  // Validate symbol
+  if (tokens[2].size() == 0) {
+    return kj::none;
+  }
+
+  // Parse event type
+  auto event_type = parse_market_event_type(tokens[3]);
+  if (event_type == veloz::market::MarketEventType::Unknown) {
+    return kj::none;
+  }
+
+  ParsedUnsubscribe result;
+  result.venue = kj::str(tokens[1]);
+  result.symbol = kj::str(tokens[2]);
+  result.event_type = event_type;
   result.raw_command = kj::str(line);
   return result;
 }

@@ -24,6 +24,19 @@ target_link_libraries(test_stdio_engine
     kj-async
 )
 
+# HTTP service tests
+add_executable(test_http_service
+    test_http_service.cpp
+)
+
+target_link_libraries(test_http_service
+    PRIVATE
+    veloz_engine_lib
+    kj-test
+    kj-async
+)
+
 # Register tests
 add_test(NAME test_command_parser COMMAND test_command_parser)
 add_test(NAME test_stdio_engine COMMAND test_stdio_engine)
+add_test(NAME test_http_service COMMAND test_http_service)
