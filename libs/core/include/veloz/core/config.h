@@ -2,69 +2,81 @@
 
 #include "veloz/core/error.h" // VeloZException base class
 
+#include <kj/array.h>
 #include <kj/common.h>
 #include <kj/filesystem.h> // kj::Path for file paths
-#include <kj/memory.h>     // kj::Maybe used for nullable config values
+#include <kj/map.h>
+#include <kj/memory.h> // kj::Maybe used for nullable config values
+#include <kj/one-of.h>
 #include <kj/string.h>
-#include <map>        // std::map used for ordered key iteration
-#include <string>      // std::string used for std::map key and std::variant compatibility
-#include <string_view>
-#include <variant>
-#include <vector> // std::vector used for array config values in std::variant
 #include <source_location> // std::source_location for exception tracking
+#include <type_traits>
 
 namespace veloz::core {
 
 class Config final {
 public:
-  using Value = std::variant<bool, int64_t, double, std::string, std::vector<bool>,
-                             std::vector<int64_t>, std::vector<double>, std::vector<std::string>>;
+  using Value = kj::OneOf<bool, int64_t, double, kj::String, kj::Array<bool>, kj::Array<int64_t>,
+                          kj::Array<double>, kj::Array<kj::String>>;
 
   Config() = default;
-  explicit Config(const std::string& file_path);
-  explicit Config(std::string_view json_content);
+  explicit Config(const kj::Path& file_path);
+  explicit Config(kj::StringPtr json_content);
 
-  bool load_from_file(const std::string& file_path);
-  bool load_from_string(std::string_view json_content);
-  bool save_to_file(const std::string& file_path) const;
-  std::string to_string() const;
+  bool load_from_file(const kj::Path& file_path);
+  bool load_from_string(kj::StringPtr json_content);
+  bool save_to_file(const kj::Path& file_path) const;
+  kj::String to_string() const;
 
   // Basic access methods
-  [[nodiscard]] bool has_key(std::string_view key) const;
-  void set(std::string_view key, Value value);
-  void remove(std::string_view key);
+  [[nodiscard]] bool has_key(kj::StringPtr key) const;
+  void set(kj::StringPtr key, Value value);
+  void remove(kj::StringPtr key);
 
   // Template access methods
-  template <typename T> [[nodiscard]] kj::Maybe<T> get(std::string_view key) const {
-    auto it = config_.find(std::string(key));
-    if (it == config_.end()) {
-      return kj::none;
-    }
-    try {
+  template <typename T> [[nodiscard]] kj::Maybe<T> get(kj::StringPtr key) const {
+    KJ_IF_SOME(value, config_.find(key)) {
       if constexpr (std::is_same_v<T, bool>) {
-        return std::get<bool>(it->second);
+        if (value.is<bool>()) {
+          return value.get<bool>();
+        }
       } else if constexpr (std::is_same_v<T, int64_t>) {
-        return std::get<int64_t>(it->second);
+        if (value.is<int64_t>()) {
+          return value.get<int64_t>();
+        }
       } else if constexpr (std::is_same_v<T, double>) {
-        return std::get<double>(it->second);
-      } else if constexpr (std::is_same_v<T, std::string>) {
-        return std::get<std::string>(it->second);
-      } else if constexpr (std::is_same_v<T, std::vector<bool>>) {
-        return std::get<std::vector<bool>>(it->second);
-      } else if constexpr (std::is_same_v<T, std::vector<int64_t>>) {
-        return std::get<std::vector<int64_t>>(it->second);
-      } else if constexpr (std::is_same_v<T, std::vector<double>>) {
-        return std::get<std::vector<double>>(it->second);
-      } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
-        return std::get<std::vector<std::string>>(it->second);
+        if (value.is<double>()) {
+          return value.get<double>();
+        }
+      } else if constexpr (std::is_same_v<T, kj::StringPtr>) {
+        if (value.is<kj::String>()) {
+          return value.get<kj::String>().asPtr();
+        }
+      } else if constexpr (std::is_same_v<T, kj::ArrayPtr<const bool>>) {
+        if (value.is<kj::Array<bool>>()) {
+          return value.get<kj::Array<bool>>().asPtr();
+        }
+      } else if constexpr (std::is_same_v<T, kj::ArrayPtr<const int64_t>>) {
+        if (value.is<kj::Array<int64_t>>()) {
+          return value.get<kj::Array<int64_t>>().asPtr();
+        }
+      } else if constexpr (std::is_same_v<T, kj::ArrayPtr<const double>>) {
+        if (value.is<kj::Array<double>>()) {
+          return value.get<kj::Array<double>>().asPtr();
+        }
+      } else if constexpr (std::is_same_v<T, kj::ArrayPtr<const kj::String>>) {
+        if (value.is<kj::Array<kj::String>>()) {
+          return value.get<kj::Array<kj::String>>().asPtr();
+        }
+      } else {
+        static_assert(kj::isSameType<T, void>(), "Unsupported config get<T>() type");
       }
-    } catch (const std::bad_variant_access&) {
       return kj::none;
     }
     return kj::none;
   }
 
-  template <typename T> T get_or(std::string_view key, T default_value) const {
+  template <typename T> T get_or(kj::StringPtr key, T default_value) const {
     KJ_IF_SOME(value, get<T>(key)) {
       return kj::mv(value);
     }
@@ -72,18 +84,18 @@ public:
   }
 
   // Nested configuration access
-  [[nodiscard]] kj::Maybe<Config> get_section(std::string_view key) const;
-  void set_section(std::string_view key, const Config& config);
+  [[nodiscard]] kj::Maybe<Config> get_section(kj::StringPtr key) const;
+  void set_section(kj::StringPtr key, const Config& config);
 
   // Configuration merging
   void merge(const Config& other);
 
   // Get all keys
-  [[nodiscard]] std::vector<std::string> keys() const;
+  [[nodiscard]] kj::Array<kj::String> keys() const;
 
   // Check if empty
   [[nodiscard]] bool empty() const {
-    return config_.empty();
+    return config_.size() == 0;
   }
 
   // Get configuration size
@@ -92,7 +104,7 @@ public:
   }
 
 private:
-  std::map<std::string, Value> config_;
+  kj::TreeMap<kj::String, Value> config_;
 };
 
 /**
@@ -107,7 +119,7 @@ public:
 
 // Global configuration accessor
 [[nodiscard]] Config& global_config();
-bool load_global_config(const std::string& file_path);
-bool load_global_config(std::string_view json_content);
+bool load_global_config(const kj::Path& file_path);
+bool load_global_config(kj::StringPtr json_content);
 
 } // namespace veloz::core
