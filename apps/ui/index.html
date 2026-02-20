@@ -5,6 +5,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VeloZ UI</title>
+  <!-- Strategy-specific styles (optional, for enhanced styling) -->
+  <link rel="stylesheet" href="css/strategies.css" />
+  <!-- Order book styles -->
+  <link rel="stylesheet" href="css/orderbook.css" />
+  <!-- Position styles -->
+  <link rel="stylesheet" href="css/positions.css" />
+  <!-- Backtest styles -->
+  <link rel="stylesheet" href="css/backtest.css" />
   <style>
     :root {
       --color-bg: #ffffff;
@@ -535,7 +543,10 @@
     <!-- Navigation Tabs -->
     <div class="nav-tabs">
       <button class="nav-tab active" data-tab="trading">Trading</button>
+      <button class="nav-tab" data-tab="orderbook">Order Book</button>
+      <button class="nav-tab" data-tab="positions">Positions</button>
       <button class="nav-tab" data-tab="strategies">Strategies</button>
+      <button class="nav-tab" data-tab="backtest">Backtest</button>
     </div>
 
     <!-- Trading Tab -->
@@ -692,6 +703,215 @@
       </div>
     </div>
 
+    <!-- Order Book Tab -->
+    <div id="orderbook-tab" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Order Book</h2>
+          <div class="flex-1"></div>
+          <div class="orderbook-status">
+            <span class="status-dot" id="orderbookStatusDot"></span>
+            <span id="orderbookStatusText">Disconnected</span>
+          </div>
+          <select id="orderbookSymbol" style="min-width: 120px;">
+            <option value="BTCUSDT">BTCUSDT</option>
+            <option value="ETHUSDT">ETHUSDT</option>
+            <option value="BNBUSDT">BNBUSDT</option>
+          </select>
+          <button id="refreshOrderbook" class="btn-secondary btn-sm">Refresh</button>
+        </div>
+        <div class="muted">Real-time order book depth visualization</div>
+      </div>
+
+      <div class="row" style="margin-top: 16px; gap: 16px; align-items: flex-start;">
+        <!-- Order Book Widget -->
+        <div class="card" style="flex: 1; min-width: 350px;">
+          <div class="orderbook-widget" id="orderbookWidget">
+            <div class="orderbook-header">
+              <div class="orderbook-symbol" id="obSymbol">-</div>
+              <div class="orderbook-stats">
+                <span class="stat-item">
+                  <span class="stat-label">Spread</span>
+                  <span class="stat-value" id="obSpread">-</span>
+                </span>
+                <span class="stat-item">
+                  <span class="stat-label">Mid</span>
+                  <span class="stat-value" id="obMidPrice">-</span>
+                </span>
+              </div>
+            </div>
+            <div class="orderbook-container">
+              <div class="orderbook-column-headers">
+                <span>Price</span>
+                <span>Size</span>
+                <span>Total</span>
+              </div>
+              <div class="orderbook-asks" id="orderbookAsks">
+                <div class="orderbook-empty">Waiting for data...</div>
+              </div>
+              <div class="orderbook-spread">
+                <span class="spread-label">Spread</span>
+                <span class="spread-value" id="obSpreadValue">-</span>
+              </div>
+              <div class="orderbook-bids" id="orderbookBids">
+                <div class="orderbook-empty">Waiting for data...</div>
+              </div>
+            </div>
+            <div class="orderbook-controls">
+              <div class="orderbook-status">
+                <span>Last update: <span id="obLastUpdate">-</span></span>
+              </div>
+              <select id="orderbookGrouping" class="grouping-select">
+                <option value="0">No grouping</option>
+                <option value="0.01">0.01</option>
+                <option value="0.1">0.1</option>
+                <option value="1">1</option>
+                <option value="10">10</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Order Book Stats -->
+        <div class="card" style="flex: 1; min-width: 300px;">
+          <div class="card-header">
+            <h2>Market Stats</h2>
+          </div>
+          <div class="row" style="margin-top: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 120px; margin-bottom: 12px;">
+              <div class="muted">Best Bid</div>
+              <div class="mono metric-value positive" id="obBestBid">-</div>
+            </div>
+            <div style="flex: 1; min-width: 120px; margin-bottom: 12px;">
+              <div class="muted">Best Ask</div>
+              <div class="mono metric-value negative" id="obBestAsk">-</div>
+            </div>
+            <div style="flex: 1; min-width: 120px; margin-bottom: 12px;">
+              <div class="muted">Spread</div>
+              <div class="mono metric-value" id="obSpreadAbs">-</div>
+            </div>
+            <div style="flex: 1; min-width: 120px; margin-bottom: 12px;">
+              <div class="muted">Spread %</div>
+              <div class="mono metric-value" id="obSpreadPct">-</div>
+            </div>
+            <div style="flex: 1; min-width: 120px; margin-bottom: 12px;">
+              <div class="muted">Bid Depth</div>
+              <div class="mono metric-value" id="obBidDepth">-</div>
+            </div>
+            <div style="flex: 1; min-width: 120px; margin-bottom: 12px;">
+              <div class="muted">Ask Depth</div>
+              <div class="mono metric-value" id="obAskDepth">-</div>
+            </div>
+          </div>
+
+          <div class="card-header" style="margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 16px;">
+            <h2>Imbalance</h2>
+          </div>
+          <div style="margin-top: 12px;">
+            <div class="muted">Bid/Ask Ratio</div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+              <div style="flex: 1; height: 24px; background: var(--color-bg-secondary); border-radius: 4px; overflow: hidden; display: flex;">
+                <div id="obImbalanceBar" style="height: 100%; background: var(--color-success); width: 50%; transition: width 0.3s;"></div>
+              </div>
+              <span class="mono" id="obImbalanceValue">50%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Positions Tab -->
+    <div id="positions-tab" class="tab-content">
+      <!-- PnL Summary -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Portfolio Summary</h2>
+          <div class="flex-1"></div>
+          <div class="position-status">
+            <span class="status-dot" id="positionStatusDot"></span>
+            <span id="positionStatusText">Disconnected</span>
+          </div>
+          <button id="refreshPositions" class="btn-secondary btn-sm">Refresh</button>
+        </div>
+        <div class="muted">Real-time position and PnL tracking</div>
+
+        <!-- PnL Summary Cards -->
+        <div class="row" style="margin-top: 16px; gap: 16px; flex-wrap: wrap;">
+          <div class="pnl-card" style="flex: 1; min-width: 200px;">
+            <div class="pnl-card-title">Total PnL</div>
+            <div class="pnl-card-value" id="posTotalPnl">$0.00</div>
+            <div class="pnl-card-change" id="posTotalPnlChange">+0.00%</div>
+          </div>
+          <div class="pnl-card" style="flex: 1; min-width: 200px;">
+            <div class="pnl-card-title">Unrealized PnL</div>
+            <div class="pnl-card-value" id="posUnrealizedPnl">$0.00</div>
+          </div>
+          <div class="pnl-card" style="flex: 1; min-width: 200px;">
+            <div class="pnl-card-title">Realized PnL</div>
+            <div class="pnl-card-value" id="posRealizedPnl">$0.00</div>
+          </div>
+          <div class="pnl-card" style="flex: 1; min-width: 200px;">
+            <div class="pnl-card-title">Total Notional</div>
+            <div class="pnl-card-value" id="posTotalNotional">$0.00</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Positions Table -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Open Positions</h2>
+          <div class="flex-1"></div>
+          <span class="muted" id="positionCount">0 positions</span>
+        </div>
+        <div class="positions-table-wrapper" style="margin-top: 12px;">
+          <table class="positions-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Size</th>
+                <th>Avg Price</th>
+                <th>Current</th>
+                <th>Unrealized</th>
+                <th>Realized</th>
+                <th>Total PnL</th>
+                <th>PnL %</th>
+              </tr>
+            </thead>
+            <tbody id="positionsBody">
+              <tr>
+                <td colspan="9" class="positions-empty" style="text-align: center; padding: 40px;">
+                  No open positions
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="positions-last-update">
+          Last update: <span id="posLastUpdate">-</span>
+        </div>
+      </div>
+
+      <!-- PnL History Chart Placeholder -->
+      <div class="card">
+        <div class="card-header">
+          <h2>PnL History</h2>
+          <div class="flex-1"></div>
+          <select id="pnlHistoryRange">
+            <option value="1h">1 Hour</option>
+            <option value="4h">4 Hours</option>
+            <option value="1d" selected>1 Day</option>
+            <option value="1w">1 Week</option>
+          </select>
+        </div>
+        <div class="pnl-chart-container" id="pnlChartContainer">
+          Chart will be displayed here when data is available
+        </div>
+      </div>
+    </div>
+
     <!-- Strategies Tab -->
     <div id="strategies-tab" class="tab-content">
       <!-- Strategy Overview -->
@@ -779,6 +999,82 @@
             </thead>
             <tbody id="metricsBody"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backtest Tab -->
+    <div id="backtest-tab" class="tab-content">
+      <!-- Backtest Controls -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Backtest Results</h2>
+          <div class="flex-1"></div>
+          <span class="live-indicator">Historical</span>
+          <button id="runBacktest" class="btn-success">+ Run Backtest</button>
+          <button id="refreshBacktests" class="btn-secondary btn-sm">Refresh</button>
+        </div>
+        <div class="muted">View and compare historical backtest results</div>
+
+        <!-- Backtest Tabs -->
+        <div class="backtest-tabs">
+          <button class="backtest-tab active" data-backtest-view="results">Results</button>
+          <button class="backtest-tab" data-backtest-view="metrics">Metrics</button>
+          <button class="backtest-tab" data-backtest-view="trades">Trades</button>
+          <button class="backtest-tab" data-backtest-view="compare">Compare</button>
+        </div>
+
+        <!-- Results View -->
+        <div id="backtestResultsView" class="backtest-view">
+          <div class="backtest-results-list" id="backtestResultsList">
+            <!-- Backtest result cards will be rendered here -->
+          </div>
+        </div>
+
+        <!-- Metrics View -->
+        <div id="backtestMetricsView" class="backtest-view" style="display: none;">
+          <div class="metrics-panel" id="backtestMetricsPanel">
+            <div class="metrics-panel-empty">Select a backtest result to view detailed metrics</div>
+          </div>
+        </div>
+
+        <!-- Trades View -->
+        <div id="backtestTradesView" class="backtest-view" style="display: none;">
+          <div class="trades-table-container" id="backtestTradesContainer">
+            <div class="trades-empty">Select a backtest result to view trade history</div>
+          </div>
+        </div>
+
+        <!-- Compare View -->
+        <div id="backtestCompareView" class="backtest-view" style="display: none;">
+          <div class="comparison-table-container" id="backtestCompareContainer">
+            <div class="comparison-empty">Select multiple backtest results to compare</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Equity Curve Chart -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Equity Curve</h2>
+          <div class="flex-1"></div>
+          <select id="equityCurveSelect">
+            <option value="">Select a backtest...</option>
+          </select>
+        </div>
+        <div class="chart-container" id="equityCurveChart">
+          <div class="chart-placeholder">Select a backtest result to view equity curve</div>
+        </div>
+      </div>
+
+      <!-- Drawdown Chart -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Drawdown Analysis</h2>
+          <div class="flex-1"></div>
+        </div>
+        <div class="chart-container" id="drawdownChart">
+          <div class="chart-placeholder">Select a backtest result to view drawdown analysis</div>
         </div>
       </div>
     </div>
@@ -1773,6 +2069,1387 @@
       renderPerformanceSummary();
       renderMetricsTable();
     }, 5000);
+
+    // ============================================================================
+    // Order Book State and Functions
+    // ============================================================================
+    let orderbookState = {
+      symbol: 'BTCUSDT',
+      bids: [],
+      asks: [],
+      lastUpdate: null,
+      connected: false,
+      grouping: 0
+    };
+
+    // Generate mock order book data for demo
+    function generateMockOrderBook(symbol) {
+      const basePrice = symbol === 'BTCUSDT' ? 45000 :
+                        symbol === 'ETHUSDT' ? 2500 : 350;
+      const spread = basePrice * 0.0001; // 0.01% spread
+      const midPrice = basePrice + (Math.random() - 0.5) * basePrice * 0.001;
+
+      const bids = [];
+      const asks = [];
+
+      // Generate 15 levels each side
+      for (let i = 0; i < 15; i++) {
+        const bidPrice = midPrice - spread / 2 - i * spread * 0.5;
+        const askPrice = midPrice + spread / 2 + i * spread * 0.5;
+        const bidQty = Math.random() * 10 + 0.1;
+        const askQty = Math.random() * 10 + 0.1;
+
+        bids.push({ price: bidPrice, qty: bidQty });
+        asks.push({ price: askPrice, qty: askQty });
+      }
+
+      return { symbol, bids, asks, lastUpdate: Date.now() };
+    }
+
+    // Update order book display
+    function updateOrderBookDisplay() {
+      const { symbol, bids, asks, lastUpdate, connected, grouping } = orderbookState;
+
+      // Update symbol display
+      document.getElementById('obSymbol').textContent = symbol || '-';
+
+      // Calculate stats
+      const bestBid = bids.length > 0 ? bids[0].price : null;
+      const bestAsk = asks.length > 0 ? asks[0].price : null;
+      const spread = bestBid && bestAsk ? bestAsk - bestBid : null;
+      const spreadPct = spread && bestBid ? (spread / bestBid) * 100 : null;
+      const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : null;
+      const bidDepth = bids.reduce((sum, l) => sum + l.qty, 0);
+      const askDepth = asks.reduce((sum, l) => sum + l.qty, 0);
+      const totalDepth = bidDepth + askDepth;
+      const imbalance = totalDepth > 0 ? (bidDepth / totalDepth) * 100 : 50;
+
+      // Update header stats
+      document.getElementById('obSpread').textContent = spread !== null ? spread.toFixed(4) : '-';
+      document.getElementById('obMidPrice').textContent = midPrice !== null ? midPrice.toFixed(2) : '-';
+      document.getElementById('obSpreadValue').textContent = spread !== null ? spread.toFixed(4) : '-';
+
+      // Update market stats panel
+      document.getElementById('obBestBid').textContent = bestBid !== null ? bestBid.toFixed(2) : '-';
+      document.getElementById('obBestAsk').textContent = bestAsk !== null ? bestAsk.toFixed(2) : '-';
+      document.getElementById('obSpreadAbs').textContent = spread !== null ? spread.toFixed(4) : '-';
+      document.getElementById('obSpreadPct').textContent = spreadPct !== null ? spreadPct.toFixed(4) + '%' : '-';
+      document.getElementById('obBidDepth').textContent = bidDepth.toFixed(4);
+      document.getElementById('obAskDepth').textContent = askDepth.toFixed(4);
+
+      // Update imbalance indicator
+      document.getElementById('obImbalanceBar').style.width = imbalance.toFixed(1) + '%';
+      document.getElementById('obImbalanceValue').textContent = imbalance.toFixed(1) + '%';
+
+      // Update last update time
+      if (lastUpdate) {
+        const d = new Date(lastUpdate);
+        document.getElementById('obLastUpdate').textContent = d.toLocaleTimeString();
+      }
+
+      // Update connection status
+      const statusDot = document.getElementById('orderbookStatusDot');
+      const statusText = document.getElementById('orderbookStatusText');
+      if (connected) {
+        statusDot.className = 'status-dot connected';
+        statusText.textContent = 'Connected';
+      } else {
+        statusDot.className = 'status-dot disconnected';
+        statusText.textContent = 'Mock Data';
+      }
+
+      // Calculate max depth for bar widths
+      const maxBidDepth = Math.max(...bids.map(l => l.qty), 0.001);
+      const maxAskDepth = Math.max(...asks.map(l => l.qty), 0.001);
+
+      // Apply grouping if set
+      let displayBids = bids;
+      let displayAsks = asks;
+      if (grouping > 0) {
+        displayBids = groupPriceLevels(bids, grouping, 'bid');
+        displayAsks = groupPriceLevels(asks, grouping, 'ask');
+      }
+
+      // Render asks (reversed so lowest ask is at bottom)
+      const asksContainer = document.getElementById('orderbookAsks');
+      if (displayAsks.length > 0) {
+        let cumulativeAsk = 0;
+        const asksWithCumulative = displayAsks.slice().reverse().map(level => {
+          cumulativeAsk += level.qty;
+          return { ...level, cumulative: cumulativeAsk };
+        }).reverse();
+
+        const maxCumulativeAsk = asksWithCumulative.length > 0 ? asksWithCumulative[0].cumulative : 1;
+
+        asksContainer.innerHTML = asksWithCumulative.slice().reverse().map(level => {
+          const depthPct = (level.cumulative / maxCumulativeAsk) * 100;
+          return `
+            <div class="orderbook-row" data-price="${level.price}">
+              <div class="depth-bar ask-depth" style="width: ${depthPct.toFixed(1)}%"></div>
+              <span class="level-price ask-price">${level.price.toFixed(2)}</span>
+              <span class="level-qty">${level.qty.toFixed(4)}</span>
+              <span class="level-total">${level.cumulative.toFixed(4)}</span>
+            </div>
+          `;
+        }).join('');
+      } else {
+        asksContainer.innerHTML = '<div class="orderbook-empty">No asks</div>';
+      }
+
+      // Render bids
+      const bidsContainer = document.getElementById('orderbookBids');
+      if (displayBids.length > 0) {
+        let cumulativeBid = 0;
+        const bidsWithCumulative = displayBids.map(level => {
+          cumulativeBid += level.qty;
+          return { ...level, cumulative: cumulativeBid };
+        });
+
+        const maxCumulativeBid = bidsWithCumulative.length > 0 ?
+          bidsWithCumulative[bidsWithCumulative.length - 1].cumulative : 1;
+
+        bidsContainer.innerHTML = bidsWithCumulative.map(level => {
+          const depthPct = (level.cumulative / maxCumulativeBid) * 100;
+          return `
+            <div class="orderbook-row" data-price="${level.price}">
+              <div class="depth-bar bid-depth" style="width: ${depthPct.toFixed(1)}%"></div>
+              <span class="level-price bid-price">${level.price.toFixed(2)}</span>
+              <span class="level-qty">${level.qty.toFixed(4)}</span>
+              <span class="level-total">${level.cumulative.toFixed(4)}</span>
+            </div>
+          `;
+        }).join('');
+      } else {
+        bidsContainer.innerHTML = '<div class="orderbook-empty">No bids</div>';
+      }
+    }
+
+    // Group price levels by tick size
+    function groupPriceLevels(levels, tickSize, side) {
+      if (tickSize <= 0 || levels.length === 0) return levels;
+
+      const grouped = new Map();
+      for (const level of levels) {
+        const groupedPrice = side === 'bid'
+          ? Math.floor(level.price / tickSize) * tickSize
+          : Math.ceil(level.price / tickSize) * tickSize;
+
+        if (grouped.has(groupedPrice)) {
+          grouped.get(groupedPrice).qty += level.qty;
+        } else {
+          grouped.set(groupedPrice, { price: groupedPrice, qty: level.qty });
+        }
+      }
+
+      const result = Array.from(grouped.values());
+      if (side === 'bid') {
+        result.sort((a, b) => b.price - a.price);
+      } else {
+        result.sort((a, b) => a.price - b.price);
+      }
+      return result.slice(0, 15);
+    }
+
+    // Refresh order book (fetch from API or generate mock)
+    async function refreshOrderBook() {
+      const symbol = document.getElementById('orderbookSymbol').value;
+      orderbookState.symbol = symbol;
+
+      try {
+        // Try to fetch from API
+        const resp = await fetch(`${apiBase}/api/depth?symbol=${encodeURIComponent(symbol)}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          orderbookState.bids = (data.bids || []).map(b =>
+            Array.isArray(b) ? { price: parseFloat(b[0]), qty: parseFloat(b[1]) } : b
+          );
+          orderbookState.asks = (data.asks || []).map(a =>
+            Array.isArray(a) ? { price: parseFloat(a[0]), qty: parseFloat(a[1]) } : a
+          );
+          orderbookState.lastUpdate = Date.now();
+          orderbookState.connected = true;
+        } else {
+          throw new Error('API not available');
+        }
+      } catch (e) {
+        // Fall back to mock data
+        const mockData = generateMockOrderBook(symbol);
+        orderbookState.bids = mockData.bids;
+        orderbookState.asks = mockData.asks;
+        orderbookState.lastUpdate = mockData.lastUpdate;
+        orderbookState.connected = false;
+      }
+
+      updateOrderBookDisplay();
+    }
+
+    // Order book event listeners
+    document.getElementById('orderbookSymbol').addEventListener('change', () => {
+      refreshOrderBook().catch(console.error);
+    });
+
+    document.getElementById('refreshOrderbook').addEventListener('click', () => {
+      refreshOrderBook().catch(console.error);
+    });
+
+    document.getElementById('orderbookGrouping').addEventListener('change', (e) => {
+      orderbookState.grouping = parseFloat(e.target.value) || 0;
+      updateOrderBookDisplay();
+    });
+
+    // Initialize order book with mock data
+    const initialMock = generateMockOrderBook(orderbookState.symbol);
+    orderbookState.bids = initialMock.bids;
+    orderbookState.asks = initialMock.asks;
+    orderbookState.lastUpdate = initialMock.lastUpdate;
+    updateOrderBookDisplay();
+
+    // Simulate order book updates for demo
+    setInterval(() => {
+      if (!orderbookState.connected) {
+        // Only simulate if not connected to real API
+        const symbol = orderbookState.symbol;
+        const mockData = generateMockOrderBook(symbol);
+        orderbookState.bids = mockData.bids;
+        orderbookState.asks = mockData.asks;
+        orderbookState.lastUpdate = mockData.lastUpdate;
+        updateOrderBookDisplay();
+      }
+    }, 2000);
+
+    // ============================================================================
+    // Positions State and Functions
+    // ============================================================================
+    let positionsState = {
+      positions: [],
+      totalPnl: 0,
+      unrealizedPnl: 0,
+      realizedPnl: 0,
+      notionalValue: 0,
+      lastUpdate: null,
+      connected: false,
+      pnlHistory: []
+    };
+
+    // Generate mock positions for demo
+    function generateMockPositions() {
+      const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT'];
+      const positions = [];
+
+      for (const symbol of symbols) {
+        if (Math.random() > 0.3) { // 70% chance of having a position
+          const isLong = Math.random() > 0.4;
+          const basePrice = symbol === 'BTCUSDT' ? 45000 :
+                            symbol === 'ETHUSDT' ? 2500 : 350;
+          const size = (Math.random() * 2 + 0.1) * (isLong ? 1 : -1);
+          const avgPrice = basePrice * (1 + (Math.random() - 0.5) * 0.02);
+          const currentPrice = basePrice * (1 + (Math.random() - 0.5) * 0.01);
+          const unrealizedPnl = size * (currentPrice - avgPrice);
+          const realizedPnl = (Math.random() - 0.3) * 500;
+
+          positions.push({
+            symbol,
+            size,
+            avgPrice,
+            currentPrice,
+            unrealizedPnl,
+            realizedPnl,
+            side: isLong ? 'long' : 'short'
+          });
+        }
+      }
+
+      return positions;
+    }
+
+    // Update positions display
+    function updatePositionsDisplay() {
+      const { positions, lastUpdate, connected } = positionsState;
+
+      // Calculate totals
+      let totalPnl = 0;
+      let unrealizedPnl = 0;
+      let realizedPnl = 0;
+      let notionalValue = 0;
+
+      for (const pos of positions) {
+        const posUnrealized = pos.unrealizedPnl || 0;
+        const posRealized = pos.realizedPnl || 0;
+        unrealizedPnl += posUnrealized;
+        realizedPnl += posRealized;
+        totalPnl += posUnrealized + posRealized;
+        notionalValue += Math.abs(pos.size) * (pos.currentPrice || 0);
+      }
+
+      positionsState.totalPnl = totalPnl;
+      positionsState.unrealizedPnl = unrealizedPnl;
+      positionsState.realizedPnl = realizedPnl;
+      positionsState.notionalValue = notionalValue;
+
+      // Update summary cards
+      const totalPnlEl = document.getElementById('posTotalPnl');
+      const totalPnlChangeEl = document.getElementById('posTotalPnlChange');
+      const unrealizedPnlEl = document.getElementById('posUnrealizedPnl');
+      const realizedPnlEl = document.getElementById('posRealizedPnl');
+      const notionalEl = document.getElementById('posTotalNotional');
+
+      const formatPnlValue = (val) => {
+        const sign = val >= 0 ? '+' : '';
+        return `${sign}$${val.toFixed(2)}`;
+      };
+
+      totalPnlEl.textContent = formatPnlValue(totalPnl);
+      totalPnlEl.className = `pnl-card-value ${totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+
+      const pnlPct = notionalValue > 0 ? (totalPnl / notionalValue) * 100 : 0;
+      totalPnlChangeEl.textContent = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+      totalPnlChangeEl.className = `pnl-card-change ${pnlPct >= 0 ? 'positive' : 'negative'}`;
+
+      unrealizedPnlEl.textContent = formatPnlValue(unrealizedPnl);
+      unrealizedPnlEl.className = `pnl-card-value ${unrealizedPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+
+      realizedPnlEl.textContent = formatPnlValue(realizedPnl);
+      realizedPnlEl.className = `pnl-card-value ${realizedPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+
+      notionalEl.textContent = `$${notionalValue.toFixed(2)}`;
+
+      // Update position count
+      document.getElementById('positionCount').textContent = `${positions.length} position${positions.length !== 1 ? 's' : ''}`;
+
+      // Update connection status
+      const statusDot = document.getElementById('positionStatusDot');
+      const statusText = document.getElementById('positionStatusText');
+      if (connected) {
+        statusDot.className = 'status-dot connected';
+        statusText.textContent = 'Connected';
+      } else {
+        statusDot.className = 'status-dot disconnected';
+        statusText.textContent = 'Mock Data';
+      }
+
+      // Update last update time
+      if (lastUpdate) {
+        const d = new Date(lastUpdate);
+        document.getElementById('posLastUpdate').textContent = d.toLocaleTimeString();
+      }
+
+      // Render positions table
+      const tbody = document.getElementById('positionsBody');
+      if (positions.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" class="positions-empty" style="text-align: center; padding: 40px;">
+              No open positions
+            </td>
+          </tr>
+        `;
+      } else {
+        tbody.innerHTML = positions.map(pos => {
+          const sideClass = pos.size > 0 ? 'side-long' : 'side-short';
+          const sideLabel = pos.size > 0 ? 'LONG' : 'SHORT';
+          const totalPosP = (pos.unrealizedPnl || 0) + (pos.realizedPnl || 0);
+          const pnlClass = totalPosP >= 0 ? 'pnl-positive' : 'pnl-negative';
+          const unrealizedClass = (pos.unrealizedPnl || 0) >= 0 ? 'pnl-positive' : 'pnl-negative';
+          const cost = Math.abs(pos.size) * pos.avgPrice;
+          const pnlPctPos = cost > 0 ? (totalPosP / cost) * 100 : 0;
+
+          return `
+            <tr class="position-row" data-symbol="${escapeHtml(pos.symbol)}">
+              <td class="symbol-cell">${escapeHtml(pos.symbol)}</td>
+              <td class="side-cell ${sideClass}">${sideLabel}</td>
+              <td class="size-cell mono">${Math.abs(pos.size).toFixed(4)}</td>
+              <td class="price-cell mono">${pos.avgPrice.toFixed(2)}</td>
+              <td class="price-cell mono">${(pos.currentPrice || 0).toFixed(2)}</td>
+              <td class="pnl-cell mono ${unrealizedClass}">${formatPnlValue(pos.unrealizedPnl || 0)}</td>
+              <td class="pnl-cell mono ${pnlClass}">${formatPnlValue(pos.realizedPnl || 0)}</td>
+              <td class="pnl-cell mono ${pnlClass}">${formatPnlValue(totalPosP)}</td>
+              <td class="pnl-pct-cell mono ${pnlClass}">${pnlPctPos.toFixed(2)}%</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Record PnL history
+      positionsState.pnlHistory.push({
+        timestamp: Date.now(),
+        totalPnl,
+        unrealizedPnl,
+        realizedPnl
+      });
+      if (positionsState.pnlHistory.length > 100) {
+        positionsState.pnlHistory = positionsState.pnlHistory.slice(-100);
+      }
+    }
+
+    // Refresh positions (fetch from API or generate mock)
+    async function refreshPositions() {
+      try {
+        const resp = await fetch(`${apiBase}/api/positions`);
+        if (resp.ok) {
+          const data = await resp.json();
+          positionsState.positions = (data.positions || data || []).map(p => ({
+            symbol: p.symbol,
+            size: parseFloat(p.size) || 0,
+            avgPrice: parseFloat(p.avg_price || p.avgPrice) || 0,
+            currentPrice: parseFloat(p.current_price || p.currentPrice) || 0,
+            unrealizedPnl: parseFloat(p.unrealized_pnl || p.unrealizedPnl) || 0,
+            realizedPnl: parseFloat(p.realized_pnl || p.realizedPnl) || 0,
+            side: (parseFloat(p.size) || 0) > 0 ? 'long' : 'short'
+          }));
+          positionsState.lastUpdate = Date.now();
+          positionsState.connected = true;
+        } else {
+          throw new Error('API not available');
+        }
+      } catch (e) {
+        // Fall back to mock data
+        positionsState.positions = generateMockPositions();
+        positionsState.lastUpdate = Date.now();
+        positionsState.connected = false;
+      }
+
+      updatePositionsDisplay();
+    }
+
+    // Positions event listeners
+    document.getElementById('refreshPositions').addEventListener('click', () => {
+      refreshPositions().catch(console.error);
+    });
+
+    // Initialize positions with mock data
+    positionsState.positions = generateMockPositions();
+    positionsState.lastUpdate = Date.now();
+    updatePositionsDisplay();
+
+    // Simulate position updates for demo
+    setInterval(() => {
+      if (!positionsState.connected) {
+        // Update current prices and recalculate PnL
+        for (const pos of positionsState.positions) {
+          const basePrice = pos.symbol === 'BTCUSDT' ? 45000 :
+                            pos.symbol === 'ETHUSDT' ? 2500 : 350;
+          pos.currentPrice = basePrice * (1 + (Math.random() - 0.5) * 0.005);
+          pos.unrealizedPnl = pos.size * (pos.currentPrice - pos.avgPrice);
+        }
+        positionsState.lastUpdate = Date.now();
+        updatePositionsDisplay();
+      }
+    }, 3000);
+  </script>
+
+  <!-- Strategy API Module Integration -->
+  <!-- Load this module to enable real API calls when backend is available -->
+  <!-- Enable API mode by adding ?api_mode=true to the URL -->
+  <script type="module" src="js/strategy-api.js"></script>
+
+  <!-- Strategy API Integration Script -->
+  <script>
+    // Wait for strategy-api.js module to load
+    window.addEventListener('load', () => {
+      // Check if VeloZStrategy module is available
+      if (typeof window.VeloZStrategy === 'undefined') {
+        console.log('Strategy API module not loaded, using mock data');
+        return;
+      }
+
+      const { CONFIG, ConnectionState, StrategyManager } = window.VeloZStrategy;
+
+      // Check if API mode is enabled
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiModeEnabled = urlParams.get('api_mode') === 'true';
+
+      if (!apiModeEnabled) {
+        console.log('Strategy API mode disabled. Add ?api_mode=true to enable.');
+        return;
+      }
+
+      console.log('Initializing Strategy API integration...');
+
+      // Initialize the strategy manager
+      const manager = new StrategyManager(apiBase);
+
+      // Add connection state indicator
+      const liveIndicator = document.querySelector('.live-indicator');
+      if (liveIndicator) {
+        manager.addConnectionListener((state) => {
+          switch (state) {
+            case ConnectionState.CONNECTED:
+              liveIndicator.textContent = 'Live';
+              liveIndicator.style.color = 'var(--color-success)';
+              break;
+            case ConnectionState.CONNECTING:
+            case ConnectionState.RECONNECTING:
+              liveIndicator.textContent = 'Connecting...';
+              liveIndicator.style.color = 'var(--color-warning)';
+              break;
+            case ConnectionState.DISCONNECTED:
+              liveIndicator.textContent = 'Offline';
+              liveIndicator.style.color = 'var(--color-danger)';
+              break;
+          }
+        });
+      }
+
+      // Listen for strategy updates from API
+      manager.addListener((apiStrategies) => {
+        // Merge API strategies with local mock data or replace entirely
+        if (apiStrategies.length > 0) {
+          // Convert API format to UI format
+          strategies = apiStrategies.map(s => ({
+            id: s.id,
+            name: s.name,
+            type: s.type,
+            symbol: s.symbol,
+            status: s.status || 'stopped',
+            capital: s.capital || 10000,
+            pnl: s.pnl || 0,
+            pnlPercent: s.pnl_percent || 0,
+            trades: s.trades || 0,
+            winRate: s.win_rate || 0,
+            maxDrawdown: s.max_drawdown || 0,
+            sharpe: s.sharpe || 0,
+            startTime: s.start_time || Date.now(),
+            params: s.params || {}
+          }));
+          renderStrategies();
+          renderPerformanceSummary();
+          renderMetricsTable();
+        }
+      });
+
+      // Override strategy action functions to use API
+      const originalStartStrategy = window.startStrategy;
+      window.startStrategy = async function(id) {
+        try {
+          await manager.start(id);
+          // Optimistically update UI
+          originalStartStrategy(id);
+        } catch (e) {
+          console.error('Failed to start strategy:', e);
+          alert('Failed to start strategy: ' + e.message);
+        }
+      };
+
+      const originalPauseStrategy = window.pauseStrategy;
+      window.pauseStrategy = async function(id) {
+        try {
+          await manager.pause(id);
+          originalPauseStrategy(id);
+        } catch (e) {
+          console.error('Failed to pause strategy:', e);
+          alert('Failed to pause strategy: ' + e.message);
+        }
+      };
+
+      const originalStopStrategy = window.stopStrategy;
+      window.stopStrategy = async function(id) {
+        try {
+          await manager.stop(id);
+          originalStopStrategy(id);
+        } catch (e) {
+          console.error('Failed to stop strategy:', e);
+          alert('Failed to stop strategy: ' + e.message);
+        }
+      };
+
+      // Override save params to use API
+      const originalSaveStrategyParams = window.saveStrategyParams;
+      window.saveStrategyParams = async function() {
+        if (!currentEditStrategy) return;
+
+        const strat = currentEditStrategy;
+        const params = {};
+        let hasChanges = false;
+
+        for (const [key, param] of Object.entries(strat.params)) {
+          const input = document.getElementById(`param-${key}`);
+          if (input && !input.disabled) {
+            const newValue = parseFloat(input.value);
+            if (!isNaN(newValue) && newValue !== param.value) {
+              params[key] = newValue;
+              hasChanges = true;
+            }
+          }
+        }
+
+        if (hasChanges) {
+          try {
+            await manager.updateParams(strat.id, params);
+            // Update local state
+            for (const [key, value] of Object.entries(params)) {
+              strat.params[key].value = value;
+            }
+          } catch (e) {
+            console.error('Failed to update params:', e);
+            alert('Failed to update parameters: ' + e.message);
+            return;
+          }
+        }
+
+        closeModal();
+        renderStrategies();
+      };
+
+      // Override create strategy to use API
+      const originalCreateNewStrategy = window.createNewStrategy;
+      window.createNewStrategy = async function() {
+        const name = document.getElementById("newStrategyName").value.trim();
+        const type = document.getElementById("newStrategyType").value;
+        const symbol = document.getElementById("newStrategySymbol").value.trim().toUpperCase();
+        const capital = parseFloat(document.getElementById("newStrategyCapital").value);
+
+        if (!name || !symbol || isNaN(capital) || capital <= 0) {
+          alert("Please fill in all fields correctly");
+          return;
+        }
+
+        try {
+          const result = await manager.create({ name, type, symbol, capital });
+          if (result) {
+            // Refresh strategies from API
+            await manager.loadStrategies();
+          }
+          closeNewStrategyModal();
+          document.getElementById("newStrategyName").value = "";
+          document.getElementById("newStrategySymbol").value = "BTCUSDT";
+          document.getElementById("newStrategyCapital").value = "10000";
+        } catch (e) {
+          console.error('Failed to create strategy:', e);
+          alert('Failed to create strategy: ' + e.message);
+        }
+      };
+
+      // Initialize manager
+      manager.init().then(() => {
+        console.log('Strategy API integration initialized');
+      }).catch((e) => {
+        console.warn('Strategy API initialization failed:', e);
+      });
+
+      // Store manager for debugging
+      window._strategyManager = manager;
+    });
+  </script>
+
+  <!-- Order Book API Module Integration -->
+  <!-- Load this module to enable real order book updates when backend is available -->
+  <script type="module" src="js/orderbook.js"></script>
+
+  <!-- Order Book API Integration Script -->
+  <script>
+    // Wait for orderbook.js module to load
+    window.addEventListener('load', () => {
+      // Check if VeloZOrderBook module is available
+      if (typeof window.VeloZOrderBook === 'undefined') {
+        console.log('Order Book API module not loaded, using inline mock data');
+        return;
+      }
+
+      const { OrderBook, subscribeOrderBookUpdates, renderPriceLevel } = window.VeloZOrderBook;
+
+      // Check if API mode is enabled
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiModeEnabled = urlParams.get('api_mode') === 'true';
+
+      if (!apiModeEnabled) {
+        console.log('Order Book API mode disabled. Add ?api_mode=true to enable.');
+        return;
+      }
+
+      console.log('Initializing Order Book API integration...');
+
+      // Create order book instance
+      const orderBook = new OrderBook({
+        maxLevels: 15,
+        throttleMs: 100
+      });
+
+      // Track SSE connection
+      let sseConnection = null;
+
+      // Update UI when order book changes
+      orderBook.addListener((ob) => {
+        // Update orderbookState from the OrderBook instance
+        orderbookState.bids = ob.bids.map(l => ({ price: l.price, qty: l.qty }));
+        orderbookState.asks = ob.asks.map(l => ({ price: l.price, qty: l.qty }));
+        orderbookState.lastUpdate = ob.lastUpdateTime;
+        orderbookState.connected = true;
+        orderbookState.symbol = ob.symbol || orderbookState.symbol;
+
+        updateOrderBookDisplay();
+      });
+
+      // Subscribe to SSE updates
+      function connectOrderBookSSE() {
+        const symbol = document.getElementById('orderbookSymbol').value;
+
+        // Close existing connection
+        if (sseConnection) {
+          sseConnection.close();
+        }
+
+        // Update status
+        const statusDot = document.getElementById('orderbookStatusDot');
+        const statusText = document.getElementById('orderbookStatusText');
+        statusDot.className = 'status-dot connecting';
+        statusText.textContent = 'Connecting...';
+
+        sseConnection = subscribeOrderBookUpdates(apiBase, orderBook, {
+          symbol: symbol,
+          onConnect: () => {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = 'Connected';
+            orderbookState.connected = true;
+          },
+          onError: (e) => {
+            console.error('Order book SSE error:', e);
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = 'Disconnected';
+            orderbookState.connected = false;
+          }
+        });
+      }
+
+      // Override symbol change to reconnect SSE
+      const symbolSelect = document.getElementById('orderbookSymbol');
+      symbolSelect.addEventListener('change', () => {
+        orderBook.clear();
+        connectOrderBookSSE();
+      });
+
+      // Override refresh to reconnect SSE
+      const refreshBtn = document.getElementById('refreshOrderbook');
+      const originalRefreshClick = refreshBtn.onclick;
+      refreshBtn.addEventListener('click', () => {
+        orderBook.clear();
+        connectOrderBookSSE();
+      });
+
+      // Initial connection
+      connectOrderBookSSE();
+
+      // Store for debugging
+      window._orderBook = orderBook;
+      window._orderBookSSE = () => sseConnection;
+    });
+  </script>
+
+  <!-- Positions API Module Integration -->
+  <!-- Load this module to enable real position updates when backend is available -->
+  <script type="module" src="js/positions.js"></script>
+
+  <!-- Positions API Integration Script -->
+  <script>
+    // Wait for positions.js module to load
+    window.addEventListener('load', () => {
+      // Check if VeloZPositions module is available
+      if (typeof window.VeloZPositions === 'undefined') {
+        console.log('Positions API module not loaded, using inline mock data');
+        return;
+      }
+
+      const { PositionManager, subscribePositionUpdates } = window.VeloZPositions;
+
+      // Check if API mode is enabled
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiModeEnabled = urlParams.get('api_mode') === 'true';
+
+      if (!apiModeEnabled) {
+        console.log('Positions API mode disabled. Add ?api_mode=true to enable.');
+        return;
+      }
+
+      console.log('Initializing Positions API integration...');
+
+      // Create position manager instance
+      const positionManager = new PositionManager({
+        throttleMs: 100
+      });
+
+      // Track SSE connection
+      let sseConnection = null;
+
+      // Update UI when positions change
+      positionManager.addListener((pm) => {
+        // Update positionsState from the PositionManager instance
+        positionsState.positions = pm.getAllPositions().map(p => ({
+          symbol: p.symbol,
+          size: p.size,
+          avgPrice: p.avgPrice,
+          currentPrice: p.currentPrice,
+          unrealizedPnl: p.unrealizedPnl,
+          realizedPnl: p.realizedPnl,
+          side: p.side
+        }));
+        positionsState.lastUpdate = Date.now();
+        positionsState.connected = true;
+
+        updatePositionsDisplay();
+      });
+
+      // Subscribe to SSE updates
+      function connectPositionsSSE() {
+        // Close existing connection
+        if (sseConnection) {
+          sseConnection.close();
+        }
+
+        // Update status
+        const statusDot = document.getElementById('positionStatusDot');
+        const statusText = document.getElementById('positionStatusText');
+        statusDot.className = 'status-dot connecting';
+        statusText.textContent = 'Connecting...';
+
+        sseConnection = subscribePositionUpdates(apiBase, positionManager, {
+          onConnect: () => {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = 'Connected';
+            positionsState.connected = true;
+          },
+          onError: (e) => {
+            console.error('Positions SSE error:', e);
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = 'Disconnected';
+            positionsState.connected = false;
+          }
+        });
+      }
+
+      // Override refresh to reconnect SSE
+      const refreshBtn = document.getElementById('refreshPositions');
+      refreshBtn.addEventListener('click', () => {
+        positionManager.clear();
+        connectPositionsSSE();
+      });
+
+      // Initial connection
+      connectPositionsSSE();
+
+      // Store for debugging
+      window._positionManager = positionManager;
+      window._positionsSSE = () => sseConnection;
+    });
+  </script>
+
+  <!-- Backtest API Module Integration -->
+  <!-- Load this module to enable real backtest results when backend is available -->
+  <script type="module" src="js/backtest.js"></script>
+
+  <!-- Backtest State and Mock Data -->
+  <script>
+    // ============================================================================
+    // Backtest Tab State Management
+    // ============================================================================
+    const backtestState = {
+      results: [],
+      selectedId: null,
+      compareIds: [],
+      currentView: 'results',
+      connected: false,
+      lastUpdate: null
+    };
+
+    // Generate mock backtest results
+    function generateMockBacktestResults() {
+      const strategies = ['Momentum', 'Mean Reversion', 'Grid Trading', 'Trend Following'];
+      const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+      const results = [];
+
+      for (let i = 0; i < 6; i++) {
+        const strategyName = strategies[i % strategies.length];
+        const symbol = symbols[i % symbols.length];
+        const totalReturn = (Math.random() - 0.3) * 50; // -15% to +35%
+        const maxDrawdown = Math.random() * 20 + 5; // 5% to 25%
+        const sharpe = (Math.random() * 2.5) - 0.5; // -0.5 to 2.0
+        const winRate = Math.random() * 40 + 40; // 40% to 80%
+        const totalTrades = Math.floor(Math.random() * 200) + 50;
+
+        // Generate mock trades
+        const trades = [];
+        for (let t = 0; t < Math.min(totalTrades, 20); t++) {
+          const side = Math.random() > 0.5 ? 'buy' : 'sell';
+          const price = symbol === 'BTCUSDT' ? 45000 + (Math.random() - 0.5) * 5000 :
+                        symbol === 'ETHUSDT' ? 2500 + (Math.random() - 0.5) * 500 : 350 + (Math.random() - 0.5) * 50;
+          const qty = Math.random() * 0.5 + 0.01;
+          const pnl = (Math.random() - 0.4) * 500;
+
+          trades.push({
+            id: `trade-${i}-${t}`,
+            timestamp: Date.now() - (20 - t) * 3600000,
+            symbol: symbol,
+            side: side,
+            price: price,
+            quantity: qty,
+            pnl: pnl,
+            fee: price * qty * 0.001
+          });
+        }
+
+        // Generate mock equity curve
+        const equityCurve = [];
+        let equity = 10000;
+        for (let e = 0; e < 30; e++) {
+          equity += (Math.random() - 0.45) * 200;
+          equityCurve.push({
+            timestamp: Date.now() - (30 - e) * 86400000,
+            equity: equity,
+            drawdown: Math.max(0, 10000 - equity) / 10000 * 100
+          });
+        }
+
+        results.push({
+          id: `bt-${Date.now()}-${i}`,
+          strategyName: strategyName,
+          symbol: symbol,
+          startDate: Date.now() - 30 * 86400000,
+          endDate: Date.now(),
+          totalReturn: totalReturn,
+          maxDrawdown: maxDrawdown,
+          sharpeRatio: sharpe,
+          winRate: winRate,
+          totalTrades: totalTrades,
+          profitFactor: 1 + Math.random(),
+          avgWin: Math.random() * 200 + 50,
+          avgLoss: -(Math.random() * 150 + 30),
+          trades: trades,
+          equityCurve: equityCurve,
+          params: {
+            lookback: { value: 20, min: 5, max: 100 },
+            threshold: { value: 0.02, min: 0.001, max: 0.1 },
+            stopLoss: { value: 0.05, min: 0.01, max: 0.2 }
+          }
+        });
+      }
+
+      return results;
+    }
+
+    // Render backtest result card
+    function renderBacktestCard(result) {
+      const isSelected = backtestState.selectedId === result.id;
+      const isComparing = backtestState.compareIds.includes(result.id);
+      const returnClass = result.totalReturn >= 0 ? 'positive' : 'negative';
+
+      return `
+        <div class="backtest-card ${isSelected ? 'selected' : ''} ${isComparing ? 'comparing' : ''}"
+             data-id="${result.id}" onclick="selectBacktest('${result.id}')">
+          <div class="backtest-card-header">
+            <div class="backtest-card-title">
+              <span class="strategy-name">${escapeHtml(result.strategyName)}</span>
+              <span class="symbol-badge">${escapeHtml(result.symbol)}</span>
+            </div>
+            <div class="backtest-card-actions">
+              <button class="btn-compare btn-secondary" onclick="event.stopPropagation(); toggleCompare('${result.id}')"
+                      title="${isComparing ? 'Remove from comparison' : 'Add to comparison'}">
+                ${isComparing ? '-' : '+'}
+              </button>
+            </div>
+          </div>
+          <div class="backtest-card-metrics">
+            <div class="metric">
+              <span class="metric-label">Return</span>
+              <span class="metric-value ${returnClass}">${result.totalReturn >= 0 ? '+' : ''}${result.totalReturn.toFixed(2)}%</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Max DD</span>
+              <span class="metric-value negative">-${result.maxDrawdown.toFixed(2)}%</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Sharpe</span>
+              <span class="metric-value">${result.sharpeRatio.toFixed(2)}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Win Rate</span>
+              <span class="metric-value">${result.winRate.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div class="backtest-card-footer">
+            <span>${result.totalTrades} trades</span>
+            <span>${new Date(result.endDate).toLocaleDateString()}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // Render backtest results list
+    function renderBacktestResultsList() {
+      const container = document.getElementById('backtestResultsList');
+      if (backtestState.results.length === 0) {
+        container.innerHTML = `
+          <div class="backtest-empty">
+            <p>No backtest results available</p>
+            <p>Run a backtest to see results here</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = backtestState.results.map(r => renderBacktestCard(r)).join('');
+    }
+
+    // Render metrics panel for selected backtest
+    function renderBacktestMetrics() {
+      const container = document.getElementById('backtestMetricsPanel');
+      const result = backtestState.results.find(r => r.id === backtestState.selectedId);
+
+      if (!result) {
+        container.innerHTML = '<div class="metrics-panel-empty">Select a backtest result to view detailed metrics</div>';
+        return;
+      }
+
+      const returnClass = result.totalReturn >= 0 ? 'positive' : 'negative';
+
+      container.innerHTML = `
+        <div class="metrics-section">
+          <h3>Performance Metrics</h3>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-label">Total Return</span>
+              <span class="metric-value ${returnClass}">${result.totalReturn >= 0 ? '+' : ''}${result.totalReturn.toFixed(2)}%</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Max Drawdown</span>
+              <span class="metric-value negative">-${result.maxDrawdown.toFixed(2)}%</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Sharpe Ratio</span>
+              <span class="metric-value">${result.sharpeRatio.toFixed(2)}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Profit Factor</span>
+              <span class="metric-value">${(result.profitFactor || 1).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="metrics-section">
+          <h3>Trade Statistics</h3>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-label">Total Trades</span>
+              <span class="metric-value">${result.totalTrades}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Win Rate</span>
+              <span class="metric-value">${result.winRate.toFixed(1)}%</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Avg Win</span>
+              <span class="metric-value positive">+$${(result.avgWin || 0).toFixed(2)}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Avg Loss</span>
+              <span class="metric-value negative">$${(result.avgLoss || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        <div class="metrics-section">
+          <h3>Period</h3>
+          <div class="metrics-grid">
+            <div class="metric-item">
+              <span class="metric-label">Start Date</span>
+              <span class="metric-value">${new Date(result.startDate).toLocaleDateString()}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">End Date</span>
+              <span class="metric-value">${new Date(result.endDate).toLocaleDateString()}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Render trades table for selected backtest
+    function renderBacktestTrades() {
+      const container = document.getElementById('backtestTradesContainer');
+      const result = backtestState.results.find(r => r.id === backtestState.selectedId);
+
+      if (!result || !result.trades || result.trades.length === 0) {
+        container.innerHTML = '<div class="trades-empty">Select a backtest result to view trade history</div>';
+        return;
+      }
+
+      const tradesHtml = result.trades.map(trade => {
+        const pnlClass = trade.pnl >= 0 ? 'positive' : 'negative';
+        const sideClass = trade.side === 'buy' ? 'side-buy' : 'side-sell';
+
+        return `
+          <tr class="trade-row">
+            <td>${new Date(trade.timestamp).toLocaleString()}</td>
+            <td>${escapeHtml(trade.symbol)}</td>
+            <td class="${sideClass}">${trade.side.toUpperCase()}</td>
+            <td class="mono">${trade.price.toFixed(2)}</td>
+            <td class="mono">${trade.quantity.toFixed(4)}</td>
+            <td class="mono ${pnlClass}">${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}</td>
+            <td class="mono">$${(trade.fee || 0).toFixed(4)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      container.innerHTML = `
+        <table class="trades-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Price</th>
+              <th>Quantity</th>
+              <th>PnL</th>
+              <th>Fee</th>
+            </tr>
+          </thead>
+          <tbody>${tradesHtml}</tbody>
+        </table>
+        <div class="trades-pagination">
+          <span>Showing ${result.trades.length} of ${result.totalTrades} trades</span>
+        </div>
+      `;
+    }
+
+    // Render comparison table
+    function renderBacktestComparison() {
+      const container = document.getElementById('backtestCompareContainer');
+
+      if (backtestState.compareIds.length < 2) {
+        container.innerHTML = '<div class="comparison-empty">Select at least 2 backtest results to compare</div>';
+        return;
+      }
+
+      const compareResults = backtestState.compareIds
+        .map(id => backtestState.results.find(r => r.id === id))
+        .filter(Boolean);
+
+      if (compareResults.length < 2) {
+        container.innerHTML = '<div class="comparison-empty">Select at least 2 backtest results to compare</div>';
+        return;
+      }
+
+      const headers = compareResults.map(r => `<th>${escapeHtml(r.strategyName)}<br><small>${escapeHtml(r.symbol)}</small></th>`).join('');
+
+      const metrics = [
+        { label: 'Total Return', key: 'totalReturn', format: v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`, colorize: true },
+        { label: 'Max Drawdown', key: 'maxDrawdown', format: v => `-${v.toFixed(2)}%`, colorize: false },
+        { label: 'Sharpe Ratio', key: 'sharpeRatio', format: v => v.toFixed(2), colorize: false },
+        { label: 'Win Rate', key: 'winRate', format: v => `${v.toFixed(1)}%`, colorize: false },
+        { label: 'Total Trades', key: 'totalTrades', format: v => v.toString(), colorize: false },
+        { label: 'Profit Factor', key: 'profitFactor', format: v => (v || 1).toFixed(2), colorize: false }
+      ];
+
+      const rows = metrics.map(m => {
+        const cells = compareResults.map(r => {
+          const value = r[m.key];
+          const className = m.colorize ? (value >= 0 ? 'positive' : 'negative') : '';
+          return `<td class="${className}">${m.format(value)}</td>`;
+        }).join('');
+        return `<tr><td class="row-label">${m.label}</td>${cells}</tr>`;
+      }).join('');
+
+      container.innerHTML = `
+        <table class="comparison-table">
+          <thead>
+            <tr><th>Metric</th>${headers}</tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    // Select a backtest result
+    function selectBacktest(id) {
+      backtestState.selectedId = id;
+      renderBacktestResultsList();
+      renderBacktestMetrics();
+      renderBacktestTrades();
+
+      // Update equity curve selector
+      const select = document.getElementById('equityCurveSelect');
+      select.value = id;
+    }
+
+    // Toggle comparison selection
+    function toggleCompare(id) {
+      const index = backtestState.compareIds.indexOf(id);
+      if (index >= 0) {
+        backtestState.compareIds.splice(index, 1);
+      } else if (backtestState.compareIds.length < 4) {
+        backtestState.compareIds.push(id);
+      }
+      renderBacktestResultsList();
+      renderBacktestComparison();
+    }
+
+    // Switch backtest view
+    function switchBacktestView(view) {
+      backtestState.currentView = view;
+
+      // Update tab buttons
+      document.querySelectorAll('.backtest-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.backtestView === view);
+      });
+
+      // Update view visibility
+      document.getElementById('backtestResultsView').style.display = view === 'results' ? 'block' : 'none';
+      document.getElementById('backtestMetricsView').style.display = view === 'metrics' ? 'block' : 'none';
+      document.getElementById('backtestTradesView').style.display = view === 'trades' ? 'block' : 'none';
+      document.getElementById('backtestCompareView').style.display = view === 'compare' ? 'block' : 'none';
+    }
+
+    // Refresh backtest results
+    async function refreshBacktestResults() {
+      try {
+        const resp = await fetch(`${apiBase}/api/backtest/results`);
+        if (resp.ok) {
+          const data = await resp.json();
+          backtestState.results = (data.results || data || []).map(r => ({
+            id: r.id || `bt-${Date.now()}`,
+            strategyName: r.strategy_name || r.strategyName || '',
+            symbol: r.symbol || '',
+            startDate: r.start_date || r.startDate || Date.now(),
+            endDate: r.end_date || r.endDate || Date.now(),
+            totalReturn: parseFloat(r.total_return || r.totalReturn) || 0,
+            maxDrawdown: parseFloat(r.max_drawdown || r.maxDrawdown) || 0,
+            sharpeRatio: parseFloat(r.sharpe_ratio || r.sharpeRatio) || 0,
+            winRate: parseFloat(r.win_rate || r.winRate) || 0,
+            totalTrades: parseInt(r.total_trades || r.totalTrades) || 0,
+            profitFactor: parseFloat(r.profit_factor || r.profitFactor) || 1,
+            avgWin: parseFloat(r.avg_win || r.avgWin) || 0,
+            avgLoss: parseFloat(r.avg_loss || r.avgLoss) || 0,
+            trades: r.trades || [],
+            equityCurve: r.equity_curve || r.equityCurve || [],
+            params: r.params || {}
+          }));
+          backtestState.connected = true;
+        } else {
+          throw new Error('API not available');
+        }
+      } catch (e) {
+        // Fall back to mock data
+        backtestState.results = generateMockBacktestResults();
+        backtestState.connected = false;
+      }
+
+      backtestState.lastUpdate = Date.now();
+      renderBacktestResultsList();
+      updateEquityCurveSelect();
+    }
+
+    // Update equity curve select options
+    function updateEquityCurveSelect() {
+      const select = document.getElementById('equityCurveSelect');
+      select.innerHTML = '<option value="">Select a backtest...</option>' +
+        backtestState.results.map(r =>
+          `<option value="${r.id}">${escapeHtml(r.strategyName)} - ${escapeHtml(r.symbol)}</option>`
+        ).join('');
+    }
+
+    // Backtest tab event listeners
+    document.querySelectorAll('.backtest-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        switchBacktestView(tab.dataset.backtestView);
+      });
+    });
+
+    document.getElementById('refreshBacktests').addEventListener('click', () => {
+      refreshBacktestResults().catch(console.error);
+    });
+
+    document.getElementById('runBacktest').addEventListener('click', () => {
+      alert('Backtest configuration dialog coming soon!');
+    });
+
+    document.getElementById('equityCurveSelect').addEventListener('change', (e) => {
+      if (e.target.value) {
+        selectBacktest(e.target.value);
+      }
+    });
+
+    // Initialize backtest with mock data
+    backtestState.results = generateMockBacktestResults();
+    backtestState.lastUpdate = Date.now();
+    renderBacktestResultsList();
+    updateEquityCurveSelect();
+  </script>
+
+  <!-- Backtest API Integration Script -->
+  <script>
+    // Wait for backtest.js module to load
+    window.addEventListener('load', () => {
+      // Check if VeloZBacktest module is available
+      if (typeof window.VeloZBacktest === 'undefined') {
+        console.log('Backtest API module not loaded, using inline mock data');
+        return;
+      }
+
+      const { BacktestManager, fetchBacktestResults } = window.VeloZBacktest;
+
+      // Check if API mode is enabled
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiModeEnabled = urlParams.get('api_mode') === 'true';
+
+      if (!apiModeEnabled) {
+        console.log('Backtest API mode disabled. Add ?api_mode=true to enable.');
+        return;
+      }
+
+      console.log('Initializing Backtest API integration...');
+
+      // Create backtest manager instance
+      const backtestManager = new BacktestManager();
+
+      // Update UI when backtest results change
+      backtestManager.addListener((manager) => {
+        backtestState.results = manager.results.map(r => ({
+          id: r.id,
+          strategyName: r.strategyName,
+          symbol: r.symbol,
+          startDate: r.startDate,
+          endDate: r.endDate,
+          totalReturn: r.totalReturn,
+          maxDrawdown: r.maxDrawdown,
+          sharpeRatio: r.sharpeRatio,
+          winRate: r.winRate,
+          totalTrades: r.totalTrades,
+          profitFactor: r.profitFactor,
+          avgWin: r.avgWin,
+          avgLoss: r.avgLoss,
+          trades: r.trades,
+          equityCurve: r.equityCurve,
+          params: r.params
+        }));
+        backtestState.selectedId = manager.selectedId;
+        backtestState.compareIds = [...manager.compareIds];
+        backtestState.connected = true;
+        backtestState.lastUpdate = Date.now();
+
+        renderBacktestResultsList();
+        renderBacktestMetrics();
+        renderBacktestTrades();
+        renderBacktestComparison();
+        updateEquityCurveSelect();
+      });
+
+      // Override refresh to use API
+      const originalRefresh = refreshBacktestResults;
+      window.refreshBacktestResults = async function() {
+        try {
+          const results = await fetchBacktestResults(apiBase);
+          for (const r of results) {
+            backtestManager.addResult(r);
+          }
+          backtestState.connected = true;
+        } catch (e) {
+          console.warn('Failed to fetch backtest results from API:', e);
+          // Fall back to original mock behavior
+          await originalRefresh();
+        }
+      };
+
+      // Initial fetch
+      refreshBacktestResults().catch(console.error);
+
+      // Store for debugging
+      window._backtestManager = backtestManager;
+    });
   </script>
 </body>
 
