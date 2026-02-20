@@ -5,8 +5,7 @@
 // std::abs/std::pow/std::sqrt for math operations (standard C++ library)
 #include <cmath>
 #include <numeric>
-// std::vector for algorithm support (std::sort, std::accumulate)
-#include <vector>
+// kj::Vector for dynamic arrays (std::sort/accumulate work with kj::Vector iterators)
 
 namespace veloz::risk {
 
@@ -41,16 +40,17 @@ void RiskMetricsCalculator::calculate_var(RiskMetrics& metrics) const {
   }
 
   // Calculate daily returns
-  std::vector<double> daily_returns;
+  kj::Vector<double> daily_returns;
   double cumulative_profit = 0.0;
 
   for (const auto& trade : trades_) {
     double return_pct = (trade.profit / (trade.entry_price * trade.quantity)) * 100;
-    daily_returns.push_back(return_pct);
+    daily_returns.add(return_pct);
   }
 
-  // Sort returns
-  std::vector<double> sorted_returns = daily_returns;
+  // Sort returns (kj::Vector iterators are raw pointers, compatible with std::sort)
+  kj::Vector<double> sorted_returns;
+  sorted_returns.addAll(daily_returns);
   std::sort(sorted_returns.begin(), sorted_returns.end());
 
   // Calculate VaR
@@ -73,14 +73,14 @@ void RiskMetricsCalculator::calculate_max_drawdown(RiskMetrics& metrics) const {
   }
 
   // Calculate cumulative returns
-  std::vector<double> cumulative_returns;
+  kj::Vector<double> cumulative_returns;
   double cumulative_profit = 0.0;
   double peak_profit = 0.0;
   double max_drawdown = 0.0;
 
   for (const auto& trade : trades_) {
     cumulative_profit += trade.profit;
-    cumulative_returns.push_back(cumulative_profit);
+    cumulative_returns.add(cumulative_profit);
 
     if (cumulative_profit > peak_profit) {
       peak_profit = cumulative_profit;
@@ -101,14 +101,15 @@ void RiskMetricsCalculator::calculate_sharpe_ratio(RiskMetrics& metrics) const {
   }
 
   // Calculate daily returns
-  std::vector<double> daily_returns;
+  kj::Vector<double> daily_returns;
 
   for (const auto& trade : trades_) {
     double return_pct = (trade.profit / (trade.entry_price * trade.quantity)) * 100;
-    daily_returns.push_back(return_pct);
+    daily_returns.add(return_pct);
   }
 
-  // Calculate average return
+  // Calculate average return (kj::Vector iterators are raw pointers, compatible with
+  // std::accumulate)
   double avg_return =
       std::accumulate(daily_returns.begin(), daily_returns.end(), 0.0) / daily_returns.size();
 

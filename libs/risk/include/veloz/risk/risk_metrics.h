@@ -5,8 +5,6 @@
 #include <kj/common.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-// std::vector for algorithm support (std::sort, std::accumulate)
-#include <vector>
 
 namespace veloz::risk {
 
