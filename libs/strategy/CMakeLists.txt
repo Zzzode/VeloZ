@@ -1,7 +1,11 @@
 add_library(veloz_strategy
     src/strategy_manager.cpp
     src/advanced_strategies.cpp
-    src/test_strategy.cpp
+    src/trend_following_strategy.cpp
+    src/mean_reversion_strategy.cpp
+    src/momentum_strategy.cpp
+    src/market_making_strategy.cpp
+    src/grid_strategy.cpp
 )
 
 target_include_directories(veloz_strategy
@@ -25,6 +29,12 @@ if(VELOZ_BUILD_TESTS)
     add_executable(veloz_strategy_tests
         tests/test_strategy_manager.cpp
         tests/test_advanced_strategies.cpp
+        tests/test_trend_following_strategy.cpp
+        tests/test_mean_reversion_strategy.cpp
+        tests/test_market_making_strategy.cpp
+        tests/test_momentum_strategy.cpp
+        tests/test_grid_strategy.cpp
+        tests/test_strategy_impl.cpp
     )
 
     target_link_libraries(veloz_strategy_tests

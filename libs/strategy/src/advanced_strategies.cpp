@@ -412,11 +412,13 @@ kj::StringPtr StochasticOscillatorStrategy::get_strategy_type() {
 
 // MarketMakingHFTStrategy implementation
 MarketMakingHFTStrategy::MarketMakingHFTStrategy(const StrategyConfig& config)
-    : BaseStrategy(config), spread_(get_param_or_default(config.parameters, "spread"_kj, 0.001)),
-      order_size_(get_param_or_default(config.parameters, "order_size"_kj, 0.01)),
-      refresh_rate_ms_(
-          static_cast<int>(get_param_or_default(config.parameters, "refresh_rate_ms"_kj, 100.0))),
-      last_order_time_(0) {}
+    : BaseStrategy(config), last_order_time_(0) {
+  // Note: BaseStrategy moves config, so we must read from config_ member
+  spread_ = get_param_or_default(config_.parameters, "spread"_kj, 0.001);
+  order_size_ = get_param_or_default(config_.parameters, "order_size"_kj, 0.01);
+  refresh_rate_ms_ =
+      static_cast<int>(get_param_or_default(config_.parameters, "refresh_rate_ms"_kj, 100.0));
+}
 
 StrategyType MarketMakingHFTStrategy::get_type() const {
   return StrategyType::MarketMaking;
@@ -463,9 +465,11 @@ kj::StringPtr MarketMakingHFTStrategy::get_strategy_type() {
 
 // CrossExchangeArbitrageStrategy implementation
 CrossExchangeArbitrageStrategy::CrossExchangeArbitrageStrategy(const StrategyConfig& config)
-    : BaseStrategy(config),
-      min_profit_(get_param_or_default(config.parameters, "min_profit"_kj, 0.001)),
-      max_slippage_(get_param_or_default(config.parameters, "max_slippage"_kj, 0.0005)) {}
+    : BaseStrategy(config) {
+  // Note: BaseStrategy moves config, so we must read from config_ member
+  min_profit_ = get_param_or_default(config_.parameters, "min_profit"_kj, 0.001);
+  max_slippage_ = get_param_or_default(config_.parameters, "max_slippage"_kj, 0.0005);
+}
 
 StrategyType CrossExchangeArbitrageStrategy::get_type() const {
   return StrategyType::Arbitrage;

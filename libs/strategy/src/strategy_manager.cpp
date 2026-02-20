@@ -135,6 +135,32 @@ bool StrategyManager::stop_strategy(kj::StringPtr strategy_id) {
   return false;
 }
 
+bool StrategyManager::pause_strategy(kj::StringPtr strategy_id) {
+  KJ_IF_SOME(strategy, strategies_.find(strategy_id)) {
+    if (strategy != nullptr) {
+      strategy->on_pause();
+      logger_->info(kj::str("Strategy paused: ", strategy_id).cStr());
+      return true;
+    }
+  }
+
+  logger_->error(kj::str("Strategy not found: ", strategy_id).cStr());
+  return false;
+}
+
+bool StrategyManager::resume_strategy(kj::StringPtr strategy_id) {
+  KJ_IF_SOME(strategy, strategies_.find(strategy_id)) {
+    if (strategy != nullptr) {
+      strategy->on_resume();
+      logger_->info(kj::str("Strategy resumed: ", strategy_id).cStr());
+      return true;
+    }
+  }
+
+  logger_->error(kj::str("Strategy not found: ", strategy_id).cStr());
+  return false;
+}
+
 bool StrategyManager::remove_strategy(kj::StringPtr strategy_id) {
   KJ_IF_SOME(strategy, strategies_.find(strategy_id)) {
     if (strategy != nullptr) {
@@ -193,7 +219,11 @@ void StrategyManager::on_market_event(const veloz::market::MarketEvent& event) {
   // kj::HashMap iteration uses entry with .key and .value
   for (auto& entry : strategies_) {
     if (entry.value != nullptr) {
-      entry.value->on_event(event);
+      auto state = entry.value->get_state();
+      // Only dispatch to running strategies (not paused, stopped, or error)
+      if (state.status == StrategyStatus::Running) {
+        entry.value->on_event(event);
+      }
     }
   }
 }
@@ -202,7 +232,11 @@ void StrategyManager::on_position_update(const veloz::oms::Position& position) {
   // kj::HashMap iteration uses entry with .key and .value
   for (auto& entry : strategies_) {
     if (entry.value != nullptr) {
-      entry.value->on_position_update(position);
+      auto state = entry.value->get_state();
+      // Only dispatch to running strategies (not paused, stopped, or error)
+      if (state.status == StrategyStatus::Running) {
+        entry.value->on_position_update(position);
+      }
     }
   }
 }
@@ -211,7 +245,11 @@ void StrategyManager::on_timer(int64_t timestamp) {
   // kj::HashMap iteration uses entry with .key and .value
   for (auto& entry : strategies_) {
     if (entry.value != nullptr) {
-      entry.value->on_timer(timestamp);
+      auto state = entry.value->get_state();
+      // Only dispatch to running strategies (not paused, stopped, or error)
+      if (state.status == StrategyStatus::Running) {
+        entry.value->on_timer(timestamp);
+      }
     }
   }
 }
@@ -291,6 +329,26 @@ kj::String StrategyManager::load_strategy(const StrategyConfig& config,
     lock->strategies.upsert(kj::str(strategy_id), strategy.addRef(),
                             [](kj::Rc<IStrategy>&, kj::Rc<IStrategy>&&) {});
 
+    // Store config for recovery
+    StrategyConfig config_copy;
+    config_copy.name = kj::str(config.name);
+    config_copy.type = config.type;
+    config_copy.risk_per_trade = config.risk_per_trade;
+    config_copy.max_position_size = config.max_position_size;
+    config_copy.stop_loss = config.stop_loss;
+    config_copy.take_profit = config.take_profit;
+
+    for (auto& sym : config.symbols) {
+      config_copy.symbols.add(kj::str(sym));
+    }
+
+    for (auto& [key, value] : config.parameters) {
+      config_copy.parameters.insert(kj::str(key), value);
+    }
+
+    lock->configs.upsert(kj::str(strategy_id), kj::mv(config_copy),
+                         [](StrategyConfig&, StrategyConfig&&) {});
+
     // Also store in legacy map for backward compatibility using kj::HashMap upsert
     strategies_.upsert(kj::str(strategy_id), kj::mv(strategy),
                        [](kj::Rc<IStrategy>&, kj::Rc<IStrategy>&&) {});
@@ -314,6 +372,7 @@ bool StrategyManager::unload_strategy(kj::StringPtr strategy_id) {
     }
 
     lock->strategies.erase(strategy_id);
+    lock->configs.erase(strategy_id);
 
     // Also remove from legacy map
     strategies_.erase(strategy_id);
@@ -470,6 +529,82 @@ bool StrategyManager::is_strategy_loaded(kj::StringPtr strategy_id) const {
 size_t StrategyManager::strategy_count() const {
   auto lock = state_.lockShared();
   return lock->strategies.size();
+}
+
+void StrategyManager::on_order_rejected(const veloz::exec::PlaceOrderRequest& req,
+                                        kj::StringPtr reason) {
+  // Route rejection to the originating strategy
+  if (req.strategy_id.size() == 0) {
+    // No strategy ID - cannot route
+    logger_->warn("Order rejection received without strategy_id, cannot route");
+    return;
+  }
+
+  auto lock = state_.lockExclusive();
+  KJ_IF_SOME(strategy, lock->strategies.find(req.strategy_id)) {
+    strategy->on_order_rejected(req, reason);
+  }
+  else {
+    logger_->warn(kj::str("Order rejection for unknown strategy: ", req.strategy_id).cStr());
+  }
+}
+
+bool StrategyManager::save_all_states() {
+  auto lock = state_.lockExclusive();
+  bool all_saved = true;
+
+  for (auto& entry : lock->strategies) {
+    if (entry.value != nullptr) {
+      auto state = entry.value->get_state();
+      // Note: Persistence should be injected here for production use
+      // For now, just log the save
+      logger_->info(kj::str("Saving state for strategy: ", state.strategy_id).cStr());
+    }
+  }
+
+  return all_saved;
+}
+
+bool StrategyManager::restore_state(kj::StringPtr strategy_id, const StrategyState& state) {
+  KJ_IF_SOME(strategy, strategies_.find(strategy_id)) {
+    if (strategy != nullptr) {
+      // Restore state to strategy
+      // Note: BaseStrategy doesn't have a set_state() method yet
+      // This would need to be added for full persistence
+      logger_->info(kj::str("Restoring state for strategy: ", strategy_id).cStr());
+      return true;
+    }
+  }
+
+  logger_->error(kj::str("Strategy not found for state restore: ", strategy_id).cStr());
+  return false;
+}
+
+kj::Maybe<StrategyConfig> StrategyManager::get_strategy_config(kj::StringPtr strategy_id) const {
+  auto lock = state_.lockShared();
+  KJ_IF_SOME(config, lock->configs.find(strategy_id)) {
+    StrategyConfig result;
+    result.name = kj::str(config.name);
+    result.type = config.type;
+    result.risk_per_trade = config.risk_per_trade;
+    result.max_position_size = config.max_position_size;
+    result.stop_loss = config.stop_loss;
+    result.take_profit = config.take_profit;
+
+    // Copy symbols
+    for (auto& sym : config.symbols) {
+      result.symbols.add(kj::str(sym));
+    }
+
+    // Copy parameters
+    for (auto& [key, value] : config.parameters) {
+      result.parameters.insert(kj::str(key), value);
+    }
+
+    return result;
+  }
+
+  return kj::none;
 }
 
 } // namespace veloz::strategy

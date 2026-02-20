@@ -39,6 +39,14 @@ public:
     running_ = false;
   }
 
+  void on_pause() override {
+    running_ = false;
+  }
+
+  void on_resume() override {
+    running_ = true;
+  }
+
   void on_event(const veloz::market::MarketEvent& event) override {}
   void on_position_update(const veloz::oms::Position& position) override {}
   void on_timer(int64_t timestamp) override {}
@@ -63,6 +71,21 @@ public:
   void reset() override {
     initialized_ = false;
     running_ = false;
+  }
+
+  bool update_parameters(const kj::TreeMap<kj::String, double>& parameters) override {
+    return false;
+  }
+
+  bool supports_hot_reload() const override {
+    return false;
+  }
+
+  kj::Maybe<const StrategyMetrics&> get_metrics() const override {
+    return kj::none;
+  }
+
+  void on_order_rejected(const veloz::exec::PlaceOrderRequest& req, kj::StringPtr reason) override {
   }
 
   static kj::StringPtr get_strategy_type() {
