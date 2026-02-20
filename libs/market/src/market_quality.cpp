@@ -3,15 +3,6 @@
 #include <cmath> // std::abs - standard C++ math function (no KJ equivalent)
 #include <kj/debug.h>
 
-namespace {
-// Helper to build description strings using kj::str then convert to std::string
-// (Anomaly.description is std::string because kj::String is not copyable)
-template <typename... Args> std::string make_description(Args&&... args) {
-  kj::String kjStr = kj::str(std::forward<Args>(args)...);
-  return std::string(kjStr.cStr());
-}
-} // namespace
-
 namespace veloz::market {
 
 kj::StringPtr anomaly_type_to_string(AnomalyType type) {
@@ -155,8 +146,8 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_staleness(int64_t current_time_n
     anomaly.expected = static_cast<double>(config_.stale_threshold_ms);
     anomaly.actual = static_cast<double>(age_ms);
     anomaly.timestamp_ns = current_time_ns;
-    anomaly.description = make_description("Data stale for ", age_ms,
-                                           "ms (threshold: ", config_.stale_threshold_ms, "ms)");
+    anomaly.description =
+        kj::str("Data stale for ", age_ms, "ms (threshold: ", config_.stale_threshold_ms, "ms)");
     stale_count_++;
     record_anomaly(anomaly);
     return anomaly;
@@ -198,13 +189,26 @@ QualityScore MarketQualityAnalyzer::quality_score() const {
 }
 
 kj::Vector<Anomaly> MarketQualityAnalyzer::recent_anomalies(size_t count) const {
+  // Note: This method is marked const but needs to move from anomaly_history_
+  // which is technically const-correct because we're returning a copy (by move)
+  // The const_cast is safe here as we're only moving data out, not modifying state
+  auto& history = const_cast<kj::Vector<Anomaly>&>(anomaly_history_);
   kj::Vector<Anomaly> result;
-  size_t to_copy =
-      (count == 0 || count > anomaly_history_.size()) ? anomaly_history_.size() : count;
+  size_t to_copy = (count == 0 || count > history.size()) ? history.size() : count;
 
-  // Return newest first
+  // Return newest first (move from end towards beginning)
   for (size_t i = 0; i < to_copy; ++i) {
-    result.add(anomaly_history_[anomaly_history_.size() - 1 - i]);
+    size_t idx = history.size() - 1 - i;
+    // We need to construct new Anomalies since we can't move from a const reference
+    // This requires cloning the description string
+    Anomaly anomaly;
+    anomaly.type = history[idx].type;
+    anomaly.severity = history[idx].severity;
+    anomaly.expected = history[idx].expected;
+    anomaly.actual = history[idx].actual;
+    anomaly.timestamp_ns = history[idx].timestamp_ns;
+    anomaly.description = kj::str(history[idx].description);
+    result.add(kj::mv(anomaly));
   }
   return result;
 }
@@ -247,8 +251,8 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_price_spike(double price, int64_
     anomaly.actual = price;
     anomaly.timestamp_ns = timestamp_ns;
     anomaly.description =
-        make_description("Price spike: ", price_change * 100,
-                         "% change (threshold: ", config_.price_spike_threshold * 100, "%)");
+        kj::str("Price spike: ", price_change * 100,
+                "% change (threshold: ", config_.price_spike_threshold * 100, "%)");
     return anomaly;
   }
   return kj::none;
@@ -274,7 +278,7 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_volume_anomaly(double volume,
     anomaly.expected = avg_volume;
     anomaly.actual = volume;
     anomaly.timestamp_ns = timestamp_ns;
-    anomaly.description = make_description("Volume spike: ", volume_ratio, "x average");
+    anomaly.description = kj::str("Volume spike: ", volume_ratio, "x average");
     return anomaly;
   }
 
@@ -286,7 +290,7 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_volume_anomaly(double volume,
     anomaly.expected = avg_volume;
     anomaly.actual = volume;
     anomaly.timestamp_ns = timestamp_ns;
-    anomaly.description = make_description("Volume drop: ", volume_ratio * 100, "% of average");
+    anomaly.description = kj::str("Volume drop: ", volume_ratio * 100, "% of average");
     return anomaly;
   }
 
@@ -309,8 +313,8 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_spread(double bid, double ask,
     anomaly.expected = config_.max_spread_bps;
     anomaly.actual = spread_bps;
     anomaly.timestamp_ns = timestamp_ns;
-    anomaly.description = make_description("Spread widening: ", spread_bps,
-                                           " bps (threshold: ", config_.max_spread_bps, ")");
+    anomaly.description =
+        kj::str("Spread widening: ", spread_bps, " bps (threshold: ", config_.max_spread_bps, ")");
     return anomaly;
   }
   return kj::none;
@@ -327,8 +331,8 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_timestamp(int64_t event_ts_ns,
     anomaly.expected = static_cast<double>(config_.max_clock_skew_ms);
     anomaly.actual = static_cast<double>(skew_ms);
     anomaly.timestamp_ns = current_ts_ns;
-    anomaly.description = make_description("Timestamp skew: ", skew_ms,
-                                           "ms (threshold: ", config_.max_clock_skew_ms, "ms)");
+    anomaly.description =
+        kj::str("Timestamp skew: ", skew_ms, "ms (threshold: ", config_.max_clock_skew_ms, "ms)");
     return anomaly;
   }
   return kj::none;
@@ -336,7 +340,16 @@ kj::Maybe<Anomaly> MarketQualityAnalyzer::check_timestamp(int64_t event_ts_ns,
 
 void MarketQualityAnalyzer::record_anomaly(const Anomaly& anomaly) {
   total_anomalies_++;
-  anomaly_history_.add(anomaly);
+
+  // Clone the Anomaly (copy all fields, clone description string)
+  Anomaly cloned;
+  cloned.type = anomaly.type;
+  cloned.severity = anomaly.severity;
+  cloned.expected = anomaly.expected;
+  cloned.actual = anomaly.actual;
+  cloned.timestamp_ns = anomaly.timestamp_ns;
+  cloned.description = kj::str(anomaly.description);
+  anomaly_history_.add(kj::mv(cloned));
 
   // Trim history if needed
   while (anomaly_history_.size() > kMaxAnomalyHistory) {
@@ -347,7 +360,7 @@ void MarketQualityAnalyzer::record_anomaly(const Anomaly& anomaly) {
     anomaly_history_ = kj::mv(new_history);
   }
 
-  // Notify callback
+  // Notify callback (callback takes const Anomaly&, so original anomaly is fine)
   KJ_IF_SOME(cb, anomaly_callback_) {
     cb(anomaly);
   }

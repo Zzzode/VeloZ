@@ -15,7 +15,6 @@
 #include <kj/function.h>
 #include <kj/string.h>
 #include <kj/vector.h>
-#include <string> // std::string for copyable Anomaly struct - kj::String is not copyable
 
 namespace veloz::market {
 
@@ -40,6 +39,9 @@ enum class AnomalyType : uint8_t {
 
 /**
  * @brief Detected anomaly information
+ *
+ * Note: Anomaly is move-only because kj::String is not copyable.
+ * Use kj::mv() to transfer ownership or pass by const reference.
  */
 struct Anomaly {
   AnomalyType type{AnomalyType::None};
@@ -47,7 +49,14 @@ struct Anomaly {
   double expected{0.0};    ///< Expected value
   double actual{0.0};      ///< Actual value
   int64_t timestamp_ns{0}; ///< When anomaly was detected
-  std::string description; ///< Human-readable description (std::string for copyability)
+  kj::String description;  ///< Human-readable description
+
+  // Move-only type (kj::String is not copyable)
+  Anomaly() = default;
+  Anomaly(Anomaly&&) = default;
+  Anomaly& operator=(Anomaly&&) = default;
+  Anomaly(const Anomaly&) = delete;
+  Anomaly& operator=(const Anomaly&) = delete;
 };
 
 /**

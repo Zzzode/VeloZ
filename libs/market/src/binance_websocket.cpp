@@ -1,7 +1,6 @@
 #include "veloz/market/binance_websocket.h"
 
 // KJ library includes for async I/O and networking
-// Note: std::stod used for string-to-double conversion (no KJ equivalent)
 #include <chrono> // std::chrono - KJ timer uses different time representation
 #include <kj/async-io.h>
 #include <kj/common.h>
@@ -11,9 +10,91 @@
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/timer.h>
-#include <random> // std::random_device, std::mt19937 - KJ doesn't provide RNG
+// std::random_device and std::mt19937 - KJ doesn't provide RNG functionality
+// Required for WebSocket mask key generation and jitter in reconnection
+#include <random>
 
 namespace veloz::market {
+
+namespace detail {
+
+// Convert kj::StringPtr to double (KJ equivalent of std::stod)
+// KJ doesn't provide a direct string-to-double conversion function,
+// so we implement a manual parser that handles the common cases.
+double kjStod(kj::StringPtr str) {
+  // Handle empty string
+  if (str.size() == 0) {
+    return 0.0;
+  }
+
+  double result = 0.0;
+  bool isNegative = false;
+  size_t i = 0;
+
+  // Skip leading whitespace
+  while (i < str.size() && (str[i] == ' ' || str[i] == '\t')) {
+    ++i;
+  }
+
+  // Check for negative sign
+  if (i < str.size() && str[i] == '-') {
+    isNegative = true;
+    ++i;
+  } else if (i < str.size() && str[i] == '+') {
+    ++i;
+  }
+
+  // Parse integer part
+  while (i < str.size() && str[i] >= '0' && str[i] <= '9') {
+    result = result * 10.0 + (str[i] - '0');
+    ++i;
+  }
+
+  // Parse fractional part
+  if (i < str.size() && str[i] == '.') {
+    ++i;
+    double divisor = 10.0;
+    while (i < str.size() && str[i] >= '0' && str[i] <= '9') {
+      result += (str[i] - '0') / divisor;
+      divisor *= 10.0;
+      ++i;
+    }
+  }
+
+  // Handle scientific notation (e.g., 1.5e-8)
+  if (i < str.size() && (str[i] == 'e' || str[i] == 'E')) {
+    ++i;
+    bool expNegative = false;
+    if (i < str.size() && str[i] == '-') {
+      expNegative = true;
+      ++i;
+    } else if (i < str.size() && str[i] == '+') {
+      ++i;
+    }
+
+    int exponent = 0;
+    while (i < str.size() && str[i] >= '0' && str[i] <= '9') {
+      exponent = exponent * 10 + (str[i] - '0');
+      ++i;
+    }
+
+    // Apply exponent
+    double expMultiplier = 1.0;
+    for (int j = 0; j < exponent; ++j) {
+      expMultiplier *= 10.0;
+    }
+
+    if (expNegative) {
+      result /= expMultiplier;
+    } else {
+      result *= expMultiplier;
+    }
+  }
+
+  return isNegative ? -result : result;
+}
+
+} // namespace detail
 
 using namespace veloz::core;
 
@@ -872,11 +953,11 @@ kj::String BinanceWebSocket::build_subscription_message(const veloz::common::Sym
   kj::String stream = kj::str(formatted_symbol, stream_suffix);
 
   auto builder = JsonBuilder::object();
-  builder.put("method", subscribe ? "SUBSCRIBE" : "UNSUBSCRIBE");
-  builder.put_array("params", [&](JsonBuilder& arr) { arr.add(std::string(stream.cStr())); });
-  builder.put("id", subscription_state_.lockExclusive()->next_subscription_id++);
+  builder.put("method"_kj, subscribe ? "SUBSCRIBE"_kj : "UNSUBSCRIBE"_kj);
+  builder.put_array("params"_kj, [&](JsonBuilder& arr) { arr.add(stream); });
+  builder.put("id"_kj, subscription_state_.lockExclusive()->next_subscription_id++);
 
-  return kj::str(builder.build().c_str());
+  return builder.build();
 }
 
 kj::Promise<bool> BinanceWebSocket::subscribe(const veloz::common::SymbolId& symbol,
@@ -1042,17 +1123,17 @@ void BinanceWebSocket::reset_reconnect_state() {
 
 void BinanceWebSocket::handle_message(kj::StringPtr message) {
   KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
-               auto doc = JsonDocument::parse(std::string(message.cStr()));
+               auto doc = JsonDocument::parse(message);
                auto root = doc.root();
 
-               auto stream = root["stream"];
-               auto data = root["data"];
+               auto stream = root["stream"_kj];
+               auto data = root["data"_kj];
 
                if (!stream.is_string() || !data.is_valid()) {
                  return;
                }
 
-               kj::String stream_str = kj::heapString(stream.get_string().c_str());
+               kj::String stream_str = stream.get_string();
 
                // Parse symbol and event type from stream name - find '@' separator
                kj::Maybe<size_t> separator_pos = kj::none;
@@ -1177,8 +1258,10 @@ MarketEvent BinanceWebSocket::parse_book_message(const veloz::core::JsonValue& d
     auto bids = data["b"];
     if (bids.is_array()) {
       bids.for_each_array([&](const JsonValue& bid) {
-        double price = std::stod(bid[0].get_string());
-        double qty = std::stod(bid[1].get_string());
+        auto priceStr = bid[0].get_string();
+        auto qtyStr = bid[1].get_string();
+        double price = detail::kjStod(priceStr);
+        double qty = detail::kjStod(qtyStr);
         BookLevel level;
         level.price = price;
         level.qty = qty;
@@ -1189,8 +1272,10 @@ MarketEvent BinanceWebSocket::parse_book_message(const veloz::core::JsonValue& d
     auto asks = data["a"];
     if (asks.is_array()) {
       asks.for_each_array([&](const JsonValue& ask) {
-        double price = std::stod(ask[0].get_string());
-        double qty = std::stod(ask[1].get_string());
+        auto priceStr = ask[0].get_string();
+        auto qtyStr = ask[1].get_string();
+        double price = detail::kjStod(priceStr);
+        double qty = detail::kjStod(qtyStr);
         BookLevel level;
         level.price = price;
         level.qty = qty;
@@ -1226,11 +1311,11 @@ MarketEvent BinanceWebSocket::parse_kline_message(const veloz::core::JsonValue& 
                          .count();
 
   KlineData kline_data;
-  kline_data.open = std::stod(kline["o"].get_string());
-  kline_data.high = std::stod(kline["h"].get_string());
-  kline_data.low = std::stod(kline["l"].get_string());
-  kline_data.close = std::stod(kline["c"].get_string());
-  kline_data.volume = std::stod(kline["v"].get_string());
+  kline_data.open = detail::kjStod(kline["o"].get_string());
+  kline_data.high = detail::kjStod(kline["h"].get_string());
+  kline_data.low = detail::kjStod(kline["l"].get_string());
+  kline_data.close = detail::kjStod(kline["c"].get_string());
+  kline_data.volume = detail::kjStod(kline["v"].get_string());
   kline_data.start_time = kline["t"].get_int(0LL);
   kline_data.close_time = kline["T"].get_int(0LL);
 
