@@ -9,7 +9,7 @@
     {
       "name": "dev",
       "displayName": "Dev (Debug)",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/dev",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -19,7 +19,7 @@
     {
       "name": "release",
       "displayName": "Release",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -29,7 +29,7 @@
     {
       "name": "asan",
       "displayName": "ASan (Clang Debug)",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",

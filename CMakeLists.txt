@@ -14,6 +14,10 @@ option(VELOZ_BUILD_TESTS "Build tests" ON)
 option(VELOZ_BUILD_BACKTEST "Build backtest module" ON)
 option(VELOZ_BUILD_WEBSOCKET "Build WebSocket market data module (uses KJ async I/O)" ON)
 
+if(APPLE)
+    add_link_options(-Wl,-no_warn_duplicate_libraries)
+endif()
+
 # Find OpenSSL for TLS support (required by WebSocket module)
 find_package(OpenSSL 1.1.0 REQUIRED)
 

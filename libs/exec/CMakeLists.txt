@@ -36,15 +36,7 @@ if(WITH_OPENSSL)
     target_link_libraries(veloz_exec PRIVATE kj-tls)
 endif()
 
-# OpenSSL is still required for HMAC-SHA256 signature generation
-# This is needed for Binance API authentication - KJ does not provide HMAC functionality
-find_package(OpenSSL)
-if(OpenSSL_FOUND)
-    target_link_libraries(veloz_exec PUBLIC OpenSSL::Crypto OpenSSL::SSL)
-else()
-    message(WARNING "OpenSSL not found on system - disabling OpenSSL support for HMAC signatures")
-    target_compile_definitions(veloz_exec PRIVATE VELOZ_NO_OPENSSL)
-endif()
+target_link_libraries(veloz_exec PUBLIC OpenSSL::Crypto OpenSSL::SSL)
 
 # Tests
 if(VELOZ_BUILD_TESTS)
