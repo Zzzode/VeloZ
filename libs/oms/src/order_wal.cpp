@@ -225,6 +225,7 @@ kj::Vector<kj::String> OrderWal::list_wal_files() const {
   }
 
   // Sort by name (which sorts by sequence due to hex format)
+  // std::sort - KJ Vector lacks iterator compatibility for std::sort
   std::sort(result.begin(), result.end(),
             [](const kj::String& a, const kj::String& b) { return a < b; });
 
@@ -515,7 +516,7 @@ void OrderWal::deserialize_order_new(kj::ArrayPtr<const kj::byte> payload,
 
   veloz::exec::PlaceOrderRequest request;
   request.client_order_id = kj::mv(client_order_id);
-  request.symbol = veloz::common::SymbolId(symbol_str);
+  request.symbol = veloz::common::SymbolId(kj::mv(symbol_str));
   request.side = side;
   request.type = type;
   request.tif = tif;
@@ -590,7 +591,7 @@ void OrderWal::deserialize_checkpoint(kj::ArrayPtr<const kj::byte> payload,
     // Create order request to populate store
     veloz::exec::PlaceOrderRequest request;
     request.client_order_id = kj::heapString(client_order_id);
-    request.symbol = veloz::common::SymbolId(symbol);
+    request.symbol = veloz::common::SymbolId(kj::mv(symbol));
     request.side = (side == "SELL"_kj) ? veloz::exec::OrderSide::Sell : veloz::exec::OrderSide::Buy;
     request.qty = has_order_qty ? order_qty : 0.0;
     if (has_limit_price) {
