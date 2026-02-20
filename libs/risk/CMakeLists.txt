@@ -2,6 +2,8 @@ add_library(veloz_risk
   src/risk_engine.cpp
   src/circuit_breaker.cpp
   src/risk_metrics.cpp
+  src/dynamic_threshold.cpp
+  src/risk_rule_engine.cpp
 )
 
 target_include_directories(veloz_risk
@@ -17,6 +19,9 @@ if(VELOZ_BUILD_TESTS)
   add_executable(veloz_risk_tests
     tests/test_risk_engine.cpp
     tests/test_circuit_breaker.cpp
+    tests/test_risk_metrics.cpp
+    tests/test_dynamic_threshold.cpp
+    tests/test_risk_rule_engine.cpp
   )
 
   target_link_libraries(veloz_risk_tests

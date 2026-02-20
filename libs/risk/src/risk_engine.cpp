@@ -361,4 +361,57 @@ bool RiskEngine::check_stop_loss(const veloz::oms::Position& position) const {
   }
 }
 
+// ============================================================================
+// Dynamic Threshold Controller Integration
+// ============================================================================
+
+void RiskEngine::set_dynamic_threshold_controller(kj::Own<DynamicThresholdController> controller) {
+  dynamic_controller_ = kj::mv(controller);
+}
+
+DynamicThresholdController* RiskEngine::get_dynamic_threshold_controller() {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller.get();
+  }
+  return nullptr;
+}
+
+const DynamicThresholdController* RiskEngine::get_dynamic_threshold_controller() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller.get();
+  }
+  return nullptr;
+}
+
+void RiskEngine::update_market_condition(const MarketConditionState& state) {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    controller->update_market_condition(state);
+  }
+}
+
+bool RiskEngine::has_dynamic_thresholds() const {
+  return dynamic_controller_ != kj::none;
+}
+
+double RiskEngine::get_effective_max_position_size() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller->get_max_position_size();
+  }
+  return max_position_size_;
+}
+
+double RiskEngine::get_effective_max_leverage() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller->get_max_leverage();
+  }
+  return max_leverage_;
+}
+
+double RiskEngine::get_effective_stop_loss_pct() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller->get_stop_loss_pct();
+  }
+  return stop_loss_percentage_;
+}
+
 } // namespace veloz::risk

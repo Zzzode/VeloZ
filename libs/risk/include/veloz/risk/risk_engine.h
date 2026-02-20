@@ -15,6 +15,7 @@
 
 #include "veloz/exec/order_api.h"
 #include "veloz/oms/position.h"
+#include "veloz/risk/dynamic_threshold.h"
 #include "veloz/risk/risk_metrics.h"
 
 // std::chrono for wall clock timestamps (KJ time is async I/O only)
@@ -22,6 +23,7 @@
 #include <kj/common.h>
 #include <kj/hash.h>
 #include <kj/map.h>
+#include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/vector.h>
 
@@ -263,6 +265,67 @@ public:
    */
   [[nodiscard]] double calculate_used_margin() const;
 
+  // Dynamic threshold control
+  /**
+   * @brief Set dynamic threshold controller
+   * @param controller Dynamic threshold controller (ownership transferred)
+   */
+  void set_dynamic_threshold_controller(kj::Own<DynamicThresholdController> controller);
+
+  /**
+   * @brief Get dynamic threshold controller
+   * @return Pointer to controller, or nullptr if not set
+   */
+  [[nodiscard]] DynamicThresholdController* get_dynamic_threshold_controller();
+
+  /**
+   * @brief Get dynamic threshold controller (const)
+   * @return Const pointer to controller, or nullptr if not set
+   */
+  [[nodiscard]] const DynamicThresholdController* get_dynamic_threshold_controller() const;
+
+  /**
+   * @brief Update market condition for dynamic thresholds
+   * @param state Market condition state
+   */
+  void update_market_condition(const MarketConditionState& state);
+
+  /**
+   * @brief Check if dynamic thresholds are enabled
+   * @return True if dynamic threshold controller is set
+   */
+  [[nodiscard]] bool has_dynamic_thresholds() const;
+
+  /**
+   * @brief Get effective maximum position size
+   *
+   * Returns the dynamic-adjusted max position size if controller is set,
+   * otherwise returns the static max_position_size_.
+   *
+   * @return Effective max position size
+   */
+  [[nodiscard]] double get_effective_max_position_size() const;
+
+  /**
+   * @brief Get effective maximum leverage
+   *
+   * Returns the dynamic-adjusted max leverage if controller is set,
+   * otherwise returns the static max_leverage_.
+   *
+   * @return Effective max leverage
+   */
+  [[nodiscard]] double get_effective_max_leverage() const;
+
+  /**
+   * @brief Get effective stop loss percentage
+   *
+   * Returns the dynamic-adjusted stop loss if controller is set,
+   * otherwise returns the static stop_loss_percentage_.
+   *
+   * @return Effective stop loss percentage
+   */
+  [[nodiscard]] double get_effective_stop_loss_pct() const;
+
 private:
   // Pre-trade check helpers
   [[nodiscard]] bool check_available_funds(const veloz::exec::PlaceOrderRequest& req) const;
@@ -299,6 +362,9 @@ private:
   kj::HashMap<RiskLevel, double> risk_level_thresholds_;
 
   RiskMetricsCalculator metrics_calculator_;
+
+  // Dynamic threshold controller (optional)
+  kj::Maybe<kj::Own<DynamicThresholdController>> dynamic_controller_;
 };
 
 } // namespace veloz::risk

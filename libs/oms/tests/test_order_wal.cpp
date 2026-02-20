@@ -9,9 +9,39 @@ namespace {
 using namespace veloz::oms;
 using namespace veloz::exec;
 
+struct TestContext {
+  kj::Own<kj::Filesystem> fs;
+  kj::Own<const kj::Directory> testRoot;
+  kj::Own<const kj::Directory> testDir;
+  kj::String dirName;
+
+  TestContext(kj::StringPtr testName) {
+    fs = kj::newDiskFilesystem();
+    auto& cwd = fs->getCurrent();
+
+    // Ensure .test_output exists (hidden directory)
+    if (!cwd.exists(kj::Path::parse(".test_output"))) {
+      cwd.openSubdir(kj::Path::parse(".test_output"), kj::WriteMode::CREATE);
+    }
+    testRoot = cwd.openSubdir(kj::Path::parse(".test_output"),
+                              kj::WriteMode::CREATE | kj::WriteMode::MODIFY);
+
+    auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+    dirName = kj::str(testName, "_", timestamp);
+    testDir = testRoot->openSubdir(kj::Path::parse(dirName),
+                                   kj::WriteMode::CREATE | kj::WriteMode::MODIFY);
+  }
+
+  const kj::Directory& dir() {
+    return *testDir;
+  }
+};
+
 KJ_TEST("OrderWal: Basic construction") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("basic_construction");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -25,8 +55,8 @@ KJ_TEST("OrderWal: Basic construction") {
 }
 
 KJ_TEST("OrderWal: Log order new") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("log_order_new");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -54,8 +84,8 @@ KJ_TEST("OrderWal: Log order new") {
 }
 
 KJ_TEST("OrderWal: Log order fill") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("log_order_fill");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -73,8 +103,8 @@ KJ_TEST("OrderWal: Log order fill") {
 }
 
 KJ_TEST("OrderWal: Log order update") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("log_order_update");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -93,8 +123,8 @@ KJ_TEST("OrderWal: Log order update") {
 }
 
 KJ_TEST("OrderWal: Multiple entries") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("multiple_entries");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -124,8 +154,8 @@ KJ_TEST("OrderWal: Multiple entries") {
 }
 
 KJ_TEST("OrderWal: Checkpoint") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("checkpoint");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -161,8 +191,8 @@ KJ_TEST("OrderWal: Checkpoint") {
 }
 
 KJ_TEST("OrderWal: Replay into store") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("replay_into_store");
+  auto& cwd = ctx.dir();
 
   // Use unique prefix to avoid conflicts with previous test runs
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -221,8 +251,8 @@ KJ_TEST("OrderWal: Replay into store") {
 }
 
 KJ_TEST("OrderWal: Stats tracking") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("stats_tracking");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -247,8 +277,8 @@ KJ_TEST("OrderWal: Stats tracking") {
 }
 
 KJ_TEST("OrderWal: Log order cancel") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("log_order_cancel");
+  auto& cwd = ctx.dir();
 
   WalConfig config;
   config.directory = kj::heapString("test_wal");
@@ -266,8 +296,8 @@ KJ_TEST("OrderWal: Log order cancel") {
 }
 
 KJ_TEST("OrderWal: Crash recovery with checkpoint") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("crash_recovery_with_checkpoint");
+  auto& cwd = ctx.dir();
 
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
@@ -356,8 +386,8 @@ KJ_TEST("OrderWal: Crash recovery with checkpoint") {
 }
 
 KJ_TEST("OrderWal: File rotation") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("file_rotation");
+  auto& cwd = ctx.dir();
 
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
@@ -388,22 +418,11 @@ KJ_TEST("OrderWal: File rotation") {
   KJ_EXPECT(stats.entries_written == 50);
   // Rotation should have occurred due to small max_file_size
   KJ_EXPECT(stats.rotations >= 1);
-
-  // Clean up WAL files
-  auto walFileName1 = kj::str(prefix, "_0000000000000000.wal");
-  cwd.tryRemove(kj::Path::parse(walFileName1));
-  // Additional rotated files may exist
-  for (int i = 1; i <= 10; ++i) {
-    char hex_buf[17];
-    snprintf(hex_buf, sizeof(hex_buf), "%016x", i);
-    auto walFileName = kj::str(prefix, "_", hex_buf, ".wal");
-    cwd.tryRemove(kj::Path::parse(walFileName));
-  }
 }
 
 KJ_TEST("OrderWal: Manual rotation") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("manual_rotation");
+  auto& cwd = ctx.dir();
 
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
@@ -431,17 +450,11 @@ KJ_TEST("OrderWal: Manual rotation") {
 
   auto statsAfter = wal.stats();
   KJ_EXPECT(statsAfter.rotations == 1);
-
-  // Clean up
-  auto walFileName1 = kj::str(prefix, "_0000000000000000.wal");
-  cwd.tryRemove(kj::Path::parse(walFileName1));
-  auto walFileName2 = kj::str(prefix, "_0000000000000002.wal");
-  cwd.tryRemove(kj::Path::parse(walFileName2));
 }
 
 KJ_TEST("OrderWal: Full order lifecycle recovery") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("full_lifecycle_recovery");
+  auto& cwd = ctx.dir();
 
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
@@ -510,15 +523,11 @@ KJ_TEST("OrderWal: Full order lifecycle recovery") {
     auto stats = wal.stats();
     KJ_EXPECT(stats.entries_replayed == 8);
   }
-
-  // Clean up
-  auto walFileName = kj::str(prefix, "_0000000000000000.wal");
-  cwd.tryRemove(kj::Path::parse(walFileName));
 }
 
 KJ_TEST("OrderWal: Multiple orders recovery") {
-  auto fs = kj::newDiskFilesystem();
-  auto& cwd = fs->getCurrent();
+  TestContext ctx("multiple_orders_recovery");
+  auto& cwd = ctx.dir();
 
   auto timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
@@ -618,10 +627,6 @@ KJ_TEST("OrderWal: Multiple orders recovery") {
     KJ_EXPECT(store.count_pending() == 2);  // ORDER-002 (partial) and ORDER-003 (new)
     KJ_EXPECT(store.count_terminal() == 1); // ORDER-001 (filled)
   }
-
-  // Clean up
-  auto walFileName = kj::str(prefix, "_0000000000000000.wal");
-  cwd.tryRemove(kj::Path::parse(walFileName));
 }
 
 } // namespace
