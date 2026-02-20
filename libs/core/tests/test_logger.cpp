@@ -1,30 +1,49 @@
 #include "kj/test.h"
 #include "veloz/core/logger.h"
 
-#include <filesystem> // Required for test cleanup - std::filesystem is more convenient for test setup
 #include <fstream>
 #include <kj/filesystem.h>
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <sstream>
-#include <string> // Kept for Logger API compatibility
+#include <string>
 
 using namespace veloz::core;
 
 namespace {
+
+void removeTestLogs(const kj::Directory& root) {
+  auto path = kj::Path::parse("test_logs");
+  if (!root.exists(path))
+    return;
+
+  auto dir = root.openSubdir(path, kj::WriteMode::MODIFY);
+  for (auto& file : dir->listNames()) {
+    dir->remove(kj::Path(kj::mv(file)));
+  }
+  root.remove(path);
+}
+
+void setupTestLogs(const kj::Directory& root) {
+  auto path = kj::Path::parse("test_logs");
+  if (root.exists(path)) {
+    removeTestLogs(root);
+  }
+  root.openSubdir(path, kj::WriteMode::CREATE);
+}
 
 // ============================================================================
 // LogLevel Tests
 // ============================================================================
 
 KJ_TEST("LogLevel: ToString") {
-  KJ_EXPECT(std::string(to_string(LogLevel::Trace)) == "TRACE");
-  KJ_EXPECT(std::string(to_string(LogLevel::Debug)) == "DEBUG");
-  KJ_EXPECT(std::string(to_string(LogLevel::Info)) == "INFO");
-  KJ_EXPECT(std::string(to_string(LogLevel::Warn)) == "WARN");
-  KJ_EXPECT(std::string(to_string(LogLevel::Error)) == "ERROR");
-  KJ_EXPECT(std::string(to_string(LogLevel::Critical)) == "CRITICAL");
-  KJ_EXPECT(std::string(to_string(LogLevel::Off)) == "OFF");
+  KJ_EXPECT(to_string(LogLevel::Trace) == "TRACE"_kj);
+  KJ_EXPECT(to_string(LogLevel::Debug) == "DEBUG"_kj);
+  KJ_EXPECT(to_string(LogLevel::Info) == "INFO"_kj);
+  KJ_EXPECT(to_string(LogLevel::Warn) == "WARN"_kj);
+  KJ_EXPECT(to_string(LogLevel::Error) == "ERROR"_kj);
+  KJ_EXPECT(to_string(LogLevel::Critical) == "CRITICAL"_kj);
+  KJ_EXPECT(to_string(LogLevel::Off) == "OFF"_kj);
 }
 
 // ============================================================================
@@ -35,52 +54,55 @@ KJ_TEST("TextFormatter: Format") {
   TextFormatter formatter(false, false);
   auto now = std::chrono::system_clock::now();
   LogEntry entry{.level = LogLevel::Info,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Test message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Test message"),
                  .time_point = now};
 
-  std::string formatted = formatter.format(entry);
+  auto formattedKj = formatter.format(entry);
+  kj::StringPtr formatted = formattedKj.asPtr();
 
-  KJ_EXPECT(!formatted.empty());
+  KJ_EXPECT(formatted.size() > 0);
   // The formatter uses time_point, not timestamp string, so check for current year
-  KJ_EXPECT(formatted.find("INFO") != std::string::npos);
-  KJ_EXPECT(formatted.find("test.cpp") != std::string::npos);
-  KJ_EXPECT(formatted.find("42") != std::string::npos);
-  KJ_EXPECT(formatted.find("Test message") != std::string::npos);
+  KJ_EXPECT(formatted.contains("INFO"_kj));
+  KJ_EXPECT(formatted.contains("test.cpp"_kj));
+  KJ_EXPECT(formatted.contains("42"_kj));
+  KJ_EXPECT(formatted.contains("Test message"_kj));
 }
 
 KJ_TEST("TextFormatter: WithFunction") {
   TextFormatter formatter(true, false);
   LogEntry entry{.level = LogLevel::Debug,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Debug message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Debug message"),
                  .time_point = std::chrono::system_clock::now()};
 
-  std::string formatted = formatter.format(entry);
+  auto formattedKj = formatter.format(entry);
+  kj::StringPtr formatted = formattedKj.asPtr();
 
-  KJ_EXPECT(formatted.find("test_func") != std::string::npos);
+  KJ_EXPECT(formatted.contains("test_func"_kj));
 }
 
 KJ_TEST("TextFormatter: WithColor") {
   TextFormatter formatter(false, true);
   LogEntry entry{.level = LogLevel::Error,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Error message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Error message"),
                  .time_point = std::chrono::system_clock::now()};
 
-  std::string formatted = formatter.format(entry);
+  auto formattedKj = formatter.format(entry);
+  kj::StringPtr formatted = formattedKj.asPtr();
 
   // Check for ANSI color codes
-  KJ_EXPECT(formatted.find("\033[") != std::string::npos);
+  KJ_EXPECT(formatted.contains("\033["_kj));
 }
 
 // ============================================================================
@@ -90,39 +112,41 @@ KJ_TEST("TextFormatter: WithColor") {
 KJ_TEST("JsonFormatter: Format") {
   JsonFormatter formatter(false);
   LogEntry entry{.level = LogLevel::Info,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Test message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Test message"),
                  .time_point = std::chrono::system_clock::now()};
 
-  std::string formatted = formatter.format(entry);
+  auto formattedKj = formatter.format(entry);
+  kj::StringPtr formatted = formattedKj.asPtr();
 
-  KJ_EXPECT(!formatted.empty());
-  KJ_EXPECT(formatted.find("\"timestamp\"") != std::string::npos);
-  KJ_EXPECT(formatted.find("\"level\"") != std::string::npos);
-  KJ_EXPECT(formatted.find("\"INFO\"") != std::string::npos);
-  KJ_EXPECT(formatted.find("\"file\"") != std::string::npos);
-  KJ_EXPECT(formatted.find("\"line\"") != std::string::npos);
-  KJ_EXPECT(formatted.find("\"message\"") != std::string::npos);
+  KJ_EXPECT(formatted.size() > 0);
+  KJ_EXPECT(formatted.contains("\"timestamp\""_kj));
+  KJ_EXPECT(formatted.contains("\"level\""_kj));
+  KJ_EXPECT(formatted.contains("\"INFO\""_kj));
+  KJ_EXPECT(formatted.contains("\"file\""_kj));
+  KJ_EXPECT(formatted.contains("\"line\""_kj));
+  KJ_EXPECT(formatted.contains("\"message\""_kj));
 }
 
 KJ_TEST("JsonFormatter: Escape") {
   JsonFormatter formatter(false);
   LogEntry entry{.level = LogLevel::Info,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Message with \"quotes\" and \\backslashes\\",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Message with \"quotes\" and \\backslashes\\"),
                  .time_point = std::chrono::system_clock::now()};
 
-  std::string formatted = formatter.format(entry);
+  auto formattedKj = formatter.format(entry);
+  kj::StringPtr formatted = formattedKj.asPtr();
 
   // Check for proper escaping
-  KJ_EXPECT(formatted.find("\\\"") != std::string::npos); // Escaped quotes
-  KJ_EXPECT(formatted.find("\\\\") != std::string::npos); // Escaped backslashes
+  KJ_EXPECT(formatted.contains("\\\""_kj)); // Escaped quotes
+  KJ_EXPECT(formatted.contains("\\\\"_kj)); // Escaped backslashes
 }
 
 // ============================================================================
@@ -174,7 +198,10 @@ KJ_TEST("Logger: Change formatter") {
 // ============================================================================
 
 KJ_TEST("FileOutput: Basic") {
-  std::filesystem::create_directories("test_logs");
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  setupTestLogs(root);
+  KJ_DEFER(removeTestLogs(root));
 
   FileOutput output(kj::Path::parse("test_logs/test.log"), FileOutput::Rotation::None,
                     1024 * 1024, // 1MB
@@ -183,30 +210,29 @@ KJ_TEST("FileOutput: Basic") {
   KJ_EXPECT(output.is_open());
 
   LogEntry entry{.level = LogLevel::Info,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Test message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Test message"),
                  .time_point = std::chrono::system_clock::now()};
 
   output.write("Test log line", entry);
   output.flush();
 
-  KJ_EXPECT(std::filesystem::exists("test_logs/test.log"));
+  KJ_EXPECT(root.exists(kj::Path::parse("test_logs/test.log")));
 
   // Check file content
-  std::ifstream ifs("test_logs/test.log");
-  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-  KJ_EXPECT(!content.empty());
-  KJ_EXPECT(content.find("Test log line") != std::string::npos);
-
-  // Cleanup
-  std::filesystem::remove_all("test_logs");
+  auto content = root.openFile(kj::Path::parse("test_logs/test.log"))->readAllText();
+  KJ_EXPECT(content.size() > 0);
+  KJ_EXPECT(content.contains("Test log line"_kj));
 }
 
 KJ_TEST("FileOutput: Rotation by size") {
-  std::filesystem::create_directories("test_logs");
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  setupTestLogs(root);
+  KJ_DEFER(removeTestLogs(root));
 
   FileOutput output(kj::Path::parse("test_logs/rotate.log"), FileOutput::Rotation::Size,
                     100, // 100 bytes
@@ -214,32 +240,38 @@ KJ_TEST("FileOutput: Rotation by size") {
 
   TextFormatter formatter;
   LogEntry entry{.level = LogLevel::Info,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Test message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Test message"),
                  .time_point = std::chrono::system_clock::now()};
 
-  std::string long_message(60, 'X'); // Create a long message
-  LogEntry long_entry = entry;
-  long_entry.message = long_message;
+  // Create a long message using KJ (60 'X' characters)
+  kj::String long_message = kj::str("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+  LogEntry long_entry{.level = entry.level,
+                      .timestamp = kj::heapString(entry.timestamp.asPtr()),
+                      .file = kj::heapString(entry.file.asPtr()),
+                      .line = entry.line,
+                      .function = kj::heapString(entry.function.asPtr()),
+                      .message = kj::mv(long_message),
+                      .time_point = entry.time_point};
 
   // Write enough to trigger rotation
   for (int i = 0; i < 10; ++i) {
-    std::string formatted = formatter.format(long_entry);
-    output.write(formatted, long_entry);
+    auto formatted = formatter.format(long_entry);
+    output.write(formatted.asPtr(), long_entry);
   }
 
   // Check that rotation occurred
-  KJ_EXPECT(std::filesystem::exists("test_logs/rotate.log"));
-
-  // Cleanup
-  std::filesystem::remove_all("test_logs");
+  KJ_EXPECT(root.exists(kj::Path::parse("test_logs/rotate.log")));
 }
 
 KJ_TEST("FileOutput: Rotation by time") {
-  std::filesystem::create_directories("test_logs");
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  setupTestLogs(root);
+  KJ_DEFER(removeTestLogs(root));
 
   FileOutput output(kj::Path::parse("test_logs/time_rotate.log"), FileOutput::Rotation::Time,
                     1024 * 1024, // 1MB
@@ -247,21 +279,18 @@ KJ_TEST("FileOutput: Rotation by time") {
 
   KJ_EXPECT(output.is_open());
   // Actual time-based rotation would require waiting, we just test setup
-
-  // Cleanup
-  std::filesystem::remove_all("test_logs");
 }
 
 KJ_TEST("FileOutput: Get current path") {
-  std::filesystem::create_directories("test_logs");
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  setupTestLogs(root);
+  KJ_DEFER(removeTestLogs(root));
 
   FileOutput output(kj::Path::parse("test_logs/path_test.log"));
 
   auto path = output.current_path();
   KJ_EXPECT(path.toString(false) == kj::str("test_logs/path_test.log"));
-
-  // Cleanup
-  std::filesystem::remove_all("test_logs");
 }
 
 // ============================================================================
@@ -276,11 +305,11 @@ KJ_TEST("MultiOutput: Basic") {
   KJ_EXPECT(multi_output->output_count() == 1);
 
   LogEntry entry{.level = LogLevel::Info,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 42,
-                 .function = "test_func",
-                 .message = "Test message",
+                 .function = kj::heapString("test_func"),
+                 .message = kj::heapString("Test message"),
                  .time_point = std::chrono::system_clock::now()};
 
   multi_output->write("Test", entry);
@@ -310,7 +339,10 @@ KJ_TEST("MultiOutput: Multiple destinations") {
 // ============================================================================
 
 KJ_TEST("Logger: With multiple outputs") {
-  std::filesystem::create_directories("test_logs");
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  setupTestLogs(root);
+  KJ_DEFER(removeTestLogs(root));
 
   Logger logger(kj::heap<TextFormatter>(), kj::heap<ConsoleOutput>());
 
@@ -320,10 +352,7 @@ KJ_TEST("Logger: With multiple outputs") {
 
   logger.info("Message to both console and file");
 
-  KJ_EXPECT(std::filesystem::exists("test_logs/multi.log"));
-
-  // Cleanup
-  std::filesystem::remove_all("test_logs");
+  KJ_EXPECT(root.exists(kj::Path::parse("test_logs/multi.log")));
 }
 
 // ============================================================================
@@ -354,7 +383,10 @@ KJ_TEST("Global Logger: Convenience functions") {
 // ============================================================================
 
 KJ_TEST("Logger: Flush") {
-  std::filesystem::create_directories("test_logs");
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  setupTestLogs(root);
+  KJ_DEFER(removeTestLogs(root));
 
   Logger logger(kj::heap<TextFormatter>(),
                 kj::heap<FileOutput>(kj::Path::parse("test_logs/flush.log")));
@@ -363,12 +395,8 @@ KJ_TEST("Logger: Flush") {
   logger.flush();
 
   // File should contain of message
-  std::ifstream ifs("test_logs/flush.log");
-  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-  KJ_EXPECT(content.find("Message before flush") != std::string::npos);
-
-  // Cleanup
-  std::filesystem::remove_all("test_logs");
+  auto content = root.openFile(kj::Path::parse("test_logs/flush.log"))->readAllText();
+  KJ_EXPECT(content.contains("Message before flush"_kj));
 }
 
 // ============================================================================
@@ -392,11 +420,11 @@ KJ_TEST("Logger: Formatted logging at all levels") {
 
 KJ_TEST("LogEntry: Construction") {
   LogEntry entry{.level = LogLevel::Error,
-                 .timestamp = "2023-01-01T12:00:00.000Z",
-                 .file = "test.cpp",
+                 .timestamp = kj::heapString("2023-01-01T12:00:00.000Z"),
+                 .file = kj::heapString("test.cpp"),
                  .line = 100,
-                 .function = "my_function",
-                 .message = "Test error message",
+                 .function = kj::heapString("my_function"),
+                 .message = kj::heapString("Test error message"),
                  .time_point = std::chrono::system_clock::now()};
 
   KJ_EXPECT(entry.level == LogLevel::Error);

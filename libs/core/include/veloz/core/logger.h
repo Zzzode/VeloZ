@@ -22,10 +22,8 @@
 #include <kj/memory.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
+#include <kj/vector.h>
 #include <source_location>
-#include <string> // std::string used for external API compatibility (std::format, std::filesystem)
-#include <string_view>
-#include <vector> // std::vector used for STL container compatibility
 
 namespace veloz::core {
 
@@ -50,18 +48,18 @@ enum class LogLevel : std::uint8_t {
  * @param level Log level
  * @return String representation of the log level
  */
-[[nodiscard]] std::string_view to_string(LogLevel level);
+[[nodiscard]] kj::StringPtr to_string(LogLevel level);
 
 /**
  * @brief Log entry containing all log information
  */
 struct LogEntry {
   LogLevel level;
-  std::string timestamp;
-  std::string file;
+  kj::String timestamp;
+  kj::String file;
   int_least32_t line;
-  std::string function;
-  std::string message;
+  kj::String function;
+  kj::String message;
   std::chrono::system_clock::time_point time_point;
 };
 
@@ -79,12 +77,12 @@ public:
    * @param entry The log entry to format
    * @return Formatted string
    */
-  [[nodiscard]] virtual std::string format(const LogEntry& entry) const = 0;
+  [[nodiscard]] virtual kj::String format(const LogEntry& entry) const = 0;
 
   /**
    * @brief Get the name of this formatter
    */
-  [[nodiscard]] virtual std::string_view name() const = 0;
+  [[nodiscard]] virtual kj::StringPtr name() const = 0;
 };
 
 /**
@@ -102,16 +100,16 @@ public:
   explicit TextFormatter(bool include_function = false, bool use_color = false)
       : include_function_(include_function), use_color_(use_color) {}
 
-  [[nodiscard]] std::string format(const LogEntry& entry) const override;
-  [[nodiscard]] std::string_view name() const override {
-    return "TextFormatter";
+  [[nodiscard]] kj::String format(const LogEntry& entry) const override;
+  [[nodiscard]] kj::StringPtr name() const override {
+    return "TextFormatter"_kj;
   }
 
 private:
   bool include_function_;
   bool use_color_;
 
-  [[nodiscard]] std::string colorize(LogLevel level, std::string_view text) const;
+  [[nodiscard]] kj::String colorize(LogLevel level, kj::StringPtr text) const;
 };
 
 /**
@@ -127,14 +125,14 @@ public:
    */
   explicit JsonFormatter(bool pretty = false) : pretty_(pretty) {}
 
-  [[nodiscard]] std::string format(const LogEntry& entry) const override;
-  [[nodiscard]] std::string_view name() const override {
-    return "JsonFormatter";
+  [[nodiscard]] kj::String format(const LogEntry& entry) const override;
+  [[nodiscard]] kj::StringPtr name() const override {
+    return "JsonFormatter"_kj;
   }
 
 private:
   bool pretty_;
-  std::string escape_json(std::string_view s) const;
+  kj::String escape_json(kj::StringPtr s) const;
 };
 
 /**
@@ -144,14 +142,14 @@ private:
  */
 class LogOutput {
 public:
-  virtual ~LogOutput() = default;
+  virtual ~LogOutput() noexcept(false) = default;
 
   /**
    * @brief Write a formatted log entry
    * @param formatted The formatted log string
    * @param entry The original log entry (for additional processing)
    */
-  virtual void write(const std::string& formatted, const LogEntry& entry) = 0;
+  virtual void write(kj::StringPtr formatted, const LogEntry& entry) = 0;
 
   /**
    * @brief Flush any buffered output
@@ -178,7 +176,7 @@ public:
    */
   explicit ConsoleOutput(bool use_stderr = false) : use_stderr_(use_stderr) {}
 
-  void write(const std::string& formatted, const LogEntry& entry) override;
+  void write(kj::StringPtr formatted, const LogEntry& entry) override;
   void flush() override;
   [[nodiscard]] bool is_open() const override {
     return true;
@@ -226,7 +224,7 @@ public:
 
   ~FileOutput() noexcept override;
 
-  void write(const std::string& formatted, const LogEntry& entry) override;
+  void write(kj::StringPtr formatted, const LogEntry& entry) override;
   void flush() override;
   [[nodiscard]] bool is_open() const override;
 
@@ -264,18 +262,17 @@ private:
     const Rotation rotation;
     const RotationInterval interval;
 
-    FileOutputState(const kj::Path& path, size_t max_sz, Rotation rot,
-                    RotationInterval interv)
+    FileOutputState(const kj::Path& path, size_t max_sz, Rotation rot, RotationInterval interv)
         : file_path(path.clone()), current_size(0), last_rotation(std::chrono::system_clock::now()),
           max_size(max_sz), rotation(rot), interval(interv) {}
   };
 
-  void writeImpl(FileOutputState& state, const std::string& formatted);
+  void writeImpl(FileOutputState& state, kj::StringPtr formatted);
   void check_rotation();
   [[nodiscard]] kj::Path get_rotated_path(size_t index) const;
   void perform_rotation(FileOutputState& state);
   [[nodiscard]] bool should_rotate_by_time(const FileOutputState& state) const;
-  [[nodiscard]] std::string get_rotation_suffix() const;
+  [[nodiscard]] kj::String get_rotation_suffix() const;
 
   kj::MutexGuarded<FileOutputState> guarded_;
   const size_t max_files_;
@@ -294,7 +291,7 @@ public:
   void remove_output(size_t index);
   void clear_outputs();
 
-  void write(const std::string& formatted, const LogEntry& entry) override;
+  void write(kj::StringPtr formatted, const LogEntry& entry) override;
   void flush() override;
   [[nodiscard]] bool is_open() const override;
 
@@ -303,7 +300,7 @@ public:
 private:
   // Internal state for MultiOutput
   struct MultiOutputState {
-    std::vector<kj::Own<LogOutput>> outputs;
+    kj::Vector<kj::Own<LogOutput>> outputs;
   };
 
   kj::MutexGuarded<MultiOutputState> guarded_;
@@ -363,7 +360,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void log(LogLevel level, std::string_view message,
+  void log(LogLevel level, kj::StringPtr message,
            const std::source_location& location = std::source_location::current());
 
   /**
@@ -371,7 +368,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void trace(std::string_view message,
+  void trace(kj::StringPtr message,
              const std::source_location& location = std::source_location::current());
 
   /**
@@ -379,7 +376,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void debug(std::string_view message,
+  void debug(kj::StringPtr message,
              const std::source_location& location = std::source_location::current());
 
   /**
@@ -387,7 +384,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void info(std::string_view message,
+  void info(kj::StringPtr message,
             const std::source_location& location = std::source_location::current());
 
   /**
@@ -395,7 +392,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void warn(std::string_view message,
+  void warn(kj::StringPtr message,
             const std::source_location& location = std::source_location::current());
 
   /**
@@ -403,7 +400,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void error(std::string_view message,
+  void error(kj::StringPtr message,
              const std::source_location& location = std::source_location::current());
 
   /**
@@ -411,7 +408,7 @@ public:
    * @param message Log message
    * @param location Source location information, defaults to current location
    */
-  void critical(std::string_view message,
+  void critical(kj::StringPtr message,
                 const std::source_location& location = std::source_location::current());
 
   /**
@@ -425,7 +422,8 @@ public:
   template <typename... Args>
   void log(LogLevel level, std::format_string<Args...> fmt, Args&&... args,
            const std::source_location& location = std::source_location::current()) {
-    log(level, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(level, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -438,7 +436,8 @@ public:
   template <typename... Args>
   void trace(std::format_string<Args...> fmt, Args&&... args,
              const std::source_location& location = std::source_location::current()) {
-    log(LogLevel::Trace, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(LogLevel::Trace, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -451,7 +450,8 @@ public:
   template <typename... Args>
   void debug(std::format_string<Args...> fmt, Args&&... args,
              const std::source_location& location = std::source_location::current()) {
-    log(LogLevel::Debug, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(LogLevel::Debug, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -464,7 +464,8 @@ public:
   template <typename... Args>
   void info(std::format_string<Args...> fmt, Args&&... args,
             const std::source_location& location = std::source_location::current()) {
-    log(LogLevel::Info, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(LogLevel::Info, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -477,7 +478,8 @@ public:
   template <typename... Args>
   void warn(std::format_string<Args...> fmt, Args&&... args,
             const std::source_location& location = std::source_location::current()) {
-    log(LogLevel::Warn, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(LogLevel::Warn, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -490,7 +492,8 @@ public:
   template <typename... Args>
   void error(std::format_string<Args...> fmt, Args&&... args,
              const std::source_location& location = std::source_location::current()) {
-    log(LogLevel::Error, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(LogLevel::Error, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -503,7 +506,8 @@ public:
   template <typename... Args>
   void critical(std::format_string<Args...> fmt, Args&&... args,
                 const std::source_location& location = std::source_location::current()) {
-    log(LogLevel::Critical, std::vformat(fmt.get(), std::make_format_args(args...)), location);
+    auto message = std::vformat(fmt.get(), std::make_format_args(args...));
+    log(LogLevel::Critical, kj::StringPtr(message.c_str(), message.size()), location);
   }
 
   /**
@@ -519,8 +523,7 @@ private:
     LogLevel level;
 
     LoggerState(kj::Own<LogFormatter> fmt, kj::Own<LogOutput> out)
-        : formatter(kj::mv(fmt)), multi_output(kj::heap<MultiOutput>()),
-          level(LogLevel::Info) {
+        : formatter(kj::mv(fmt)), multi_output(kj::heap<MultiOutput>()), level(LogLevel::Info) {
       multi_output->add_output(kj::mv(out));
     }
   };
@@ -536,7 +539,7 @@ private:
 /**
  * @brief Convenience functions for logging to the global logger
  */
-inline void log_global(LogLevel level, std::string_view message,
+inline void log_global(LogLevel level, kj::StringPtr message,
                        const std::source_location& location = std::source_location::current()) {
   global_logger().log(level, message, location);
 }
@@ -547,33 +550,33 @@ inline void log_global(LogLevel level, std::format_string<Args...> fmt, Args&&..
   global_logger().log(level, fmt, std::forward<Args>(args)..., location);
 }
 
-inline void trace_global(std::string_view message,
+inline void trace_global(kj::StringPtr message,
                          const std::source_location& location = std::source_location::current()) {
   global_logger().trace(message, location);
 }
 
-inline void debug_global(std::string_view message,
+inline void debug_global(kj::StringPtr message,
                          const std::source_location& location = std::source_location::current()) {
   global_logger().debug(message, location);
 }
 
-inline void info_global(std::string_view message,
+inline void info_global(kj::StringPtr message,
                         const std::source_location& location = std::source_location::current()) {
   global_logger().info(message, location);
 }
 
-inline void warn_global(std::string_view message,
+inline void warn_global(kj::StringPtr message,
                         const std::source_location& location = std::source_location::current()) {
   global_logger().warn(message, location);
 }
 
-inline void error_global(std::string_view message,
+inline void error_global(kj::StringPtr message,
                          const std::source_location& location = std::source_location::current()) {
   global_logger().error(message, location);
 }
 
 inline void
-critical_global(std::string_view message,
+critical_global(kj::StringPtr message,
                 const std::source_location& location = std::source_location::current()) {
   global_logger().critical(message, location);
 }
