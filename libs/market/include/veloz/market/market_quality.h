@@ -73,6 +73,46 @@ struct QualityScore {
 };
 
 /**
+ * @brief Latency statistics
+ */
+struct LatencyStats {
+  int64_t min_latency_ns{0};  ///< Minimum observed latency
+  int64_t max_latency_ns{0};  ///< Maximum observed latency
+  int64_t avg_latency_ns{0};  ///< Average latency
+  int64_t p50_latency_ns{0};  ///< 50th percentile (median)
+  int64_t p95_latency_ns{0};  ///< 95th percentile
+  int64_t p99_latency_ns{0};  ///< 99th percentile
+  int64_t sample_count{0};    ///< Number of samples
+  int64_t last_latency_ns{0}; ///< Most recent latency
+  int64_t stale_count{0};     ///< Number of stale data events
+};
+
+/**
+ * @brief Spread statistics
+ */
+struct SpreadStats {
+  double min_spread_bps{0.0};     ///< Minimum spread in basis points
+  double max_spread_bps{0.0};     ///< Maximum spread in basis points
+  double avg_spread_bps{0.0};     ///< Average spread in basis points
+  double current_spread_bps{0.0}; ///< Current spread in basis points
+  int64_t sample_count{0};        ///< Number of samples
+  int64_t wide_spread_count{0};   ///< Number of times spread exceeded threshold
+};
+
+/**
+ * @brief Liquidity depth statistics
+ */
+struct LiquidityStats {
+  double total_bid_depth{0.0}; ///< Total bid-side liquidity
+  double total_ask_depth{0.0}; ///< Total ask-side liquidity
+  double bid_ask_ratio{1.0};   ///< Bid/ask depth ratio (>1 = more bids)
+  double depth_imbalance{0.0}; ///< Normalized imbalance (-1 to 1)
+  int64_t sample_count{0};     ///< Number of samples
+  double avg_bid_depth{0.0};   ///< Average bid depth
+  double avg_ask_depth{0.0};   ///< Average ask depth
+};
+
+/**
  * @brief Callback for anomaly notifications
  */
 using AnomalyCallback = kj::Function<void(const Anomaly&)>;
@@ -181,6 +221,38 @@ public:
   void reset();
 
   /**
+   * @brief Analyze order book depth for liquidity
+   * @param bids Vector of bid levels
+   * @param asks Vector of ask levels
+   * @param timestamp_ns Event timestamp in nanoseconds
+   * @return Detected anomalies (empty if none)
+   */
+  kj::Vector<Anomaly> analyze_depth(const kj::Vector<BookLevel>& bids,
+                                    const kj::Vector<BookLevel>& asks, int64_t timestamp_ns);
+
+  /**
+   * @brief Record latency measurement
+   * @param exchange_ts_ns Exchange timestamp in nanoseconds
+   * @param recv_ts_ns Receive timestamp in nanoseconds
+   */
+  void record_latency(int64_t exchange_ts_ns, int64_t recv_ts_ns);
+
+  /**
+   * @brief Get latency statistics
+   */
+  [[nodiscard]] LatencyStats latency_stats() const;
+
+  /**
+   * @brief Get spread statistics
+   */
+  [[nodiscard]] SpreadStats spread_stats() const;
+
+  /**
+   * @brief Get liquidity statistics
+   */
+  [[nodiscard]] LiquidityStats liquidity_stats() const;
+
+  /**
    * @brief Get statistics
    */
   [[nodiscard]] int64_t total_events_analyzed() const {
@@ -244,6 +316,30 @@ private:
   int64_t total_anomalies_{0};
   int64_t stale_count_{0};
   int64_t gap_count_{0};
+
+  // Latency tracking
+  kj::Vector<int64_t> recent_latencies_;
+  int64_t latency_sum_{0};
+  int64_t min_latency_{0};
+  int64_t max_latency_{0};
+  int64_t last_latency_{0};
+  static constexpr size_t kMaxLatencySamples = 1000;
+
+  // Spread tracking
+  kj::Vector<double> recent_spreads_;
+  double spread_sum_{0.0};
+  double min_spread_{0.0};
+  double max_spread_{0.0};
+  double current_spread_{0.0};
+  int64_t wide_spread_count_{0};
+  static constexpr size_t kMaxSpreadSamples = 1000;
+
+  // Liquidity tracking
+  double total_bid_depth_{0.0};
+  double total_ask_depth_{0.0};
+  double bid_depth_sum_{0.0};
+  double ask_depth_sum_{0.0};
+  int64_t depth_sample_count_{0};
 
   // Callback
   kj::Maybe<AnomalyCallback> anomaly_callback_;

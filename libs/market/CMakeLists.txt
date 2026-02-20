@@ -16,6 +16,7 @@ set(MARKET_SOURCES
 # Custom WebSocket implementation using KJ async I/O (RFC 6455 protocol)
 if(VELOZ_BUILD_WEBSOCKET)
     list(APPEND MARKET_SOURCES src/binance_websocket.cpp)
+    list(APPEND MARKET_SOURCES src/binance_rest_client.cpp)
 endif()
 
 add_library(veloz_market STATIC ${MARKET_SOURCES})
@@ -43,6 +44,7 @@ if(VELOZ_BUILD_WEBSOCKET)
         PUBLIC
             kj
             kj-async
+            kj-http
     )
     if(WITH_OPENSSL)
         target_link_libraries(veloz_market PUBLIC kj-tls)
@@ -81,5 +83,19 @@ if(VELOZ_BUILD_TESTS)
                 kj-test
             )
         add_test(NAME veloz_websocket_tests COMMAND veloz_websocket_tests)
+
+        # REST client tests
+        add_executable(veloz_rest_client_tests
+            tests/test_binance_rest_client.cpp
+            )
+        target_link_libraries(veloz_rest_client_tests
+            PRIVATE
+                veloz_market
+                veloz_common
+                kj-test
+                kj-async
+                kj-http
+            )
+        add_test(NAME veloz_rest_client_tests COMMAND veloz_rest_client_tests)
     endif()
 endif()
