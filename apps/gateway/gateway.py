@@ -20,6 +20,21 @@ from dataclasses import dataclass, asdict, field
 from typing import Optional
 from datetime import datetime
 
+# Import RBAC module
+from rbac import role_manager, RoleManager
+
+# Import audit module
+from audit import (
+    AuditLogStore,
+    AuditLogRetentionManager,
+    AuditLogEntry,
+    create_audit_entry,
+    get_audit_store,
+    get_retention_manager,
+    init_audit_system,
+    DEFAULT_POLICIES,
+)
+
 # Configure audit logger
 audit_logger = logging.getLogger("veloz.audit")
 audit_logger.setLevel(logging.INFO)
@@ -413,6 +428,12 @@ ENDPOINT_PERMISSIONS = {
 
     # Admin endpoints
     "/api/auth/keys": [Permission.ADMIN_KEYS],
+    "/api/auth/roles": [Permission.ADMIN_USERS],
+
+    # Audit endpoints
+    "/api/audit/logs": [Permission.ADMIN_CONFIG],
+    "/api/audit/stats": [Permission.ADMIN_CONFIG],
+    "/api/audit/archive": [Permission.ADMIN_CONFIG],
 }
 
 
@@ -2062,6 +2083,15 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/auth/keys":
             self._handle_list_api_keys()
             return
+        if parsed.path == "/api/auth/roles":
+            self._handle_list_roles()
+            return
+        if parsed.path == "/api/audit/logs":
+            self._handle_query_audit_logs()
+            return
+        if parsed.path == "/api/audit/stats":
+            self._handle_get_audit_stats()
+            return
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
@@ -2091,6 +2121,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/auth/keys":
             self._handle_create_api_key()
+            return
+        if parsed.path == "/api/auth/roles":
+            self._handle_assign_role()
+            return
+        if parsed.path == "/api/audit/archive":
+            self._handle_trigger_archive()
             return
         if parsed.path != "/api/order":
             self.send_error(404)
@@ -2356,6 +2392,10 @@ class Handler(SimpleHTTPRequestHandler):
             self._handle_revoke_api_key()
             return
 
+        if parsed.path == "/api/auth/roles":
+            self._handle_remove_role()
+            return
+
         self.send_error(404)
 
     def _handle_revoke_api_key(self):
@@ -2390,6 +2430,330 @@ class Handler(SimpleHTTPRequestHandler):
 
         self._audit_log("revoke_api_key", {"key_id": key_id})
         self._send_json(200, {"ok": True, "key_id": key_id})
+
+    # =========================================================================
+    # Role Management Endpoints (RBAC)
+    # =========================================================================
+
+    def _handle_list_roles(self):
+        """Handle listing user roles."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if not permission_manager.check_permission(user_permissions, [Permission.ADMIN_USERS]):
+            self._send_json(403, {"error": "forbidden", "message": "admin:users permission required"})
+            return
+
+        qs = parse_qs(urlparse(self.path).query or "")
+        user_id = (qs.get("user_id") or [""])[0].strip()
+
+        if user_id:
+            # Get roles for specific user
+            info = role_manager.get_user_role_info(user_id)
+            if info:
+                self._send_json(200, info)
+            else:
+                # Return default roles for users without explicit assignment
+                self._send_json(200, {
+                    "user_id": user_id,
+                    "roles": role_manager.get_roles(user_id),
+                    "is_default": True,
+                })
+        else:
+            # List all user role assignments
+            all_roles = role_manager.list_all_user_roles()
+            metrics = role_manager.get_metrics()
+            self._send_json(200, {
+                "users": all_roles,
+                "metrics": metrics,
+                "available_roles": list(ROLE_PERMISSIONS.keys()),
+            })
+
+    def _handle_assign_role(self):
+        """Handle role assignment to a user."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        user_id = str(data.get("user_id", "")).strip()
+        role = str(data.get("role", "")).strip()
+        roles = data.get("roles")  # For setting multiple roles at once
+
+        if not user_id:
+            self._send_json(400, {"error": "bad_params", "message": "user_id is required"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if not permission_manager.check_permission(user_permissions, [Permission.ADMIN_USERS]):
+            self._send_json(403, {"error": "forbidden", "message": "admin:users permission required"})
+            return
+
+        assigned_by = auth_info.get("user_id", "unknown")
+
+        if roles is not None:
+            # Set multiple roles at once
+            if not isinstance(roles, list):
+                self._send_json(400, {"error": "bad_params", "message": "roles must be a list"})
+                return
+            # Validate roles
+            invalid_roles = [r for r in roles if r not in ROLE_PERMISSIONS]
+            if invalid_roles:
+                self._send_json(400, {
+                    "error": "bad_params",
+                    "message": f"Invalid roles: {invalid_roles}. Valid roles: {list(ROLE_PERMISSIONS.keys())}",
+                })
+                return
+            role_manager.set_roles(user_id, roles, set_by=assigned_by)
+            self._audit_log("set_roles", {"user_id": user_id, "roles": roles})
+            self._send_json(200, {
+                "ok": True,
+                "user_id": user_id,
+                "roles": role_manager.get_roles(user_id),
+            })
+        elif role:
+            # Assign single role
+            if role not in ROLE_PERMISSIONS:
+                self._send_json(400, {
+                    "error": "bad_params",
+                    "message": f"Invalid role: {role}. Valid roles: {list(ROLE_PERMISSIONS.keys())}",
+                })
+                return
+            result = role_manager.assign_role(user_id, role, assigned_by=assigned_by)
+            if result:
+                self._audit_log("assign_role", {"user_id": user_id, "role": role})
+                self._send_json(200, {
+                    "ok": True,
+                    "user_id": user_id,
+                    "role": role,
+                    "roles": role_manager.get_roles(user_id),
+                })
+            else:
+                self._send_json(200, {
+                    "ok": False,
+                    "message": "User already has this role",
+                    "user_id": user_id,
+                    "roles": role_manager.get_roles(user_id),
+                })
+        else:
+            self._send_json(400, {"error": "bad_params", "message": "role or roles is required"})
+
+    def _handle_remove_role(self):
+        """Handle role removal from a user."""
+        qs = parse_qs(urlparse(self.path).query or "")
+        user_id = (qs.get("user_id") or [""])[0].strip()
+        role = (qs.get("role") or [""])[0].strip()
+
+        if not user_id:
+            self._send_json(400, {"error": "bad_params", "message": "user_id is required"})
+            return
+
+        if not role:
+            self._send_json(400, {"error": "bad_params", "message": "role is required"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if not permission_manager.check_permission(user_permissions, [Permission.ADMIN_USERS]):
+            self._send_json(403, {"error": "forbidden", "message": "admin:users permission required"})
+            return
+
+        removed_by = auth_info.get("user_id", "unknown")
+        result = role_manager.remove_role(user_id, role, removed_by=removed_by)
+
+        if result:
+            self._audit_log("remove_role", {"user_id": user_id, "role": role})
+            self._send_json(200, {
+                "ok": True,
+                "user_id": user_id,
+                "role": role,
+                "roles": role_manager.get_roles(user_id),
+            })
+        else:
+            self._send_json(404, {
+                "error": "not_found",
+                "message": "User does not have this role",
+            })
+
+    # =========================================================================
+    # Audit Log Query Endpoints
+    # =========================================================================
+
+    def _handle_query_audit_logs(self):
+        """Handle querying audit logs with filters and pagination."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if not permission_manager.check_permission(user_permissions, [Permission.ADMIN_CONFIG]):
+            self._send_json(403, {"error": "forbidden", "message": "admin:config permission required"})
+            return
+
+        qs = parse_qs(urlparse(self.path).query or "")
+
+        # Parse query parameters
+        log_type = (qs.get("type") or [""])[0].strip() or None
+        user_id = (qs.get("user_id") or [""])[0].strip() or None
+        action = (qs.get("action") or [""])[0].strip() or None
+
+        # Pagination parameters
+        try:
+            limit = int((qs.get("limit") or ["100"])[0])
+            limit = min(max(1, limit), 1000)  # Clamp between 1 and 1000
+        except ValueError:
+            limit = 100
+
+        try:
+            offset = int((qs.get("offset") or ["0"])[0])
+            offset = max(0, offset)
+        except ValueError:
+            offset = 0
+
+        # Time range parameters
+        start_time = None
+        end_time = None
+        try:
+            start_str = (qs.get("start_time") or [""])[0].strip()
+            if start_str:
+                start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+        try:
+            end_str = (qs.get("end_time") or [""])[0].strip()
+            if end_str:
+                end_time = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+        # Get audit store
+        audit_store = get_audit_store()
+        if not audit_store:
+            # Fall back to in-memory recent logs if store not initialized
+            self._send_json(200, {
+                "logs": [],
+                "total": 0,
+                "limit": limit,
+                "offset": offset,
+                "message": "Audit store not initialized",
+            })
+            return
+
+        # Query logs
+        if log_type:
+            # Query specific log type from files
+            logs = audit_store.query_logs(
+                log_type=log_type,
+                start_time=start_time,
+                end_time=end_time,
+                user_id=user_id,
+                action=action,
+                limit=limit + offset + 1,  # Get extra to check if more exist
+            )
+        else:
+            # Get recent logs from memory (all types)
+            logs = audit_store.get_recent_logs(
+                log_type=None,
+                limit=limit + offset + 1,
+                user_id=user_id,
+            )
+
+        # Apply offset and limit
+        total = len(logs)
+        has_more = total > offset + limit
+        logs = logs[offset:offset + limit]
+
+        self._send_json(200, {
+            "logs": logs,
+            "total": total if total <= offset + limit else -1,  # -1 indicates more available
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+        })
+
+    def _handle_get_audit_stats(self):
+        """Handle getting audit log statistics."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if not permission_manager.check_permission(user_permissions, [Permission.ADMIN_CONFIG]):
+            self._send_json(403, {"error": "forbidden", "message": "admin:config permission required"})
+            return
+
+        retention_manager = get_retention_manager()
+        if not retention_manager:
+            self._send_json(200, {
+                "status": "not_initialized",
+                "message": "Audit retention manager not initialized",
+            })
+            return
+
+        status = retention_manager.get_retention_status()
+        self._send_json(200, {
+            "status": "active",
+            **status,
+        })
+
+    def _handle_trigger_archive(self):
+        """Handle manual trigger of audit log archival."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check if user has admin permission
+        user_permissions = auth_info.get("permissions", [])
+        if not permission_manager.check_permission(user_permissions, [Permission.ADMIN_CONFIG]):
+            self._send_json(403, {"error": "forbidden", "message": "admin:config permission required"})
+            return
+
+        retention_manager = get_retention_manager()
+        if not retention_manager:
+            self._send_json(500, {
+                "error": "not_initialized",
+                "message": "Audit retention manager not initialized",
+            })
+            return
+
+        # Run cleanup/archive
+        try:
+            stats = retention_manager.run_cleanup()
+            self._audit_log("trigger_archive", stats)
+            self._send_json(200, {
+                "ok": True,
+                "stats": stats,
+            })
+        except Exception as e:
+            self._send_json(500, {
+                "error": "archive_failed",
+                "message": str(e),
+            })
 
     def _handle_sse(self, parsed):
         qs = parse_qs(parsed.query or "")

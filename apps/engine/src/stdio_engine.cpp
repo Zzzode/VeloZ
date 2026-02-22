@@ -5,6 +5,7 @@
 #include "veloz/strategy/mean_reversion_strategy.h"
 #include "veloz/strategy/trend_following_strategy.h"
 
+#include <cstdlib>
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/io.h>
@@ -85,7 +86,9 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
                               "          CANCEL <ID>\n", "          QUERY <TYPE> [PARAMS]\n",
                               "          STRATEGY LOAD <TYPE> <NAME> [PARAMS...]\n",
                               "          STRATEGY START|STOP|PAUSE|RESUME|UNLOAD <STRATEGY_ID>\n",
-                              "          STRATEGY LIST|STATUS [STRATEGY_ID]\n\n");
+                              "          STRATEGY LIST|STATUS [STRATEGY_ID]\n",
+                              "          STRATEGY PARAMS <STRATEGY_ID> <KEY>=<VALUE>...\n",
+                              "          STRATEGY METRICS [STRATEGY_ID]\n\n");
   out_.write(banner.asBytes());
 
   // Send startup event
@@ -383,6 +386,82 @@ void StdioEngine::handle_strategy_command(const ParsedStrategy& cmd) {
                          R"(,"trade_count":)", states[i].trade_count, "}");
         }
         json = kj::str(json, "]}");
+        emit_event(json);
+      }
+      break;
+    }
+
+    case StrategySubCommand::Params: {
+      // Parse key=value pairs from params string
+      kj::TreeMap<kj::String, double> parameters;
+
+      // Simple parser for "key1=value1 key2=value2" format
+      kj::StringPtr params_str = cmd.params;
+      size_t i = 0;
+      while (i < params_str.size()) {
+        // Skip whitespace
+        while (i < params_str.size() && (params_str[i] == ' ' || params_str[i] == '\t')) {
+          ++i;
+        }
+        if (i >= params_str.size()) {
+          break;
+        }
+
+        // Find key
+        size_t key_start = i;
+        while (i < params_str.size() && params_str[i] != '=') {
+          ++i;
+        }
+        if (i >= params_str.size()) {
+          break;
+        }
+        kj::String key = kj::str(params_str.slice(key_start, i));
+        ++i; // Skip '='
+
+        // Find value
+        size_t value_start = i;
+        while (i < params_str.size() && params_str[i] != ' ' && params_str[i] != '\t') {
+          ++i;
+        }
+        kj::String value_str = kj::str(params_str.slice(value_start, i));
+        double value = std::strtod(value_str.cStr(), nullptr);
+
+        parameters.insert(kj::mv(key), value);
+      }
+
+      bool success = strategy_manager_->reload_parameters(cmd.strategy_id, parameters);
+      if (success) {
+        kj::String json = kj::str(R"({"type":"strategy_params_updated","strategy_id":")",
+                                  cmd.strategy_id, R"(","param_count":)", parameters.size(), "}");
+        emit_event(json);
+      } else {
+        emit_error(kj::str("Failed to update parameters for strategy: ", cmd.strategy_id));
+      }
+      break;
+    }
+
+    case StrategySubCommand::Metrics: {
+      if (cmd.strategy_id.size() > 0) {
+        // Get metrics for specific strategy
+        auto maybe_metrics = strategy_manager_->get_strategy_metrics(cmd.strategy_id);
+        KJ_IF_SOME(metrics, maybe_metrics) {
+          kj::String json = kj::str(
+              R"({"type":"strategy_metrics","strategy_id":")", cmd.strategy_id,
+              R"(","events_processed":)", metrics.events_processed.load(),
+              R"(,"signals_generated":)", metrics.signals_generated.load(),
+              R"(,"avg_execution_time_us":)", metrics.avg_execution_time_us(),
+              R"(,"signals_per_second":)", metrics.signals_per_second(), R"(,"errors":)",
+              metrics.errors.load(), "}");
+          emit_event(json);
+        }
+        else {
+          emit_error(kj::str("No metrics available for strategy: ", cmd.strategy_id));
+        }
+      } else {
+        // Get aggregated metrics summary
+        kj::String summary = strategy_manager_->get_metrics_summary();
+        kj::String json = kj::str(R"({"type":"strategy_metrics_summary","summary":")",
+                                  summary.cStr(), R"("})");
         emit_event(json);
       }
       break;

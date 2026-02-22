@@ -6,18 +6,18 @@
 // - std::chrono::steady_clock: Monotonic time for task queue wait time measurement
 // - std::iomanip/std::sstream: String formatting (kj::str() lacks width specifiers)
 // - std::regex: Pattern matching for event tag filters (KJ lacks regex support)
-// - std::thread::sleep_for: Brief sleep during timer polling (KJ timer requires manual advance)
 // =======================================================================================
 
 #include <chrono> // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
 #include <iomanip> // std::setprecision - kj::str() lacks width/precision specifiers
+#include <kj/async-io.h>
 #include <kj/async.h>
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/string.h>
 #include <kj/time.h>
 #include <sstream> // std::ostringstream - kj::str() lacks width/precision specifiers
-#include <thread>  // std::this_thread::sleep_for - for timer polling with kj::TimerImpl
+#include <thread>  // std::this_thread::sleep_for - for startup synchronization only
 
 namespace veloz::core {
 
@@ -41,11 +41,10 @@ void EventLoop::TaskSetErrorHandler::taskFailed(kj::Exception&& exception) {
   KJ_LOG(ERROR, "Task failed in EventLoop", exception);
 }
 
-// KjAsyncState constructor
+// KjAsyncState constructor - uses kj::setupAsyncIo() for real async I/O
 EventLoop::KjAsyncState::KjAsyncState(EventStats& stats)
-    : event_loop(), error_handler(kj::heap<TaskSetErrorHandler>(stats)),
-      task_set(kj::heap<kj::TaskSet>(*error_handler)),
-      timer(kj::heap<kj::TimerImpl>(kj::systemPreciseMonotonicClock().now())) {}
+    : io_context(kj::setupAsyncIo()), error_handler(kj::heap<TaskSetErrorHandler>(stats)),
+      task_set(kj::heap<kj::TaskSet>(*error_handler)) {}
 
 EventLoop::EventLoop() = default;
 
@@ -269,7 +268,7 @@ kj::Promise<void> EventLoop::schedule_delayed_tasks() {
     auto delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
     if (delay_ms > 0 && kj_state_ != nullptr) {
       auto kj_delay = delay_ms * kj::MILLISECONDS;
-      return kj_state_->timer->afterDelay(kj_delay);
+      return kj_state_->timer().afterDelay(kj_delay);
     }
   }
 
@@ -284,15 +283,16 @@ void EventLoop::run() {
 
   stop_requested_.store(false);
 
-  // Create KJ async infrastructure on the stack
-  // Note: WaitScope must be destroyed before EventLoop, so we manage them carefully
+  // Create KJ async infrastructure on the stack using setupAsyncIo()
+  // This provides real OS-level async I/O with proper timer support
   KjAsyncState kj_state(stats_);
-  kj::WaitScope wait_scope(kj_state.event_loop);
+  kj::WaitScope& wait_scope = kj_state.io_context.waitScope;
 
   // Store pointer to state for timer access (cleared before destruction)
   kj_state_ = &kj_state;
 
-  // Main event loop using KJ primitives
+  // Main event loop using KJ async primitives
+  // Uses proper promise-based waiting instead of polling
   while (!stop_requested_.load()) {
     // Process all pending tasks
     bool has_tasks = true;
@@ -360,31 +360,25 @@ void EventLoop::run() {
       kj_delay = delay.count() * kj::MILLISECONDS;
     }
     else {
-      // No delayed tasks - use a default poll interval
-      // This allows the event loop to check for new tasks periodically
-      // while still being woken up immediately by cross-thread fulfiller
-      kj_delay = 10 * kj::MILLISECONDS;
+      // No delayed tasks - use a longer default interval since we have
+      // proper cross-thread wake-up via the fulfiller
+      kj_delay = 100 * kj::MILLISECONDS;
     }
 
-    // Create timeout promise using KJ timer
-    auto timeout_promise = kj_state.timer->afterDelay(kj_delay);
+    // Create timeout promise using KJ timer from setupAsyncIo()
+    // This is a real OS-level timer that works without manual advancement
+    auto timeout_promise = kj_state_->timer().afterDelay(kj_delay);
     auto wake_promise = kj::mv(paf.promise);
 
     // Use exclusiveJoin to wait for either wake-up or timeout
     // This is the KJ-idiomatic way to wait without busy-polling
     auto combined = wake_promise.exclusiveJoin(kj::mv(timeout_promise));
 
-    // Process the combined promise using KJ's event loop
-    // Note: kj::TimerImpl requires manual time advancement, so we use poll() + advanceTo()
-    // instead of wait() which would block indefinitely with a mock timer
+    // Wait on the combined promise using KJ's event loop
+    // With setupAsyncIo(), wait() properly blocks on OS-level I/O
+    // and wakes up when either the timer fires or the fulfiller is triggered
     if (!stop_requested_.load()) {
-      while (!stop_requested_.load()) {
-        kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
-        if (combined.poll(wait_scope)) {
-          break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      }
+      combined.wait(wait_scope);
     }
 
     // Clear the wake fulfiller

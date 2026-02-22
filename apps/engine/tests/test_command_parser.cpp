@@ -523,6 +523,115 @@ KJ_TEST("ParseStrategyCommand: Start missing ID") {
   }
 }
 
+KJ_TEST("ParseStrategyCommand: Params") {
+  auto result = parse_strategy_command("STRATEGY PARAMS strat-123456 rsi_period=14 threshold=0.7"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Params);
+    KJ_EXPECT(strategy.strategy_id == "strat-123456"_kj);
+    KJ_EXPECT(strategy.params == "rsi_period=14 threshold=0.7"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Params shortcut") {
+  auto result = parse_strategy_command("STRATEGY PARAM strat-123456 value=1.5"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Params);
+    KJ_EXPECT(strategy.strategy_id == "strat-123456"_kj);
+    KJ_EXPECT(strategy.params == "value=1.5"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Params update alias") {
+  auto result = parse_strategy_command("STRATEGY UPDATE strat-123456 fast=12"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Params);
+    KJ_EXPECT(strategy.strategy_id == "strat-123456"_kj);
+    KJ_EXPECT(strategy.params == "fast=12"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Params missing ID") {
+  auto result = parse_strategy_command("STRATEGY PARAMS"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_FAIL_EXPECT("expected parse to fail with missing ID");
+  }
+  else {
+    // Expected: parsing failed
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Params missing values") {
+  auto result = parse_strategy_command("STRATEGY PARAMS strat-123456"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_FAIL_EXPECT("expected parse to fail with missing values");
+  }
+  else {
+    // Expected: parsing failed
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Metrics all") {
+  auto result = parse_strategy_command("STRATEGY METRICS"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Metrics);
+    KJ_EXPECT(strategy.strategy_id == ""_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Metrics specific") {
+  auto result = parse_strategy_command("STRATEGY METRICS strat-123456"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Metrics);
+    KJ_EXPECT(strategy.strategy_id == "strat-123456"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Pause") {
+  auto result = parse_strategy_command("STRATEGY PAUSE strat-123456"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Pause);
+    KJ_EXPECT(strategy.strategy_id == "strat-123456"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
+KJ_TEST("ParseStrategyCommand: Resume") {
+  auto result = parse_strategy_command("STRATEGY RESUME strat-123456"_kj);
+
+  KJ_IF_SOME(strategy, result) {
+    KJ_EXPECT(strategy.subcommand == StrategySubCommand::Resume);
+    KJ_EXPECT(strategy.strategy_id == "strat-123456"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("strategy parsing failed");
+  }
+}
+
 KJ_TEST("ParseCommand: Strategy") {
   auto result = parse_command("STRATEGY LIST"_kj);
 

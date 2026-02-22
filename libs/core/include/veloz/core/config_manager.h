@@ -193,8 +193,7 @@ public:
 
     /**
      * @brief Build ConfigItem
-     * Note: Uses std::make_unique because ConfigItemBase requires std::unique_ptr for
-     * polymorphic ownership (kj::Own does not support release() for this pattern)
+     * Uses kj::heap<T>() and kj::Own<T> for KJ-native memory management.
      */
     kj::Own<ConfigItem<T>> build() {
       // Create with initial state

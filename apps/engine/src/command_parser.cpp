@@ -445,6 +445,33 @@ kj::Maybe<ParsedStrategy> parse_strategy_command(kj::StringPtr line) {
     if (tokens.size() >= 3) {
       result.strategy_id = kj::str(tokens[2]);
     }
+  } else if (subcommand_lower == "params"_kj || subcommand_lower == "param"_kj ||
+             subcommand_lower == "update"_kj) {
+    result.subcommand = StrategySubCommand::Params;
+    // STRATEGY PARAMS <STRATEGY_ID> <KEY>=<VALUE> [<KEY>=<VALUE>...]
+    if (tokens.size() < 4) {
+      return kj::none;
+    }
+    result.strategy_id = kj::str(tokens[2]);
+
+    // Collect key=value pairs as params
+    kj::Vector<char> params_buf;
+    for (size_t i = 3; i < tokens.size(); ++i) {
+      if (params_buf.size() > 0) {
+        params_buf.add(' ');
+      }
+      for (char c : tokens[i]) {
+        params_buf.add(c);
+      }
+    }
+    params_buf.add('\0');
+    result.params = kj::String(params_buf.releaseAsArray());
+  } else if (subcommand_lower == "metrics"_kj || subcommand_lower == "metric"_kj) {
+    result.subcommand = StrategySubCommand::Metrics;
+    // STRATEGY METRICS [STRATEGY_ID]
+    if (tokens.size() >= 3) {
+      result.strategy_id = kj::str(tokens[2]);
+    }
   } else {
     result.subcommand = StrategySubCommand::Unknown;
     return kj::none;

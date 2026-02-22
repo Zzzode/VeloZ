@@ -413,8 +413,109 @@ curl http://127.0.0.1:8080/api/backtest/results/{id}
 
 ---
 
+---
+
+## Authentication (Optional)
+
+VeloZ supports optional authentication for secure API access.
+
+### Enabling Authentication
+
+```bash
+export VELOZ_AUTH_ENABLED=true
+export VELOZ_ADMIN_PASSWORD=your_secure_password
+./scripts/run_gateway.sh dev
+```
+
+### Quick Authentication Example
+
+**1. Login:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"admin","password":"your_secure_password"}'
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJ...",
+  "refresh_token": "eyJ...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+**2. Use access token:**
+```bash
+curl http://127.0.0.1:8080/api/orders_state \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**3. Refresh token when expired:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"YOUR_REFRESH_TOKEN"}'
+```
+
+### API Keys for Automation
+
+For automated trading bots, use API keys instead of JWT tokens:
+
+**Create API key (requires admin token):**
+```bash
+curl -X POST http://127.0.0.1:8080/api/auth/keys \
+  -H "Authorization: Bearer ADMIN_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"trading-bot","permissions":["read","write"]}'
+```
+
+**Use API key:**
+```bash
+curl http://127.0.0.1:8080/api/market \
+  -H "X-API-Key: veloz_abc123..."
+```
+
+### Permission Levels
+
+- **read**: View market data, orders, positions
+- **write**: Place and cancel orders
+- **admin**: Manage users and API keys
+
+See [User Guide](README.md#authentication--security) for complete authentication documentation.
+
+### Audit Logging
+
+When authentication is enabled, security events are automatically logged:
+
+**Enable audit logging:**
+```bash
+export VELOZ_AUTH_ENABLED=true
+export VELOZ_AUDIT_LOG_ENABLED=true
+export VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log
+./scripts/run_gateway.sh dev
+```
+
+**Logged events include:**
+- Login/logout attempts (success and failure)
+- Token refresh operations
+- API key creation and revocation
+- Permission denied events
+
+**Retention policies:**
+- Auth logs: 90 days
+- Order logs: 365 days
+- API key logs: 365 days
+- Access logs: 14 days
+
+See [Configuration Guide](configuration.md#audit-logging-configuration) for detailed audit configuration.
+
+---
+
 ## Next Steps
 
+- **[User Guide](README.md)** - Complete user documentation
 - **[Configuration Guide](configuration.md)** - All configuration options
 - **[Backtest User Guide](backtest.md)** - Detailed backtesting documentation
 - **[Binance Integration](binance.md)** - Binance-specific setup

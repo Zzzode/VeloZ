@@ -113,6 +113,98 @@ class TestJWTManager(unittest.TestCase):
         payload2 = self.jwt.verify_refresh_token(token2)
         self.assertNotEqual(payload1["jti"], payload2["jti"])
 
+    def tearDown(self):
+        """Stop cleanup thread."""
+        self.jwt.stop()
+
+
+class TestJWTManagerCleanup(unittest.TestCase):
+    """Tests for JWTManager cleanup functionality."""
+
+    def test_get_revocation_metrics_initial(self):
+        """Test initial revocation metrics."""
+        jwt = JWTManager("test_secret", cleanup_interval=3600)
+        try:
+            metrics = jwt.get_revocation_metrics()
+            self.assertEqual(metrics["revoked_token_count"], 0)
+            self.assertEqual(metrics["total_cleaned_up"], 0)
+            self.assertEqual(metrics["cleanup_interval_seconds"], 3600)
+        finally:
+            jwt.stop()
+
+    def test_get_revocation_metrics_after_revoke(self):
+        """Test revocation metrics after revoking tokens."""
+        jwt = JWTManager("test_secret", cleanup_interval=3600)
+        try:
+            # Revoke some tokens
+            token1 = jwt.create_refresh_token("user1")
+            token2 = jwt.create_refresh_token("user2")
+            jwt.revoke_refresh_token(token1)
+            jwt.revoke_refresh_token(token2)
+
+            metrics = jwt.get_revocation_metrics()
+            self.assertEqual(metrics["revoked_token_count"], 2)
+        finally:
+            jwt.stop()
+
+    def test_cleanup_expired_tokens(self):
+        """Test that expired revoked tokens are cleaned up."""
+        jwt = JWTManager("test_secret", cleanup_interval=3600)
+        try:
+            # Manually add an expired revoked token
+            expired_time = int(time.time()) - (8 * 24 * 3600)  # 8 days ago (beyond 7-day expiry)
+            with jwt._mu:
+                jwt._revoked_refresh_tokens["expired_jti"] = expired_time
+                jwt._revoked_refresh_tokens["valid_jti"] = int(time.time())
+
+            # Run cleanup
+            removed = jwt._cleanup_expired_tokens()
+
+            # Should have removed the expired token
+            self.assertEqual(removed, 1)
+            metrics = jwt.get_revocation_metrics()
+            self.assertEqual(metrics["revoked_token_count"], 1)
+            self.assertEqual(metrics["total_cleaned_up"], 1)
+        finally:
+            jwt.stop()
+
+    def test_cleanup_preserves_valid_tokens(self):
+        """Test that valid revoked tokens are preserved during cleanup."""
+        jwt = JWTManager("test_secret", cleanup_interval=3600)
+        try:
+            # Revoke a token
+            token = jwt.create_refresh_token("user1")
+            jwt.revoke_refresh_token(token)
+
+            # Run cleanup
+            removed = jwt._cleanup_expired_tokens()
+
+            # Should not have removed anything
+            self.assertEqual(removed, 0)
+            metrics = jwt.get_revocation_metrics()
+            self.assertEqual(metrics["revoked_token_count"], 1)
+        finally:
+            jwt.stop()
+
+    def test_stop_cleanup_thread(self):
+        """Test that cleanup thread can be stopped gracefully."""
+        jwt = JWTManager("test_secret", cleanup_interval=1)  # Short interval for testing
+        self.assertTrue(jwt._cleanup_thread.is_alive())
+
+        jwt.stop()
+
+        # Thread should stop
+        self.assertFalse(jwt._cleanup_thread.is_alive())
+
+    def test_custom_cleanup_interval(self):
+        """Test custom cleanup interval configuration."""
+        jwt = JWTManager("test_secret", cleanup_interval=7200)  # 2 hours
+        try:
+            metrics = jwt.get_revocation_metrics()
+            self.assertEqual(metrics["cleanup_interval_seconds"], 7200)
+        finally:
+            jwt.stop()
+
 
 class TestAPIKeyManager(unittest.TestCase):
     """Tests for APIKeyManager class."""
@@ -187,6 +279,7 @@ class TestAuthManager(unittest.TestCase):
         )
 
     def tearDown(self):
+        self.auth.stop()
         if "VELOZ_ADMIN_PASSWORD" in os.environ:
             del os.environ["VELOZ_ADMIN_PASSWORD"]
 
@@ -264,6 +357,13 @@ class TestAuthManager(unittest.TestCase):
         self.assertTrue(self.auth.is_public_endpoint("/health"))
         self.assertTrue(self.auth.is_public_endpoint("/api/stream"))
         self.assertFalse(self.auth.is_public_endpoint("/api/orders"))
+
+    def test_get_revocation_metrics(self):
+        """Test getting revocation metrics from AuthManager."""
+        metrics = self.auth.get_revocation_metrics()
+        self.assertIn("revoked_token_count", metrics)
+        self.assertIn("total_cleaned_up", metrics)
+        self.assertIn("cleanup_interval_seconds", metrics)
 
 
 if __name__ == "__main__":

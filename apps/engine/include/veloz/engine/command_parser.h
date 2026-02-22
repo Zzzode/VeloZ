@@ -34,7 +34,19 @@ struct ParsedQuery final {
 };
 
 // Strategy subcommand types
-enum class StrategySubCommand { Load, Start, Stop, Pause, Resume, Unload, List, Status, Unknown };
+enum class StrategySubCommand {
+  Load,
+  Start,
+  Stop,
+  Pause,
+  Resume,
+  Unload,
+  List,
+  Status,
+  Params,   ///< Hot parameter update
+  Metrics,  ///< Get strategy metrics
+  Unknown
+};
 
 struct ParsedStrategy final {
   StrategySubCommand subcommand{StrategySubCommand::Unknown};

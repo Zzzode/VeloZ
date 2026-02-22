@@ -37,6 +37,49 @@ VeloZ behavior can be configured via environment variables before starting the g
 |-----------|---------|-------------|
 | `VELOZ_EXECUTION_MODE` | `sim_engine` | Execution mode: `sim_engine` (simulated) or `binance_testnet_spot` (Binance testnet) |
 
+### Authentication Configuration
+
+| Variable | Default | Description |
+|-----------|---------|-------------|
+| `VELOZ_AUTH_ENABLED` | `false` | Enable authentication: `true` or `false` |
+| `VELOZ_JWT_SECRET` | (auto-generated) | JWT signing secret (keep secure) |
+| `VELOZ_TOKEN_EXPIRY` | `3600` | Access token expiry in seconds (1 hour) |
+| `VELOZ_ADMIN_PASSWORD` | (empty) | Admin user password for login |
+| `VELOZ_RATE_LIMIT_CAPACITY` | `100` | Rate limit bucket capacity |
+| `VELOZ_RATE_LIMIT_REFILL` | `10.0` | Rate limit refill rate (tokens/second) |
+
+### Audit Logging Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_AUDIT_LOG_ENABLED` | `true` | Enable audit logging (when auth is enabled) |
+| `VELOZ_AUDIT_LOG_FILE` | (stderr) | Audit log file path |
+| `VELOZ_AUDIT_LOG_RETENTION_DAYS` | `90` | Default audit log retention period in days |
+
+**Retention policies by log type:**
+
+| Log Type | Retention | Description |
+|----------|-----------|-------------|
+| `auth` | 90 days | Login, logout, token refresh events |
+| `order` | 365 days | Order placement and execution events |
+| `api_key` | 365 days | API key creation and revocation |
+| `error` | 30 days | Error events |
+| `access` | 14 days | General API access logs |
+
+**Audit log storage:**
+- Logs are stored in NDJSON format (newline-delimited JSON)
+- Default location: `/var/log/veloz/audit/`
+- Archives stored in: `/var/log/veloz/audit/archive/`
+- Old logs are compressed with gzip before deletion
+
+### Reconciliation Configuration
+
+| Variable | Default | Description |
+|-----------|---------|-------------|
+| `VELOZ_RECONCILIATION_INTERVAL` | `30` | Reconciliation interval in seconds |
+| `VELOZ_AUTO_CANCEL_ORPHANED` | `false` | Automatically cancel orphaned orders |
+| `VELOZ_RECONCILIATION_ENABLED` | `true` | Enable automatic reconciliation |
+
 ## Configuration Examples
 
 ### Local Development (Default)
@@ -91,6 +134,30 @@ Use release build instead of debug:
 ```bash
 export VELOZ_PRESET=release
 ./scripts/run_gateway.sh
+```
+
+### Authentication Enabled
+
+Enable authentication with JWT tokens and API keys:
+
+```bash
+export VELOZ_AUTH_ENABLED=true
+export VELOZ_ADMIN_PASSWORD=your_secure_password
+export VELOZ_JWT_SECRET=your_secret_key_min_32_chars
+export VELOZ_TOKEN_EXPIRY=3600
+export VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log
+./scripts/run_gateway.sh dev
+```
+
+### Reconciliation Enabled
+
+Enable automatic order reconciliation:
+
+```bash
+export VELOZ_RECONCILIATION_ENABLED=true
+export VELOZ_RECONCILIATION_INTERVAL=30
+export VELOZ_AUTO_CANCEL_ORPHANED=true
+./scripts/run_gateway.sh dev
 ```
 
 ### Combined Configuration

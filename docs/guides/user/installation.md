@@ -2,6 +2,31 @@
 
 This guide covers installing VeloZ for development and production environments.
 
+## Quick Install (TL;DR)
+
+**Ubuntu/Debian (One-liner):**
+```bash
+sudo apt update && sudo apt install -y cmake ninja-build build-essential clang-16 libssl-dev python3 git && \
+git clone https://github.com/your-org/VeloZ.git && cd VeloZ && \
+cmake --preset dev && cmake --build --preset dev-all -j$(nproc) && \
+ctest --preset dev -j$(nproc) && ./scripts/run_gateway.sh dev
+```
+
+**macOS (One-liner):**
+```bash
+xcode-select --install && brew install cmake ninja openssl@3 && \
+git clone https://github.com/your-org/VeloZ.git && cd VeloZ && \
+cmake --preset dev && cmake --build --preset dev-all -j$(sysctl -n hw.ncpu) && \
+ctest --preset dev -j$(sysctl -n hw.ncpu) && ./scripts/run_gateway.sh dev
+```
+
+**Expected result:**
+- ✓ All 16 tests pass (100%)
+- ✓ Gateway runs on http://127.0.0.1:8080
+- ✓ UI accessible in browser
+
+---
+
 ## System Requirements
 
 ### Minimum Requirements
@@ -216,6 +241,33 @@ Configure VeloZ behavior via environment variables:
 | `VELOZ_BINANCE_API_SECRET` | (empty) | Binance API secret |
 | `VELOZ_BINANCE_WS_BASE_URL` | `wss://testnet.binance.vision/ws` | Binance WebSocket URL |
 
+### Authentication Configuration (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_AUTH_ENABLED` | `false` | Enable authentication |
+| `VELOZ_JWT_SECRET` | (auto-generated) | JWT signing secret (min 32 chars) |
+| `VELOZ_TOKEN_EXPIRY` | `3600` | Access token expiry (seconds) |
+| `VELOZ_ADMIN_PASSWORD` | (empty) | Admin user password |
+| `VELOZ_RATE_LIMIT_CAPACITY` | `100` | Rate limit capacity |
+| `VELOZ_RATE_LIMIT_REFILL` | `10.0` | Rate limit refill rate |
+
+### Audit Logging Configuration (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_AUDIT_LOG_ENABLED` | `true` | Enable audit logging |
+| `VELOZ_AUDIT_LOG_FILE` | (stderr) | Audit log file path |
+| `VELOZ_AUDIT_LOG_RETENTION_DAYS` | `90` | Log retention period |
+
+### Reconciliation Configuration (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_RECONCILIATION_ENABLED` | `true` | Enable reconciliation |
+| `VELOZ_RECONCILIATION_INTERVAL` | `30` | Reconciliation interval (seconds) |
+| `VELOZ_AUTO_CANCEL_ORPHANED` | `false` | Auto-cancel orphaned orders |
+
 ## Verification
 
 After installation, verify everything works:
@@ -233,6 +285,118 @@ After installation, verify everything works:
 
 # Run test suite
 ctest --preset dev -j$(nproc)
+```
+
+**Expected Results:**
+- Engine starts without errors
+- All 16 tests pass (100% pass rate)
+- Gateway accessible at http://127.0.0.1:8080
+- UI loads in browser
+
+## Post-Installation Setup
+
+### Optional: Enable Authentication
+
+For production or multi-user environments:
+
+```bash
+# Generate secure JWT secret (min 32 characters)
+export VELOZ_JWT_SECRET=$(openssl rand -base64 32)
+
+# Set admin password
+export VELOZ_ADMIN_PASSWORD=your_secure_password
+
+# Enable authentication
+export VELOZ_AUTH_ENABLED=true
+
+# Configure audit logging
+export VELOZ_AUDIT_LOG_ENABLED=true
+export VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log
+export VELOZ_AUDIT_LOG_RETENTION_DAYS=90
+
+# Start gateway
+./scripts/run_gateway.sh dev
+```
+
+**Audit log setup for production:**
+
+```bash
+# Create audit log directory with proper permissions
+sudo mkdir -p /var/log/veloz/audit
+sudo chown veloz:veloz /var/log/veloz/audit
+
+# Configure log rotation (optional, VeloZ handles retention internally)
+# Logs are stored in NDJSON format for easy parsing
+# Archives are automatically compressed with gzip
+```
+
+**Retention policies by log type:**
+- Auth logs: 90 days (login, logout, token refresh)
+- Order logs: 365 days (order placement and execution)
+- API key logs: 365 days (key creation and revocation)
+- Access logs: 14 days (general API access)
+
+### Optional: Configure Binance Integration
+
+For live market data or testnet trading:
+
+```bash
+# Get API keys from https://testnet.binance.vision/
+
+# Configure Binance
+export VELOZ_MARKET_SOURCE=binance_rest
+export VELOZ_EXECUTION_MODE=binance_testnet_spot
+export VELOZ_BINANCE_API_KEY=your_api_key
+export VELOZ_BINANCE_API_SECRET=your_api_secret
+
+# Start gateway
+./scripts/run_gateway.sh dev
+```
+
+### Optional: Enable Reconciliation
+
+For production trading with automatic order state synchronization:
+
+```bash
+export VELOZ_RECONCILIATION_ENABLED=true
+export VELOZ_RECONCILIATION_INTERVAL=30
+export VELOZ_AUTO_CANCEL_ORPHANED=true
+./scripts/run_gateway.sh dev
+```
+
+### Create Systemd Service (Production)
+
+For production deployments, create a systemd service:
+
+```bash
+# Create service file
+sudo tee /etc/systemd/system/veloz.service > /dev/null <<EOF
+[Unit]
+Description=VeloZ Trading Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=veloz
+WorkingDirectory=/opt/veloz
+Environment="VELOZ_PRESET=release"
+Environment="VELOZ_AUTH_ENABLED=true"
+Environment="VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log"
+ExecStart=/opt/veloz/scripts/run_gateway.sh
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start service
+sudo systemctl daemon-reload
+sudo systemctl enable veloz
+sudo systemctl start veloz
+
+# Check status
+sudo systemctl status veloz
 ```
 
 ## Troubleshooting
@@ -287,6 +451,197 @@ ctest --preset dev --output-on-failure
 # Run specific test
 ./build/dev/libs/core/veloz_core_tests
 ```
+
+### Gateway fails to start
+
+**Symptom:** `./scripts/run_gateway.sh dev` exits immediately
+
+**Diagnosis:**
+```bash
+# Check if engine binary exists
+ls -la build/dev/apps/engine/veloz_engine
+
+# Check Python version
+python3 --version  # Should be 3.8+
+
+# Check port availability
+lsof -i :8080 || netstat -an | grep 8080
+```
+
+**Solutions:**
+```bash
+# If engine not built
+cmake --build --preset dev-all -j$(nproc)
+
+# If port in use
+export VELOZ_PORT=8081
+./scripts/run_gateway.sh dev
+
+# If Python too old
+# Ubuntu: sudo apt install python3.11
+# macOS: brew install python@3.11
+```
+
+### Authentication not working
+
+**Symptom:** Login returns 401 or auth endpoints return 500
+
+**Diagnosis:**
+```bash
+# Check if auth is enabled
+echo $VELOZ_AUTH_ENABLED
+
+# Check if admin password is set
+echo $VELOZ_ADMIN_PASSWORD
+```
+
+**Solutions:**
+```bash
+# Enable authentication properly
+export VELOZ_AUTH_ENABLED=true
+export VELOZ_ADMIN_PASSWORD=your_password
+export VELOZ_JWT_SECRET=$(openssl rand -base64 32)
+./scripts/run_gateway.sh dev
+```
+
+### Audit logs not appearing
+
+**Symptom:** Audit events not being logged or log file empty
+
+**Diagnosis:**
+```bash
+# Check if audit logging is enabled
+echo $VELOZ_AUDIT_LOG_ENABLED
+
+# Check if log directory exists and is writable
+ls -la /var/log/veloz/audit/
+
+# Check if log file is being written
+tail -f /var/log/veloz/audit.log
+```
+
+**Solutions:**
+```bash
+# Enable audit logging
+export VELOZ_AUDIT_LOG_ENABLED=true
+
+# Create log directory with proper permissions
+sudo mkdir -p /var/log/veloz/audit
+sudo chown $(whoami):$(whoami) /var/log/veloz/audit
+
+# Set log file path
+export VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log
+
+# Restart gateway
+./scripts/run_gateway.sh dev
+```
+
+**Note:** Audit logging requires authentication to be enabled (`VELOZ_AUTH_ENABLED=true`).
+
+### Binance API errors
+
+**Symptom:** Orders fail with "binance_not_configured" or API errors
+
+**Common causes:**
+1. API keys not set
+2. Using mainnet keys with testnet URLs (or vice versa)
+3. API key permissions insufficient
+4. Rate limit exceeded
+
+**Solutions:**
+```bash
+# Verify configuration
+echo "API Key: $VELOZ_BINANCE_API_KEY"
+echo "Trade URL: $VELOZ_BINANCE_TRADE_BASE_URL"
+
+# For testnet, ensure testnet URL
+export VELOZ_BINANCE_TRADE_BASE_URL=https://testnet.binance.vision
+export VELOZ_BINANCE_WS_BASE_URL=wss://testnet.binance.vision/ws
+
+# For mainnet (CAUTION: real money)
+export VELOZ_BINANCE_TRADE_BASE_URL=https://api.binance.com
+export VELOZ_BINANCE_WS_BASE_URL=wss://stream.binance.com:9443/ws
+
+# Check API key permissions on Binance website
+# Required: Spot & Margin Trading enabled
+```
+
+### Build takes too long
+
+**Symptom:** Build takes > 10 minutes
+
+**Solutions:**
+```bash
+# Use Ninja instead of Make (faster)
+sudo apt install ninja-build  # Ubuntu
+brew install ninja            # macOS
+
+# Build specific targets only
+cmake --build --preset dev-engine -j$(nproc)  # Just engine
+
+# Use ccache for faster rebuilds
+sudo apt install ccache  # Ubuntu
+brew install ccache      # macOS
+export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+```
+
+### Memory issues during build
+
+**Symptom:** Compiler killed, "out of memory" errors
+
+**Solutions:**
+```bash
+# Reduce parallel jobs
+cmake --build --preset dev-all -j2  # Use only 2 cores
+
+# Or build sequentially
+cmake --build --preset dev-all -j1
+
+# Check available memory
+free -h  # Linux
+vm_stat  # macOS
+```
+
+### WebSocket connection fails
+
+**Symptom:** Market data not updating, WebSocket errors in logs
+
+**Diagnosis:**
+```bash
+# Test WebSocket connectivity
+curl -i -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Host: testnet.binance.vision" \
+  https://testnet.binance.vision/ws
+```
+
+**Solutions:**
+```bash
+# Check OpenSSL is installed
+openssl version
+
+# Verify WebSocket URL is correct
+echo $VELOZ_BINANCE_WS_BASE_URL
+
+# Check firewall/proxy settings
+# Ensure outbound WebSocket connections allowed
+```
+
+## Installation Verification Checklist
+
+After installation, verify everything works:
+
+- [ ] CMake version >= 3.24: `cmake --version`
+- [ ] Compiler supports C++23: `clang++ --version` or `g++ --version`
+- [ ] Python >= 3.8: `python3 --version`
+- [ ] OpenSSL installed: `openssl version`
+- [ ] Build succeeds: `cmake --build --preset dev-all -j$(nproc)`
+- [ ] All tests pass: `ctest --preset dev -j$(nproc)` (16/16 expected)
+- [ ] Engine starts: `./build/dev/apps/engine/veloz_engine --help`
+- [ ] Gateway starts: `./scripts/run_gateway.sh dev`
+- [ ] UI loads: Open http://127.0.0.1:8080 in browser
+- [ ] Health check: `curl http://127.0.0.1:8080/health` returns `{"ok":true}`
 
 ## Next Steps
 

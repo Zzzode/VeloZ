@@ -78,3 +78,23 @@ if(VELOZ_BUILD_TESTS)
     )
   add_test(NAME veloz_core_tests COMMAND veloz_core_tests)
 endif()
+
+# Benchmarks
+option(VELOZ_BUILD_BENCHMARKS "Build performance benchmarks" ON)
+if(VELOZ_BUILD_BENCHMARKS)
+  add_executable(veloz_core_benchmarks
+    benchmarks/benchmark_core.cpp
+    )
+  target_include_directories(veloz_core_benchmarks
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+    )
+  target_link_libraries(veloz_core_benchmarks
+    PRIVATE
+      veloz_core
+    )
+  # Set Release optimization for benchmarks even in Debug builds
+  target_compile_options(veloz_core_benchmarks PRIVATE
+    $<$<CONFIG:Debug>:-O2>
+    )
+endif()

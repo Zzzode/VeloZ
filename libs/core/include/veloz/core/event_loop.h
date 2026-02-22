@@ -253,13 +253,18 @@ private:
   kj::MutexGuarded<FilterState> filter_state_;
 
   // KJ event loop infrastructure (created on stack in run(), pointer stored for timer access)
+  // Uses kj::setupAsyncIo() for real async I/O with OS-level timer support
   struct KjAsyncState {
-    kj::EventLoop event_loop;
+    kj::AsyncIoContext io_context;
     kj::Own<TaskSetErrorHandler> error_handler;
     kj::Own<kj::TaskSet> task_set;
-    kj::Own<kj::TimerImpl> timer;
 
     explicit KjAsyncState(EventStats& stats);
+
+    // Access timer from io_context
+    kj::Timer& timer() {
+      return io_context.provider->getTimer();
+    }
   };
   KjAsyncState* kj_state_ = nullptr; // Non-owning pointer to stack-allocated state
 

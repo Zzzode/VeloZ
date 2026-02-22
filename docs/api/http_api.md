@@ -39,7 +39,7 @@ The following endpoints do not require authentication:
 
 ### POST /api/auth/login
 
-Authenticate and obtain a JWT token.
+Authenticate and obtain JWT tokens (access token and refresh token).
 
 **Request Body (JSON):**
 ```json
@@ -52,10 +52,20 @@ Authenticate and obtain a JWT token.
 **Success Response:**
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer"
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600
 }
 ```
+
+**Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `access_token` | string | Short-lived JWT token for API access (default: 1 hour) |
+| `refresh_token` | string | Long-lived token for obtaining new access tokens (default: 7 days) |
+| `token_type` | string | Always "Bearer" |
+| `expires_in` | int | Access token expiry in seconds |
 
 **Error Response (401):**
 ```json
@@ -63,6 +73,78 @@ Authenticate and obtain a JWT token.
   "error": "invalid_credentials"
 }
 ```
+
+### POST /api/auth/refresh
+
+Refresh an expired access token using a refresh token.
+
+**Request Body (JSON):**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Success Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+**Error Response (400):**
+```json
+{
+  "error": "bad_params",
+  "message": "refresh_token is required"
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "error": "invalid_refresh_token"
+}
+```
+
+**Notes:**
+- Refresh tokens are valid for 7 days by default
+- Revoked refresh tokens will be rejected
+- Refresh tokens are automatically cleaned up after expiry
+
+### POST /api/auth/logout
+
+Logout and revoke the refresh token to prevent further use.
+
+**Request Body (JSON):**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "message": "Logged out successfully"
+}
+```
+
+**Error Response (400):**
+```json
+{
+  "error": "bad_params",
+  "message": "refresh_token is required"
+}
+```
+
+**Notes:**
+- Logout revokes the refresh token, preventing it from being used to obtain new access tokens
+- Existing access tokens remain valid until they expire
+- For complete logout, clients should discard both access and refresh tokens
 
 ### GET /api/auth/keys
 
@@ -97,12 +179,33 @@ Create a new API key. Requires admin permission.
 }
 ```
 
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Human-readable name for the API key |
+| `permissions` | array | No | List of permissions (default: `["read", "write"]`) |
+
+**Available Permissions:**
+| Permission | Description |
+|------------|-------------|
+| `read` | Read-only access to all GET endpoints |
+| `write` | Write access to POST/DELETE endpoints |
+| `admin` | Full administrative access including key management |
+
 **Success Response (201):**
 ```json
 {
   "key_id": "vk_abc123",
   "api_key": "veloz_abc123...",
   "message": "Store this key securely. It will not be shown again."
+}
+```
+
+**Error Response (400):**
+```json
+{
+  "error": "bad_params",
+  "message": "permissions must be a list"
 }
 ```
 
@@ -113,6 +216,11 @@ Create a new API key. Requires admin permission.
   "message": "admin permission required"
 }
 ```
+
+**Notes:**
+- The raw API key is only returned once during creation
+- API keys are stored as hashes for security
+- Requires `admin` permission in the authenticated user's token or API key
 
 ### DELETE /api/auth/keys
 
@@ -129,10 +237,109 @@ Revoke an API key. Requires admin permission.
 }
 ```
 
+**Error Response (403):**
+```json
+{
+  "error": "forbidden",
+  "message": "admin permission required"
+}
+```
+
 **Error Response (404):**
 ```json
 {
   "error": "not_found"
+}
+```
+
+**Notes:**
+- Requires `admin` permission
+- Revoked keys are immediately invalidated
+- Audit logs record all key revocations
+
+---
+
+## Permission-Based Access Control
+
+When authentication is enabled, all endpoints (except public ones) require proper permissions.
+
+### Permission Model
+
+VeloZ uses a role-based permission system with three permission levels:
+
+| Permission | Access Level | Description |
+|------------|--------------|-------------|
+| `read` | Read-only | Access to all GET endpoints (market data, orders, positions, config) |
+| `write` | Read + Write | Access to POST endpoints (place orders, cancel orders) |
+| `admin` | Full access | All read/write access plus user/key management |
+
+### Permission Enforcement
+
+**Public Endpoints** (no authentication required):
+- `GET /health`
+- `GET /api/stream` (SSE)
+
+**Read Permission Required:**
+- `GET /api/config`
+- `GET /api/market`
+- `GET /api/orders`
+- `GET /api/orders_state`
+- `GET /api/order_state`
+- `GET /api/account`
+- `GET /api/positions`
+- `GET /api/positions/{symbol}`
+- `GET /api/execution/ping`
+- `GET /api/auth/keys` (users see only their own keys)
+
+**Write Permission Required:**
+- `POST /api/order`
+- `POST /api/cancel`
+
+**Admin Permission Required:**
+- `POST /api/auth/keys` (create API keys)
+- `DELETE /api/auth/keys` (revoke API keys)
+- `GET /api/auth/keys` (view all keys, not just own)
+
+### Permission Checking
+
+Permissions are checked in the following order:
+
+1. **JWT Token**: Permissions embedded in the token payload
+2. **API Key**: Permissions associated with the API key
+
+**Example JWT Payload:**
+```json
+{
+  "sub": "admin",
+  "iat": 1704067200,
+  "exp": 1704070800,
+  "type": "access",
+  "permissions": ["read", "write", "admin"]
+}
+```
+
+**Example API Key Permissions:**
+```json
+{
+  "key_id": "vk_abc123",
+  "permissions": ["read", "write"]
+}
+```
+
+### Permission Errors
+
+**403 Forbidden** - Insufficient permissions:
+```json
+{
+  "error": "forbidden",
+  "message": "admin permission required"
+}
+```
+
+**401 Unauthorized** - Authentication required:
+```json
+{
+  "error": "authentication_required"
 }
 ```
 
@@ -815,6 +1022,210 @@ The gateway behavior can be configured via environment variables:
 | `VELOZ_ADMIN_PASSWORD` | (empty) | Admin password for login |
 | `VELOZ_RATE_LIMIT_CAPACITY` | `100` | Rate limit bucket capacity |
 | `VELOZ_RATE_LIMIT_REFILL` | `10.0` | Rate limit refill rate (tokens/second) |
+| `VELOZ_AUDIT_LOG_ENABLED` | `true` | Enable audit logging (when auth is enabled) |
+| `VELOZ_AUDIT_LOG_FILE` | (stderr) | Audit log file path (default: stderr) |
+| `VELOZ_AUDIT_LOG_RETENTION_DAYS` | `90` | Audit log retention period in days |
+
+---
+
+## Audit Logging
+
+When authentication is enabled, the gateway automatically logs security-relevant events to the audit log.
+
+### Audit Log Format
+
+Audit logs use a structured format with timestamp and event details:
+
+```
+2026-02-21 10:30:45 [AUDIT] Login success: user=admin, ip=127.0.0.1
+2026-02-21 10:31:12 [AUDIT] API key created: key_id=vk_abc123, user=admin, name=my-key
+2026-02-21 10:32:05 [AUDIT] Token refresh success: ip=127.0.0.1
+2026-02-21 10:35:20 [AUDIT] API key revoked: key_id=vk_abc123
+2026-02-21 10:40:15 [AUDIT] Login failed: user=admin, ip=192.168.1.100
+```
+
+### Audited Events
+
+| Event | Description |
+|-------|-------------|
+| Login success | Successful authentication via `/api/auth/login` |
+| Login failed | Failed authentication attempt |
+| Token refresh success | Successful token refresh via `/api/auth/refresh` |
+| Token refresh failed | Failed token refresh attempt |
+| Logout | User logout via `/api/auth/logout` |
+| API key created | New API key created |
+| API key revoked | API key revoked |
+| Permission denied | Access denied due to insufficient permissions |
+
+### Audit Log Retention
+
+Audit logs are automatically managed based on retention policies per log type:
+
+| Log Type | Default Retention | Archive Before Delete |
+|----------|-------------------|----------------------|
+| `auth` | 90 days | Yes |
+| `order` | 365 days | Yes |
+| `api_key` | 365 days | Yes |
+| `error` | 30 days | Yes |
+| `access` | 14 days | No |
+| `default` | 30 days | Yes |
+
+**Retention behavior:**
+- **Automatic cleanup**: Logs beyond retention period are archived (if enabled) then deleted
+- **Archive compression**: Old logs are compressed with gzip before deletion
+- **Archive retention**: Archives are kept for 2x the retention period
+- **Configurable**: Set default via `VELOZ_AUDIT_LOG_RETENTION_DAYS`
+
+### Audit Log Location
+
+By default, audit logs are written to stderr and can be redirected:
+
+```bash
+# Write audit logs to file
+VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log ./scripts/run_gateway.sh dev
+
+# Write to stderr (default)
+./scripts/run_gateway.sh dev 2>> audit.log
+```
+
+### Audit Log Storage
+
+Audit logs are stored in NDJSON (newline-delimited JSON) format for easy parsing:
+
+```json
+{"timestamp":1708512645.123,"datetime":"2026-02-21T10:30:45","log_type":"auth","action":"login_success","user_id":"admin","ip_address":"127.0.0.1","details":{},"request_id":"abc123"}
+```
+
+**Storage structure:**
+- **Log directory**: `/var/log/veloz/audit/` (configurable)
+- **Archive directory**: `/var/log/veloz/audit/archive/`
+- **File naming**: `{log_type}_{YYYY-MM-DD}.ndjson`
+- **Archive naming**: `{log_type}_{YYYYMMDD_HHMMSS}.ndjson.gz`
+
+**Entry fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | float | Unix timestamp |
+| `datetime` | string | ISO 8601 formatted timestamp |
+| `log_type` | string | Log category (auth, order, api_key, error, access) |
+| `action` | string | Action performed |
+| `user_id` | string | User who performed the action |
+| `ip_address` | string | Client IP address |
+| `details` | object | Additional action-specific details |
+| `request_id` | string | Request correlation ID (optional) |
+
+### Audit Query API
+
+#### GET /api/audit/logs
+
+Query audit logs with filtering and pagination. Requires `admin:config` permission.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `type` | string | (all) | Filter by log type (auth, order, api_key, error, access) |
+| `user_id` | string | (all) | Filter by user ID |
+| `action` | string | (all) | Filter by action |
+| `start_time` | int | (none) | Start timestamp (Unix seconds) |
+| `end_time` | int | (none) | End timestamp (Unix seconds) |
+| `limit` | int | 100 | Maximum results (1-1000) |
+| `offset` | int | 0 | Skip first N results |
+
+**Success Response:**
+```json
+{
+  "logs": [
+    {
+      "timestamp": 1708512645.123,
+      "datetime": "2026-02-21T10:30:45",
+      "log_type": "auth",
+      "action": "login_success",
+      "user_id": "admin",
+      "ip_address": "127.0.0.1",
+      "details": {},
+      "request_id": "abc123"
+    }
+  ],
+  "total": 150,
+  "limit": 100,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "error": "authentication_required"
+}
+```
+
+**Error Response (403):**
+```json
+{
+  "error": "forbidden",
+  "message": "admin:config permission required"
+}
+```
+
+#### GET /api/audit/stats
+
+Get audit log statistics and retention status. Requires `admin:config` permission.
+
+**Success Response:**
+```json
+{
+  "status": "active",
+  "policies": {
+    "auth": {"retention_days": 90, "archive_before_delete": true, "max_file_size_mb": 100},
+    "order": {"retention_days": 365, "archive_before_delete": true, "max_file_size_mb": 100}
+  },
+  "log_files": {
+    "auth": {"count": 5, "size_bytes": 1048576},
+    "order": {"count": 10, "size_bytes": 5242880}
+  },
+  "archive_files": {
+    "auth": {"count": 2, "size_bytes": 204800}
+  },
+  "total_size_bytes": 6291456,
+  "archive_size_bytes": 204800
+}
+```
+
+#### POST /api/audit/archive
+
+Manually trigger audit log archival and cleanup. Requires `admin:config` permission.
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "stats": {
+    "archived_files": 3,
+    "deleted_files": 1,
+    "bytes_freed": 1048576,
+    "errors": []
+  }
+}
+```
+
+**Error Response (500):**
+```json
+{
+  "error": "not_initialized",
+  "message": "Audit retention manager not initialized"
+}
+```
+
+### Compliance
+
+Audit logs support compliance requirements by providing:
+
+- **Immutable records** of security events
+- **Timestamp precision** for forensic analysis
+- **User attribution** for all authenticated actions
+- **IP address tracking** for access patterns
+- **Retention policies** for regulatory compliance
 
 ---
 
@@ -959,31 +1370,73 @@ websocat ws://127.0.0.1:8080/ws/orders
 
 # Authentication examples (when auth is enabled)
 
-# Login to get JWT token
+# Login to get JWT tokens (access + refresh)
 curl -X POST http://127.0.0.1:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"user_id":"admin","password":"your_password"}'
 
-# Use JWT token
+# Response includes both access_token and refresh_token
+# {
+#   "access_token": "eyJ...",
+#   "refresh_token": "eyJ...",
+#   "token_type": "Bearer",
+#   "expires_in": 3600
+# }
+
+# Use JWT access token
 curl http://127.0.0.1:8080/api/config \
-  -H "Authorization: Bearer <your_jwt_token>"
+  -H "Authorization: Bearer <your_access_token>"
+
+# Refresh expired access token
+curl -X POST http://127.0.0.1:8080/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<your_refresh_token>"}'
+
+# Logout (revoke refresh token)
+curl -X POST http://127.0.0.1:8080/api/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<your_refresh_token>"}'
 
 # Use API key
 curl http://127.0.0.1:8080/api/config \
   -H "X-API-Key: veloz_abc123..."
 
-# Create API key (requires admin)
+# Create API key (requires admin permission)
 curl -X POST http://127.0.0.1:8080/api/auth/keys \
   -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
   -d '{"name":"my-key","permissions":["read","write"]}'
 
+# Create admin API key
+curl -X POST http://127.0.0.1:8080/api/auth/keys \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"admin-key","permissions":["read","write","admin"]}'
+
 # List API keys
 curl http://127.0.0.1:8080/api/auth/keys \
   -H "Authorization: Bearer <your_token>"
 
-# Revoke API key (requires admin)
+# Revoke API key (requires admin permission)
 curl -X DELETE "http://127.0.0.1:8080/api/auth/keys?key_id=vk_abc123" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Audit log examples (requires admin:config permission)
+
+# Query audit logs
+curl "http://127.0.0.1:8080/api/audit/logs?type=auth&limit=50" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Query audit logs with filters
+curl "http://127.0.0.1:8080/api/audit/logs?type=auth&user_id=admin&action=login_success&limit=100" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Get audit log statistics
+curl http://127.0.0.1:8080/api/audit/stats \
+  -H "Authorization: Bearer <admin_token>"
+
+# Trigger manual archive/cleanup
+curl -X POST http://127.0.0.1:8080/api/audit/archive \
   -H "Authorization: Bearer <admin_token>"
 ```
 
