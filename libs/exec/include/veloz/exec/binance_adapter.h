@@ -1,6 +1,7 @@
 #pragma once
 
 #include "veloz/exec/exchange_adapter.h"
+#include "veloz/exec/reconciliation.h"
 
 #include <kj/array.h>
 #include <kj/async-io.h>
@@ -20,7 +21,8 @@ namespace veloz::exec {
 
 // BinanceAdapter uses KJ async I/O for HTTP operations.
 // HMAC signatures use kj::String interface through HmacSha256 wrapper.
-class BinanceAdapter final : public ExchangeAdapter {
+// Implements ReconciliationQueryInterface for order reconciliation support.
+class BinanceAdapter final : public ExchangeAdapter, public ReconciliationQueryInterface {
 public:
   // Constructor requires KJ async I/O context for async HTTP operations
   BinanceAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key, kj::StringPtr secret_key,
@@ -81,6 +83,20 @@ public:
   // Configuration
   void set_timeout(kj::Duration timeout);
   kj::Duration get_timeout() const;
+
+  // ReconciliationQueryInterface implementation (Task #2)
+  kj::Promise<kj::Vector<ExecutionReport>>
+  query_open_orders_async(const veloz::common::SymbolId& symbol) override;
+
+  kj::Promise<kj::Maybe<ExecutionReport>>
+  query_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override;
+
+  kj::Promise<kj::Vector<ExecutionReport>>
+  query_orders_async(const veloz::common::SymbolId& symbol, std::int64_t start_time_ms,
+                     std::int64_t end_time_ms) override;
+
+  kj::Promise<kj::Maybe<ExecutionReport>>
+  cancel_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override;
 
 private:
   // Async HTTP methods using KJ HTTP client

@@ -3,6 +3,7 @@ add_library(veloz_exec
     src/order_router.cpp
     src/client_order_id.cpp
     src/binance_adapter.cpp
+    src/binance_reconciliation_adapter.cpp
     src/okx_adapter.cpp
     src/coinbase_adapter.cpp
     src/bybit_adapter.cpp

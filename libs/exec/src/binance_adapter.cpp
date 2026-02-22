@@ -1,10 +1,8 @@
 #include "veloz/exec/binance_adapter.h"
 
 #include "veloz/core/json.h"
-#include "veloz/core/time.h"
 #include "veloz/exec/hmac_wrapper.h"
 
-#include <algorithm>
 #include <chrono>
 #include <kj/async-io.h>
 #include <kj/compat/http.h>
@@ -1055,6 +1053,108 @@ BinanceAdapter::get_open_orders(const veloz::common::SymbolId& symbol) {
 
 kj::Maybe<kj::Array<ExecutionReport>> BinanceAdapter::get_all_open_orders() {
   return get_all_open_orders_async().wait(io_context_.waitScope);
+}
+
+// ============================================================================
+// ReconciliationQueryInterface Implementation (Task #2)
+// ============================================================================
+
+kj::Promise<kj::Vector<ExecutionReport>>
+BinanceAdapter::query_open_orders_async(const veloz::common::SymbolId& symbol) {
+  // Reuse existing get_open_orders_async and convert Array to Vector
+  return get_open_orders_async(symbol).then([](kj::Maybe<kj::Array<ExecutionReport>> result)
+                                                 -> kj::Vector<ExecutionReport> {
+    KJ_IF_SOME(orders, result) {
+      kj::Vector<ExecutionReport> vec;
+      for (auto& order : orders) {
+        vec.add(kj::mv(order));
+      }
+      return vec;
+    }
+    // Return empty vector if no orders
+    return kj::Vector<ExecutionReport>();
+  });
+}
+
+kj::Promise<kj::Maybe<ExecutionReport>>
+BinanceAdapter::query_order_async(const veloz::common::SymbolId& symbol,
+                                   kj::StringPtr client_order_id) {
+  // Reuse existing get_order_async - signature already matches
+  return get_order_async(symbol, client_order_id);
+}
+
+kj::Promise<kj::Vector<ExecutionReport>>
+BinanceAdapter::query_orders_async(const veloz::common::SymbolId& symbol,
+                                    std::int64_t start_time_ms, std::int64_t end_time_ms) {
+  // Query all orders within time range using Binance allOrders endpoint
+  kj::StringPtr endpoint = "/api/v3/allOrders"_kj;
+
+  auto formatted_symbol = format_symbol(symbol);
+  auto timestamp = get_timestamp_ms();
+
+  auto params = kj::str("symbol=", formatted_symbol, "&startTime=", start_time_ms, "&endTime=",
+                        end_time_ms, "&timestamp=", timestamp);
+
+  // Add signature
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
+
+  auto req_symbol = symbol;
+
+  return http_get_async(endpoint, params)
+      .then([this, req_symbol](kj::String response) mutable -> kj::Vector<ExecutionReport> {
+        if (response.size() == 0) {
+          return kj::Vector<ExecutionReport>();
+        }
+
+        kj::Vector<ExecutionReport> orders;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       KJ_LOG(ERROR, "Binance query_orders error", code, msg);
+                       return;
+                     }
+
+                     for (size_t i = 0; i < root.size(); ++i) {
+                       auto order = root[i];
+
+                       ExecutionReport report;
+                       report.symbol = req_symbol;
+                       report.client_order_id =
+                           kj::heapString(order["clientOrderId"].get_string(""_kj));
+                       report.venue_order_id = order["orderId"].get_string(""_kj);
+                       report.status = parse_order_status(order["status"].get_string("NEW"_kj));
+                       report.last_fill_qty = order["executedQty"].get_double(0.0);
+                       report.last_fill_price = order["price"].get_double(0.0);
+                       report.ts_exchange_ns = order["updateTime"].get_int(0LL) * 1000000;
+                       report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+
+                       orders.add(kj::mv(report));
+                     }
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                   })) {
+          KJ_LOG(ERROR, "Error parsing query_orders response", exception.getDescription());
+        }
+        return orders;
+      });
+}
+
+kj::Promise<kj::Maybe<ExecutionReport>>
+BinanceAdapter::cancel_order_async(const veloz::common::SymbolId& symbol,
+                                    kj::StringPtr client_order_id) {
+  // Reuse existing cancel_order_async by creating CancelOrderRequest
+  CancelOrderRequest req;
+  req.symbol = symbol;
+  req.client_order_id = kj::heapString(client_order_id);
+  return cancel_order_async(req);
 }
 
 } // namespace veloz::exec
