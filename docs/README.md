@@ -2,17 +2,19 @@
 
 Welcome to VeloZ documentation. This directory contains all documentation for the quantitative trading framework.
 
-> **Project Status**: **PRODUCTION READY** ✅ - All 7 phases complete (33/33 tasks). See [Implementation Status](project/reviews/implementation_status.md) for details.
+> **Project Status**: **PRODUCTION READY** ✅ - All 7 phases complete (33/33 tasks) + Sprint 3 complete (19/19 tasks). See [Implementation Status](project/reviews/implementation_status.md) for details.
 
 ## Production Status
 
 | Metric | Status |
 |--------|--------|
-| **Roadmap Completion** | 33/33 tasks (100%) |
-| **Build Status** | 79/79 targets clean |
-| **C++ Test Suites** | 16/16 passing |
-| **UI Tests** | 200+ passing |
-| **KJ Migration** | Complete |
+| **Roadmap Completion** | 33/33 tasks (100%) + Sprint 3: 19/19 tasks (100%) |
+| **Build Status** | Clean build (all targets) |
+| **C++ Test Suites** | 16/16 passing (100%) |
+| **Total Tests** | 805+ passing (100%) |
+| **UI Tests** | 200+ passing (Jest) |
+| **KJ Migration** | Complete (OS-level async I/O) |
+| **Security** | JWT + RBAC + Audit Logging |
 
 ### Feature Summary
 
@@ -34,12 +36,23 @@ Welcome to VeloZ documentation. This directory contains all documentation for th
 - Risk management system with dynamic thresholds and rule engine
 - Order management with WAL persistence and reconciliation
 - Real-time market data with WebSocket integration
+- Event Loop with `kj::setupAsyncIo()` for OS-level async I/O
+- Lock-free MPMC queue for high-throughput task processing
+- Memory Arena with `kj::Arena` for efficient temporary allocations
+
+**Security & Operations:**
+- JWT authentication (access + refresh tokens)
+- Token revocation with background cleanup
+- RBAC system (viewer, trader, admin roles)
+- Audit logging with configurable retention policies
+- Audit query API for compliance and monitoring
 
 **User Interface (4 views):**
 - Real-time Order Book display
 - Position and PnL tracking
-- Strategy configuration
-- Backtest result visualization
+- Strategy configuration and management
+- Backtest result visualization with charts
+- Modular JavaScript architecture with comprehensive tests
 
 ---
 

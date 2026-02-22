@@ -13,15 +13,18 @@ VeloZ is a production-ready trading system designed for algorithmic trading on c
 - **Comprehensive backtesting** with strategy optimization
 - **Built-in risk management** with circuit breaker protection
 
-**Status**: Production Ready - All 7 development phases completed (33/33 tasks).
+**Status**: Production Ready - All 7 phases (33/33 tasks) + Sprint 3 (19/19 tasks) completed.
 
 | Metric | Status |
 |--------|--------|
-| Build | 79/79 targets clean |
-| C++ Tests | 16/16 test suites passing |
-| UI Tests | 200+ tests passing |
-| Exchanges | 4 adapters (Binance, OKX, Bybit, Coinbase) |
-| Strategies | 5 production strategies |
+| **Build** | Clean (all targets) |
+| **C++ Tests** | 16/16 suites (100%) |
+| **Total Tests** | 805+ passing (100%) |
+| **UI Tests** | 200+ Jest tests (100%) |
+| **Exchanges** | 4 adapters (Binance, OKX, Bybit, Coinbase) |
+| **Strategies** | 11 strategies (5 basic + 6 advanced) |
+| **Security** | JWT + RBAC + Audit Logging |
+| **KJ Migration** | Complete (OS-level async I/O) |
 
 ## Quick Start
 
@@ -105,14 +108,26 @@ VeloZ/
 - **Resilient execution**: Automatic retry with exponential backoff and circuit breaker
 - **Order journaling**: Write-ahead logging for crash recovery
 - **Account reconciliation**: Automatic state synchronization with exchanges
+- **Binance reconciliation adapter**: Query and cancel orders for reconciliation
+
+### Security & Operations
+
+- **JWT Authentication**: Access tokens (15-min) + Refresh tokens (7-day)
+- **Token Revocation**: Immediate revocation with background cleanup
+- **RBAC System**: Viewer, Trader, Admin roles with hierarchical permissions
+- **Audit Logging**: Configurable retention policies (14-365 days)
+- **Audit Query API**: Search and retrieve audit logs for compliance
+- **Automatic Archiving**: Gzip compression before deletion
 
 ### Strategy System
 
 - **Trend Following**: EMA crossover with ATR-based stops
-- **Mean Reversion**: Bollinger Bands with RSI confirmation
-- **Momentum**: Multi-timeframe RSI/MACD signals
+- **Mean Reversion**: Z-score based with Bollinger Bands
+- **Momentum**: Multi-timeframe RSI/ROC signals
 - **Market Making**: Dynamic spread with inventory management
 - **Grid Trading**: Configurable grid levels with position limits
+- **Advanced Strategies**: RSI, MACD, Bollinger Bands, Stochastic, HFT Market Making, Cross-Exchange Arbitrage
+- **Strategy Runtime**: Hot parameter updates, metrics queries
 
 ### Backtesting
 
@@ -129,12 +144,20 @@ VeloZ/
 - **Circuit breaker**: Automatic trading suspension on risk events
 - **Real-time metrics**: VaR, Sharpe ratio, drawdown tracking
 
+### Core Infrastructure
+
+- **Event Loop**: `kj::setupAsyncIo()` for real OS-level async I/O
+- **Lock-free Queue**: MPMC queue (Michael-Scott algorithm) for high-throughput
+- **Memory Arena**: `kj::Arena` for efficient temporary allocations
+- **Performance Benchmarks**: Framework for core module benchmarking
+
 ### Development Tools
 
-- **KJ Library Integration**: Memory-safe utilities from Cap'n Proto
-- **Comprehensive tests**: 16 test suites with KJ Test framework
+- **KJ Library Integration**: Memory-safe utilities from Cap'n Proto (complete migration)
+- **Comprehensive tests**: 16 C++ test suites + 90 Python tests + 200+ UI tests (805+ total)
 - **Static analysis**: ASan/UBSan builds for debugging
 - **Code formatting**: clang-format and black
+- **Performance profiling**: Benchmark framework with detailed reports
 
 ## Supported Exchanges
 

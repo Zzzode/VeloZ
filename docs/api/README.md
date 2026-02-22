@@ -14,25 +14,45 @@ This directory contains API reference documentation for VeloZ.
 
 ## Authentication
 
-The gateway supports optional authentication (disabled by default):
+The gateway supports comprehensive authentication and authorization:
 
-1. **JWT Bearer Token** - Obtained via `POST /api/auth/login`
-   - Access tokens (short-lived, default 1 hour)
-   - Refresh tokens (long-lived, default 7 days)
-   - Token refresh via `POST /api/auth/refresh`
-   - Logout/revocation via `POST /api/auth/logout`
-2. **API Key** - Created via `POST /api/auth/keys` (requires admin)
-   - Persistent authentication without expiry
-   - Permission-based access control
-   - Secure storage (hashed)
+### JWT Authentication
+
+1. **Access Tokens** - Short-lived (15 minutes)
+   - Obtained via `POST /api/auth/login`
+   - Used for API requests via `Authorization: Bearer <token>`
+   - Automatically expire after 15 minutes
+
+2. **Refresh Tokens** - Long-lived (7 days)
+   - Obtained alongside access tokens
+   - Used to get new access tokens via `POST /api/auth/refresh`
+   - Can be revoked via `POST /api/auth/logout`
+   - Background cleanup removes expired tokens
+
+3. **Token Revocation**
+   - Logout revokes refresh token immediately
+   - Revoked tokens cannot be used to obtain new access tokens
+   - Background thread cleans up expired tokens every hour
+
+### API Keys
+
+Created via `POST /api/auth/keys` (requires admin role):
+- Persistent authentication without expiry
+- Permission-based access control
+- Secure storage (hashed with bcrypt)
+- Can be revoked individually
 
 Enable authentication by setting `VELOZ_AUTH_ENABLED=true`.
 
-### Permission Levels
+### RBAC (Role-Based Access Control)
 
-- **read**: Read-only access to all GET endpoints
-- **write**: Read + write access (POST/DELETE endpoints)
-- **admin**: Full access including user/key management
+Three built-in roles with hierarchical permissions:
+
+- **viewer**: Read-only access to all GET endpoints
+- **trader**: Viewer + trading operations (place/cancel orders)
+- **admin**: Trader + user management, API key management, system configuration
+
+Roles can be assigned via `POST /api/auth/users/{user_id}/roles`.
 
 ## Rate Limiting
 
@@ -46,18 +66,40 @@ Token bucket rate limiting is enabled when authentication is active:
 
 ## Audit Logging
 
-When authentication is enabled, security events are automatically logged:
+Comprehensive audit logging system with configurable retention policies.
 
-- **Login/logout events** - Authentication attempts and results
+### Logged Events
+
+- **Authentication** - Login/logout attempts and results
 - **Token operations** - Refresh token usage and revocation
 - **API key management** - Creation and revocation of API keys
 - **Permission denials** - Access control violations
+- **Order operations** - All trading activity
+- **Errors** - System errors and failures
 
-**Retention policies** vary by log type:
-- Auth logs: 90 days
-- Order logs: 365 days
-- API key logs: 365 days
-- Access logs: 14 days
+### Retention Policies
+
+Configurable retention periods by log type:
+- **Auth logs**: 90 days (archive before delete)
+- **Order logs**: 365 days (archive before delete)
+- **API key logs**: 365 days (archive before delete)
+- **Error logs**: 30 days (archive before delete)
+- **Access logs**: 14 days (no archive)
+
+### Features
+
+- **NDJSON format** - Newline-delimited JSON for easy parsing
+- **Automatic archiving** - Gzip compression before deletion
+- **Background cleanup** - Scheduled cleanup jobs (default: every 24 hours)
+- **Query API** - Search and retrieve audit logs
+  - `GET /api/audit/logs` - Query logs with filters
+  - `GET /api/audit/stats` - Get retention statistics
+  - `POST /api/audit/archive` - Manually trigger archiving
+
+### Storage
+
+- **Active logs**: `/var/log/veloz/audit/*.ndjson`
+- **Archives**: `/var/log/veloz/audit/archive/*.ndjson.gz`
 
 Enable audit logging with `VELOZ_AUDIT_LOG_ENABLED=true`.
 
