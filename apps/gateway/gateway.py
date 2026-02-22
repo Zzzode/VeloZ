@@ -38,9 +38,26 @@ audit_logger.addHandler(_audit_handler)
 class JWTManager:
     """Simple JWT implementation using HMAC-SHA256."""
 
-    def __init__(self, secret_key: str, token_expiry_seconds: int = 3600):
+    # Refresh token expiry: 7 days
+    REFRESH_TOKEN_EXPIRY = 7 * 24 * 3600
+    # Default cleanup interval: 1 hour
+    DEFAULT_CLEANUP_INTERVAL = 3600
+
+    def __init__(self, secret_key: str, token_expiry_seconds: int = 3600, cleanup_interval: int = DEFAULT_CLEANUP_INTERVAL):
         self._secret = secret_key.encode("utf-8") if secret_key else secrets.token_bytes(32)
         self._expiry = token_expiry_seconds
+        self._refresh_secret = hashlib.sha256(self._secret + b"_refresh").digest()
+        self._mu = threading.Lock()
+        # Store revoked refresh tokens (token_id -> revocation_time)
+        self._revoked_refresh_tokens: dict[str, int] = {}
+        # Cleanup configuration
+        self._cleanup_interval = cleanup_interval
+        self._cleanup_stop_event = threading.Event()
+        self._cleanup_thread: Optional[threading.Thread] = None
+        self._last_cleanup_time: int = 0
+        self._cleanup_count: int = 0  # Total tokens cleaned up
+        # Start background cleanup thread
+        self._start_cleanup_thread()
 
     def _b64url_encode(self, data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -52,13 +69,14 @@ class JWTManager:
         return base64.urlsafe_b64decode(data)
 
     def create_token(self, user_id: str, api_key_id: Optional[str] = None) -> str:
-        """Create a JWT token for the given user."""
+        """Create a JWT access token for the given user."""
         header = {"alg": "HS256", "typ": "JWT"}
         now = int(time.time())
         payload = {
             "sub": user_id,
             "iat": now,
             "exp": now + self._expiry,
+            "type": "access",
         }
         if api_key_id:
             payload["kid"] = api_key_id
@@ -70,8 +88,28 @@ class JWTManager:
         sig_b64 = self._b64url_encode(signature)
         return f"{message}.{sig_b64}"
 
+    def create_refresh_token(self, user_id: str) -> str:
+        """Create a JWT refresh token for the given user."""
+        header = {"alg": "HS256", "typ": "JWT"}
+        now = int(time.time())
+        token_id = secrets.token_hex(16)
+        payload = {
+            "sub": user_id,
+            "iat": now,
+            "exp": now + self.REFRESH_TOKEN_EXPIRY,
+            "type": "refresh",
+            "jti": token_id,  # JWT ID for revocation tracking
+        }
+
+        header_b64 = self._b64url_encode(json.dumps(header).encode("utf-8"))
+        payload_b64 = self._b64url_encode(json.dumps(payload).encode("utf-8"))
+        message = f"{header_b64}.{payload_b64}"
+        signature = hmac.new(self._refresh_secret, message.encode("utf-8"), hashlib.sha256).digest()
+        sig_b64 = self._b64url_encode(signature)
+        return f"{message}.{sig_b64}"
+
     def verify_token(self, token: str) -> Optional[dict]:
-        """Verify a JWT token and return the payload if valid."""
+        """Verify a JWT access token and return the payload if valid."""
         try:
             parts = token.split(".")
             if len(parts) != 3:
@@ -86,12 +124,122 @@ class JWTManager:
                 return None
 
             payload = json.loads(self._b64url_decode(payload_b64))
+
+            # Check token type (must be access token or old token without type)
+            token_type = payload.get("type")
+            if token_type and token_type != "access":
+                return None
+
             if payload.get("exp", 0) < int(time.time()):
                 return None
 
             return payload
         except Exception:
             return None
+
+    def verify_refresh_token(self, token: str) -> Optional[dict]:
+        """Verify a JWT refresh token and return the payload if valid."""
+        try:
+            parts = token.split(".")
+            if len(parts) != 3:
+                return None
+
+            header_b64, payload_b64, sig_b64 = parts
+            message = f"{header_b64}.{payload_b64}"
+            expected_sig = hmac.new(self._refresh_secret, message.encode("utf-8"), hashlib.sha256).digest()
+            actual_sig = self._b64url_decode(sig_b64)
+
+            if not hmac.compare_digest(expected_sig, actual_sig):
+                return None
+
+            payload = json.loads(self._b64url_decode(payload_b64))
+
+            # Must be a refresh token
+            if payload.get("type") != "refresh":
+                return None
+
+            if payload.get("exp", 0) < int(time.time()):
+                return None
+
+            # Check if token has been revoked
+            jti = payload.get("jti")
+            if jti:
+                with self._mu:
+                    if jti in self._revoked_refresh_tokens:
+                        return None
+
+            return payload
+        except Exception:
+            return None
+
+    def revoke_refresh_token(self, token: str) -> bool:
+        """Revoke a refresh token by its JTI."""
+        try:
+            parts = token.split(".")
+            if len(parts) != 3:
+                return False
+
+            payload_b64 = parts[1]
+            payload = json.loads(self._b64url_decode(payload_b64))
+            jti = payload.get("jti")
+            if not jti:
+                return False
+
+            with self._mu:
+                self._revoked_refresh_tokens[jti] = int(time.time())
+            return True
+        except Exception:
+            return False
+
+    def _start_cleanup_thread(self) -> None:
+        """Start the background cleanup thread."""
+        self._cleanup_thread = threading.Thread(
+            target=self._cleanup_loop,
+            name="jwt-cleanup",
+            daemon=True,
+        )
+        self._cleanup_thread.start()
+
+    def _cleanup_loop(self) -> None:
+        """Background loop that periodically cleans up expired revoked tokens."""
+        while not self._cleanup_stop_event.wait(timeout=self._cleanup_interval):
+            self._cleanup_expired_tokens()
+
+    def _cleanup_expired_tokens(self) -> int:
+        """Remove expired tokens from the revocation list. Returns count of removed tokens."""
+        now = int(time.time())
+        cutoff = now - self.REFRESH_TOKEN_EXPIRY
+        removed_count = 0
+
+        with self._mu:
+            before_count = len(self._revoked_refresh_tokens)
+            self._revoked_refresh_tokens = {
+                k: v for k, v in self._revoked_refresh_tokens.items() if v > cutoff
+            }
+            removed_count = before_count - len(self._revoked_refresh_tokens)
+            self._cleanup_count += removed_count
+            self._last_cleanup_time = now
+
+        if removed_count > 0:
+            audit_logger.info(f"Refresh token cleanup: removed {removed_count} expired revoked tokens")
+
+        return removed_count
+
+    def stop(self) -> None:
+        """Stop the cleanup thread gracefully."""
+        self._cleanup_stop_event.set()
+        if self._cleanup_thread and self._cleanup_thread.is_alive():
+            self._cleanup_thread.join(timeout=5.0)
+
+    def get_revocation_metrics(self) -> dict:
+        """Get metrics about revoked refresh tokens."""
+        with self._mu:
+            return {
+                "revoked_token_count": len(self._revoked_refresh_tokens),
+                "total_cleaned_up": self._cleanup_count,
+                "last_cleanup_time": self._last_cleanup_time,
+                "cleanup_interval_seconds": self._cleanup_interval,
+            }
 
 
 # =============================================================================
@@ -186,6 +334,185 @@ class APIKeyManager:
                     "permissions": api_key.permissions,
                 })
             return keys
+
+
+# =============================================================================
+# Permission-Based Access Control
+# =============================================================================
+
+
+class Permission:
+    """Permission constants for access control."""
+    # Read permissions
+    READ_MARKET = "read:market"
+    READ_ORDERS = "read:orders"
+    READ_ACCOUNT = "read:account"
+    READ_CONFIG = "read:config"
+
+    # Write permissions
+    WRITE_ORDERS = "write:orders"
+    WRITE_CANCEL = "write:cancel"
+
+    # Admin permissions
+    ADMIN_KEYS = "admin:keys"
+    ADMIN_USERS = "admin:users"
+    ADMIN_CONFIG = "admin:config"
+
+    # Legacy permission mappings
+    LEGACY_READ = "read"
+    LEGACY_WRITE = "write"
+    LEGACY_ADMIN = "admin"
+
+
+# Role definitions with their permissions
+ROLE_PERMISSIONS = {
+    "viewer": [
+        Permission.READ_MARKET,
+        Permission.READ_CONFIG,
+    ],
+    "trader": [
+        Permission.READ_MARKET,
+        Permission.READ_ORDERS,
+        Permission.READ_ACCOUNT,
+        Permission.READ_CONFIG,
+        Permission.WRITE_ORDERS,
+        Permission.WRITE_CANCEL,
+    ],
+    "admin": [
+        Permission.READ_MARKET,
+        Permission.READ_ORDERS,
+        Permission.READ_ACCOUNT,
+        Permission.READ_CONFIG,
+        Permission.WRITE_ORDERS,
+        Permission.WRITE_CANCEL,
+        Permission.ADMIN_KEYS,
+        Permission.ADMIN_USERS,
+        Permission.ADMIN_CONFIG,
+    ],
+}
+
+# Endpoint permission requirements
+ENDPOINT_PERMISSIONS = {
+    # Market data endpoints (read-only)
+    "/api/market": [Permission.READ_MARKET],
+    "/api/stream": [Permission.READ_MARKET],
+    "/api/config": [Permission.READ_CONFIG],
+
+    # Order endpoints
+    "/api/orders": [Permission.READ_ORDERS],
+    "/api/orders_state": [Permission.READ_ORDERS],
+    "/api/order_state": [Permission.READ_ORDERS],
+    "/api/order": [Permission.WRITE_ORDERS],
+    "/api/cancel": [Permission.WRITE_CANCEL],
+
+    # Account endpoints
+    "/api/account": [Permission.READ_ACCOUNT],
+
+    # Execution endpoints
+    "/api/execution/ping": [Permission.READ_CONFIG],
+
+    # Admin endpoints
+    "/api/auth/keys": [Permission.ADMIN_KEYS],
+}
+
+
+class PermissionManager:
+    """Manages permission checks for access control."""
+
+    def __init__(self):
+        # Map legacy permissions to new granular permissions
+        self._legacy_map = {
+            Permission.LEGACY_READ: [
+                Permission.READ_MARKET,
+                Permission.READ_ORDERS,
+                Permission.READ_ACCOUNT,
+                Permission.READ_CONFIG,
+            ],
+            Permission.LEGACY_WRITE: [
+                Permission.WRITE_ORDERS,
+                Permission.WRITE_CANCEL,
+            ],
+            Permission.LEGACY_ADMIN: [
+                Permission.ADMIN_KEYS,
+                Permission.ADMIN_USERS,
+                Permission.ADMIN_CONFIG,
+            ],
+        }
+
+    def expand_permissions(self, permissions: list) -> set:
+        """Expand legacy permissions and roles to granular permissions."""
+        expanded = set()
+        for perm in permissions:
+            # Check if it's a role
+            if perm in ROLE_PERMISSIONS:
+                expanded.update(ROLE_PERMISSIONS[perm])
+            # Check if it's a legacy permission
+            elif perm in self._legacy_map:
+                expanded.update(self._legacy_map[perm])
+            else:
+                # It's already a granular permission
+                expanded.add(perm)
+        return expanded
+
+    def check_permission(self, user_permissions: list, required_permissions: list) -> bool:
+        """Check if user has all required permissions."""
+        if not required_permissions:
+            return True
+
+        expanded = self.expand_permissions(user_permissions)
+
+        # Check if user has any of the required permissions
+        for required in required_permissions:
+            if required in expanded:
+                return True
+
+        return False
+
+    def get_endpoint_permissions(self, path: str, method: str) -> list:
+        """Get required permissions for an endpoint."""
+        # Check exact match first
+        if path in ENDPOINT_PERMISSIONS:
+            return ENDPOINT_PERMISSIONS[path]
+
+        # Check prefix matches for dynamic paths
+        for endpoint, perms in ENDPOINT_PERMISSIONS.items():
+            if path.startswith(endpoint):
+                return perms
+
+        # Default: require at least read permission for GET, write for others
+        if method == "GET":
+            return [Permission.READ_CONFIG]
+        return [Permission.WRITE_ORDERS]
+
+
+# Global permission manager instance
+permission_manager = PermissionManager()
+
+
+def require_permission(*required_permissions):
+    """Decorator factory for permission-based access control."""
+    def decorator(handler_method):
+        def wrapper(self, *args, **kwargs):
+            auth_info = getattr(self, "_auth_info", None)
+            if not auth_info:
+                self._send_json(401, {"error": "authentication_required"})
+                return
+
+            user_permissions = auth_info.get("permissions", [])
+            if not permission_manager.check_permission(user_permissions, list(required_permissions)):
+                audit_logger.warning(
+                    f"Permission denied: user={auth_info.get('user_id')}, "
+                    f"required={required_permissions}, has={user_permissions}"
+                )
+                self._send_json(403, {
+                    "error": "forbidden",
+                    "message": f"Required permissions: {', '.join(required_permissions)}",
+                })
+                return
+
+            return handler_method(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 
 # =============================================================================
@@ -359,14 +686,41 @@ class AuthManager:
         """Check rate limit for the given identifier."""
         return self._rate_limiter.check_rate_limit(identifier)
 
-    def create_token(self, user_id: str, password: str) -> Optional[str]:
-        """Create a JWT token if credentials are valid."""
+    def create_token(self, user_id: str, password: str) -> Optional[dict]:
+        """Create JWT access and refresh tokens if credentials are valid."""
         # Simple password check for admin
         if user_id == "admin" and self._admin_password and password == self._admin_password:
-            token = self._jwt.create_token(user_id)
-            audit_logger.info(f"JWT token created for user: {user_id}")
-            return token
+            access_token = self._jwt.create_token(user_id)
+            refresh_token = self._jwt.create_refresh_token(user_id)
+            audit_logger.info(f"JWT tokens created for user: {user_id}")
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_in": self._jwt._expiry,
+            }
         return None
+
+    def refresh_access_token(self, refresh_token: str) -> Optional[dict]:
+        """Create a new access token using a valid refresh token."""
+        payload = self._jwt.verify_refresh_token(refresh_token)
+        if not payload:
+            return None
+
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+
+        # Create new access token
+        access_token = self._jwt.create_token(user_id)
+        audit_logger.info(f"Access token refreshed for user: {user_id}")
+        return {
+            "access_token": access_token,
+            "expires_in": self._jwt._expiry,
+        }
+
+    def revoke_refresh_token(self, refresh_token: str) -> bool:
+        """Revoke a refresh token."""
+        return self._jwt.revoke_refresh_token(refresh_token)
 
     def create_api_key(self, user_id: str, name: str, permissions: Optional[list] = None) -> tuple[str, str]:
         """Create a new API key."""
@@ -379,6 +733,14 @@ class AuthManager:
     def list_api_keys(self, user_id: Optional[str] = None) -> list[dict]:
         """List API keys."""
         return self._api_keys.list_keys(user_id)
+
+    def get_revocation_metrics(self) -> dict:
+        """Get metrics about revoked refresh tokens."""
+        return self._jwt.get_revocation_metrics()
+
+    def stop(self) -> None:
+        """Stop background threads gracefully."""
+        self._jwt.stop()
 
 
 class EngineBridge:
@@ -1552,9 +1914,9 @@ class Handler(SimpleHTTPRequestHandler):
             return f"key:{auth_info['key_id']}"
         return f"ip:{self.client_address[0]}"
 
-    def _check_auth_and_rate_limit(self) -> bool:
+    def _check_auth_and_rate_limit(self, check_permissions: bool = True) -> bool:
         """
-        Check authentication and rate limit.
+        Check authentication, permissions, and rate limit.
         Returns True if request should proceed, False if rejected.
         Sets self._auth_info and self._rate_limit_headers.
         """
@@ -1590,6 +1952,23 @@ class Handler(SimpleHTTPRequestHandler):
             return False
 
         self._auth_info = auth_info
+
+        # Check permissions for the endpoint
+        if check_permissions:
+            method = self.command  # GET, POST, DELETE, etc.
+            required_perms = permission_manager.get_endpoint_permissions(parsed.path, method)
+            user_perms = auth_info.get("permissions", [])
+
+            if not permission_manager.check_permission(user_perms, required_perms):
+                audit_logger.warning(
+                    f"Permission denied: user={auth_info.get('user_id')}, "
+                    f"path={parsed.path}, required={required_perms}, has={user_perms}"
+                )
+                self._send_json(403, {
+                    "error": "forbidden",
+                    "message": f"Required permissions: {', '.join(required_perms)}",
+                })
+                return False
 
         # Check rate limit
         identifier = self._get_client_identifier()
@@ -1690,9 +2069,17 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
 
-        # Auth endpoints (login doesn't require prior auth)
+        # Auth endpoints (login and refresh don't require prior auth)
         if parsed.path == "/api/auth/login":
             self._handle_login()
+            return
+
+        if parsed.path == "/api/auth/refresh":
+            self._handle_refresh_token()
+            return
+
+        if parsed.path == "/api/auth/logout":
+            self._handle_logout()
             return
 
         # Check auth and rate limit
@@ -1793,7 +2180,7 @@ class Handler(SimpleHTTPRequestHandler):
         self._send_json(200, r)
 
     def _handle_login(self):
-        """Handle login request to get JWT token."""
+        """Handle login request to get JWT tokens."""
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length).decode("utf-8", errors="replace")
 
@@ -1815,14 +2202,79 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json(500, {"error": "auth_not_configured"})
             return
 
-        token = auth_manager.create_token(user_id, password)
-        if not token:
+        tokens = auth_manager.create_token(user_id, password)
+        if not tokens:
             audit_logger.warning(f"Login failed: user={user_id}, ip={self.client_address[0]}")
             self._send_json(401, {"error": "invalid_credentials"})
             return
 
         audit_logger.info(f"Login success: user={user_id}, ip={self.client_address[0]}")
-        self._send_json(200, {"token": token, "token_type": "Bearer"})
+        self._send_json(200, {
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "token_type": "Bearer",
+            "expires_in": tokens["expires_in"],
+        })
+
+    def _handle_refresh_token(self):
+        """Handle token refresh request."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        refresh_token = str(data.get("refresh_token", "")).strip()
+        if not refresh_token:
+            self._send_json(400, {"error": "bad_params", "message": "refresh_token is required"})
+            return
+
+        auth_manager = getattr(self.server, "auth_manager", None)
+        if not auth_manager:
+            self._send_json(500, {"error": "auth_not_configured"})
+            return
+
+        result = auth_manager.refresh_access_token(refresh_token)
+        if not result:
+            audit_logger.warning(f"Token refresh failed: ip={self.client_address[0]}")
+            self._send_json(401, {"error": "invalid_refresh_token"})
+            return
+
+        audit_logger.info(f"Token refresh success: ip={self.client_address[0]}")
+        self._send_json(200, {
+            "access_token": result["access_token"],
+            "token_type": "Bearer",
+            "expires_in": result["expires_in"],
+        })
+
+    def _handle_logout(self):
+        """Handle logout request to revoke refresh token."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        refresh_token = str(data.get("refresh_token", "")).strip()
+        if not refresh_token:
+            self._send_json(400, {"error": "bad_params", "message": "refresh_token is required"})
+            return
+
+        auth_manager = getattr(self.server, "auth_manager", None)
+        if not auth_manager:
+            self._send_json(500, {"error": "auth_not_configured"})
+            return
+
+        success = auth_manager.revoke_refresh_token(refresh_token)
+        if success:
+            audit_logger.info(f"Logout success: ip={self.client_address[0]}")
+        self._send_json(200, {"ok": True})
 
     def _handle_create_api_key(self):
         """Handle API key creation."""
