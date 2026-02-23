@@ -111,15 +111,15 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
       case CommandType::Order:
         KJ_IF_SOME(order, command.order) {
           // Emit order received event
-          kj::String json = kj::str(
-              R"({"type":"order_received","command_id":)", command_count_,
-              R"(,"client_order_id":")", order.request.client_order_id, R"(","symbol":")",
-              order.request.symbol.value, R"(","side":")",
-              (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"),
-              R"(","order_type":")",
-              (order.request.type == veloz::exec::OrderType::Market ? "market" : "limit"),
-              R"(","quantity":)", order.request.qty, R"(,"price":)",
-              maybe_or(order.request.price, 0.0), "}");
+          kj::String json =
+              kj::str(R"({"type":"order_received","command_id":)", command_count_,
+                      R"(,"client_order_id":")", order.request.client_order_id, R"(","symbol":")",
+                      order.request.symbol.value, R"(","side":")",
+                      (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"),
+                      R"(","order_type":")",
+                      (order.request.type == veloz::exec::OrderType::Market ? "market" : "limit"),
+                      R"(","quantity":)", order.request.qty, R"(,"price":)",
+                      maybe_or(order.request.price, 0.0), "}");
           emit_event(json);
 
           // Call handler if registered
@@ -446,13 +446,13 @@ void StdioEngine::handle_strategy_command(const ParsedStrategy& cmd) {
         // Get metrics for specific strategy
         auto maybe_metrics = strategy_manager_->get_strategy_metrics(cmd.strategy_id);
         KJ_IF_SOME(metrics, maybe_metrics) {
-          kj::String json = kj::str(
-              R"({"type":"strategy_metrics","strategy_id":")", cmd.strategy_id,
-              R"(","events_processed":)", metrics.events_processed.load(),
-              R"(,"signals_generated":)", metrics.signals_generated.load(),
-              R"(,"avg_execution_time_us":)", metrics.avg_execution_time_us(),
-              R"(,"signals_per_second":)", metrics.signals_per_second(), R"(,"errors":)",
-              metrics.errors.load(), "}");
+          kj::String json =
+              kj::str(R"({"type":"strategy_metrics","strategy_id":")", cmd.strategy_id,
+                      R"(","events_processed":)", metrics.events_processed.load(),
+                      R"(,"signals_generated":)", metrics.signals_generated.load(),
+                      R"(,"avg_execution_time_us":)", metrics.avg_execution_time_us(),
+                      R"(,"signals_per_second":)", metrics.signals_per_second(), R"(,"errors":)",
+                      metrics.errors.load(), "}");
           emit_event(json);
         }
         else {
@@ -461,8 +461,8 @@ void StdioEngine::handle_strategy_command(const ParsedStrategy& cmd) {
       } else {
         // Get aggregated metrics summary
         kj::String summary = strategy_manager_->get_metrics_summary();
-        kj::String json = kj::str(R"({"type":"strategy_metrics_summary","summary":")",
-                                  summary.cStr(), R"("})");
+        kj::String json =
+            kj::str(R"({"type":"strategy_metrics_summary","summary":")", summary.cStr(), R"("})");
         emit_event(json);
       }
       break;

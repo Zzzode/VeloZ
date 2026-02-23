@@ -50,8 +50,7 @@ TimeSyncManager::TimeSyncManager(Config config) : config_(kj::mv(config)) {
 int64_t TimeSyncManager::now_ns() const {
   int64_t system_ns = system_time_ns();
   auto lock = state_.lockExclusive();
-  if (lock->status == SyncStatus::Synchronized ||
-      lock->status == SyncStatus::Degraded) {
+  if (lock->status == SyncStatus::Synchronized || lock->status == SyncStatus::Degraded) {
     return system_ns - lock->current_offset.offset_ns;
   }
   return system_ns;
@@ -63,9 +62,7 @@ std::chrono::steady_clock::time_point TimeSyncManager::now_steady() const {
 
 int64_t TimeSyncManager::system_time_ns() {
   auto now = std::chrono::system_clock::now();
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(
-             now.time_since_epoch())
-      .count();
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
 
 uint64_t TimeSyncManager::high_res_timestamp() {
@@ -75,9 +72,7 @@ uint64_t TimeSyncManager::high_res_timestamp() {
   // Use steady_clock for non-x86 platforms
   auto now = std::chrono::steady_clock::now();
   return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(
-          now.time_since_epoch())
-          .count());
+      std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count());
 #endif
 }
 
@@ -99,17 +94,15 @@ void TimeSyncManager::calibrate_tsc() {
   uint64_t start_tsc = __rdtsc();
 
   // Busy wait for ~10ms
-  while (std::chrono::steady_clock::now() - start_time <
-         std::chrono::milliseconds(10)) {
+  while (std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(10)) {
     // Spin
   }
 
   auto end_time = std::chrono::steady_clock::now();
   uint64_t end_tsc = __rdtsc();
 
-  auto elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        end_time - start_time)
-                        .count();
+  auto elapsed_ns =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
   uint64_t tsc_diff = end_tsc - start_tsc;
 
   if (elapsed_ns > 0) {
@@ -134,8 +127,7 @@ void TimeSyncManager::stop() {
   lock->running = false;
 }
 
-kj::Promise<void> TimeSyncManager::sync_now(kj::Timer& timer,
-                                             kj::Network& network) {
+kj::Promise<void> TimeSyncManager::sync_now(kj::Timer& timer, kj::Network& network) {
   // For now, just update status - actual NTP implementation would go here
   auto lock = state_.lockExclusive();
   lock->status = SyncStatus::Synchronized;
@@ -144,10 +136,8 @@ kj::Promise<void> TimeSyncManager::sync_now(kj::Timer& timer,
   return kj::READY_NOW;
 }
 
-void TimeSyncManager::calibrate_exchange(kj::StringPtr exchange,
-                                          int64_t exchange_time_ns,
-                                          int64_t local_time_ns,
-                                          int64_t round_trip_ns) {
+void TimeSyncManager::calibrate_exchange(kj::StringPtr exchange, int64_t exchange_time_ns,
+                                         int64_t local_time_ns, int64_t round_trip_ns) {
   auto lock = state_.lockExclusive();
 
   // Calculate offset: positive means local is ahead of exchange
@@ -159,8 +149,10 @@ void TimeSyncManager::calibrate_exchange(kj::StringPtr exchange,
   sample.offset_ns = offset;
   sample.round_trip_ns = round_trip_ns;
   sample.measurement_ns = local_time_ns;
-  sample.confidence = 1.0 - (static_cast<double>(round_trip_ns) / 1e9);  // Lower confidence for high RTT
-  if (sample.confidence < 0.1) sample.confidence = 0.1;
+  sample.confidence =
+      1.0 - (static_cast<double>(round_trip_ns) / 1e9); // Lower confidence for high RTT
+  if (sample.confidence < 0.1)
+    sample.confidence = 0.1;
 
   // Get or create exchange data
   kj::String exchange_key = kj::heapString(exchange);
@@ -186,12 +178,12 @@ void TimeSyncManager::calibrate_exchange(kj::StringPtr exchange,
     }
 
     if (total_weight > 0.0) {
-      data.calibrated_offset.offset_ns =
-          static_cast<int64_t>(weighted_offset / total_weight);
+      data.calibrated_offset.offset_ns = static_cast<int64_t>(weighted_offset / total_weight);
       data.calibrated_offset.confidence = total_weight / static_cast<double>(data.samples.size());
       data.calibrated_offset.measurement_ns = local_time_ns;
     }
-  } else {
+  }
+  else {
     State::ExchangeData new_data;
     new_data.samples.add(sample);
     new_data.calibrated_offset = sample;
@@ -199,8 +191,7 @@ void TimeSyncManager::calibrate_exchange(kj::StringPtr exchange,
   }
 }
 
-kj::Maybe<ClockOffset>
-TimeSyncManager::get_exchange_offset(kj::StringPtr exchange) const {
+kj::Maybe<ClockOffset> TimeSyncManager::get_exchange_offset(kj::StringPtr exchange) const {
   auto lock = state_.lockExclusive();
   KJ_IF_SOME(data, lock->exchange_offsets.find(exchange)) {
     if (data.calibrated_offset.is_valid()) {
@@ -210,8 +201,7 @@ TimeSyncManager::get_exchange_offset(kj::StringPtr exchange) const {
   return kj::none;
 }
 
-int64_t TimeSyncManager::to_exchange_time(kj::StringPtr exchange,
-                                           int64_t local_time_ns) const {
+int64_t TimeSyncManager::to_exchange_time(kj::StringPtr exchange, int64_t local_time_ns) const {
   KJ_IF_SOME(offset, get_exchange_offset(exchange)) {
     return local_time_ns - offset.offset_ns;
   }
@@ -219,7 +209,7 @@ int64_t TimeSyncManager::to_exchange_time(kj::StringPtr exchange,
 }
 
 int64_t TimeSyncManager::from_exchange_time(kj::StringPtr exchange,
-                                             int64_t exchange_time_ns) const {
+                                            int64_t exchange_time_ns) const {
   KJ_IF_SOME(offset, get_exchange_offset(exchange)) {
     return exchange_time_ns + offset.offset_ns;
   }
@@ -240,8 +230,7 @@ ClockDrift TimeSyncManager::current_drift() const {
 
 bool TimeSyncManager::is_synchronized(int64_t tolerance_ns) const {
   auto lock = state_.lockExclusive();
-  if (lock->status != SyncStatus::Synchronized &&
-      lock->status != SyncStatus::Degraded) {
+  if (lock->status != SyncStatus::Synchronized && lock->status != SyncStatus::Degraded) {
     return false;
   }
   return std::abs(lock->current_offset.offset_ns) <= tolerance_ns;
@@ -252,8 +241,7 @@ void TimeSyncManager::set_status_callback(StatusCallback callback) {
   lock->status_callback = kj::mv(callback);
 }
 
-void TimeSyncManager::update_status(SyncStatus new_status,
-                                     const ClockOffset& offset) {
+void TimeSyncManager::update_status(SyncStatus new_status, const ClockOffset& offset) {
   auto lock = state_.lockExclusive();
   SyncStatus old_status = lock->status;
   lock->status = new_status;
@@ -278,8 +266,8 @@ void TimeSyncManager::update_drift() {
   size_t n = lock->offset_samples.size();
 
   for (const auto& sample : lock->offset_samples) {
-    double x = static_cast<double>(sample.first);   // time
-    double y = static_cast<double>(sample.second);  // offset
+    double x = static_cast<double>(sample.first);  // time
+    double y = static_cast<double>(sample.second); // offset
     sum_x += x;
     sum_y += y;
     sum_xy += x * y;
@@ -289,8 +277,8 @@ void TimeSyncManager::update_drift() {
   double slope = (static_cast<double>(n) * sum_xy - sum_x * sum_y) /
                  (static_cast<double>(n) * sum_xx - sum_x * sum_x);
 
-  lock->current_drift.drift_ns_per_sec = slope * 1e9;  // Convert to ns/s
-  lock->current_drift.drift_ppm = slope * 1e6;         // Convert to ppm
+  lock->current_drift.drift_ns_per_sec = slope * 1e9; // Convert to ns/s
+  lock->current_drift.drift_ppm = slope * 1e6;        // Convert to ppm
   lock->current_drift.last_measurement_ns = system_time_ns();
   lock->current_drift.sample_count = n;
 }
@@ -300,32 +288,29 @@ kj::String TimeSyncManager::stats_json() const {
 
   const char* status_str = "unknown";
   switch (lock->status) {
-    case SyncStatus::Unknown:
-      status_str = "unknown";
-      break;
-    case SyncStatus::Syncing:
-      status_str = "syncing";
-      break;
-    case SyncStatus::Synchronized:
-      status_str = "synchronized";
-      break;
-    case SyncStatus::Degraded:
-      status_str = "degraded";
-      break;
-    case SyncStatus::Failed:
-      status_str = "failed";
-      break;
+  case SyncStatus::Unknown:
+    status_str = "unknown";
+    break;
+  case SyncStatus::Syncing:
+    status_str = "syncing";
+    break;
+  case SyncStatus::Synchronized:
+    status_str = "synchronized";
+    break;
+  case SyncStatus::Degraded:
+    status_str = "degraded";
+    break;
+  case SyncStatus::Failed:
+    status_str = "failed";
+    break;
   }
 
-  return kj::str(
-      "{",
-      "\"status\":\"", status_str, "\",",
-      "\"offset_ns\":", lock->current_offset.offset_ns, ",",
-      "\"offset_confidence\":", lock->current_offset.confidence, ",",
-      "\"drift_ppm\":", lock->current_drift.drift_ppm, ",",
-      "\"drift_samples\":", lock->current_drift.sample_count, ",",
-      "\"exchange_count\":", lock->exchange_offsets.size(),
-      "}");
+  return kj::str("{", "\"status\":\"", status_str, "\",",
+                 "\"offset_ns\":", lock->current_offset.offset_ns, ",",
+                 "\"offset_confidence\":", lock->current_offset.confidence, ",",
+                 "\"drift_ppm\":", lock->current_drift.drift_ppm, ",",
+                 "\"drift_samples\":", lock->current_drift.sample_count, ",",
+                 "\"exchange_count\":", lock->exchange_offsets.size(), "}");
 }
 
 // ============================================================================
@@ -333,8 +318,7 @@ kj::String TimeSyncManager::stats_json() const {
 // ============================================================================
 
 LatencyProfiler::LatencyProfiler(kj::StringPtr name)
-    : name_(kj::heapString(name)),
-      start_timestamp_(TimeSyncManager::high_res_timestamp()) {}
+    : name_(kj::heapString(name)), start_timestamp_(TimeSyncManager::high_res_timestamp()) {}
 
 void LatencyProfiler::checkpoint(kj::StringPtr name) {
   checkpoints_.add(LatencyCheckpoint{name, TimeSyncManager::high_res_timestamp()});
@@ -375,20 +359,23 @@ int64_t LatencyProfiler::elapsed_ns() const {
 kj::String LatencyProfile::to_string() const {
   kj::StringTree tree = kj::strTree("Profile: ", name, " (total: ", total_ns, " ns)\n");
   for (const auto& seg : segments) {
-    double pct = total_ns > 0 ? 100.0 * static_cast<double>(seg.second) / static_cast<double>(total_ns) : 0.0;
+    double pct = total_ns > 0
+                     ? 100.0 * static_cast<double>(seg.second) / static_cast<double>(total_ns)
+                     : 0.0;
     tree = kj::strTree(kj::mv(tree), "  ", seg.first, ": ", seg.second, " ns (", pct, "%)\n");
   }
   return tree.flatten();
 }
 
 kj::String LatencyProfile::to_json() const {
-  kj::StringTree tree = kj::strTree(
-      "{\"name\":\"", name, "\",\"total_ns\":", total_ns, ",\"segments\":[");
+  kj::StringTree tree =
+      kj::strTree("{\"name\":\"", name, "\",\"total_ns\":", total_ns, ",\"segments\":[");
   bool first = true;
   for (const auto& seg : segments) {
-    if (!first) tree = kj::strTree(kj::mv(tree), ",");
-    tree = kj::strTree(kj::mv(tree),
-                       "{\"name\":\"", seg.first, "\",\"duration_ns\":", seg.second, "}");
+    if (!first)
+      tree = kj::strTree(kj::mv(tree), ",");
+    tree = kj::strTree(kj::mv(tree), "{\"name\":\"", seg.first, "\",\"duration_ns\":", seg.second,
+                       "}");
     first = false;
   }
   tree = kj::strTree(kj::mv(tree), "]}");
@@ -400,8 +387,7 @@ kj::String LatencyProfile::to_json() const {
 // ============================================================================
 
 ScopedLatency::ScopedLatency(kj::StringPtr name, Callback callback)
-    : name_(kj::heapString(name)),
-      start_timestamp_(TimeSyncManager::high_res_timestamp()),
+    : name_(kj::heapString(name)), start_timestamp_(TimeSyncManager::high_res_timestamp()),
       callback_(kj::mv(callback)) {}
 
 ScopedLatency::~ScopedLatency() {

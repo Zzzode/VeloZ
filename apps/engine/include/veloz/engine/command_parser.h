@@ -43,8 +43,8 @@ enum class StrategySubCommand {
   Unload,
   List,
   Status,
-  Params,   ///< Hot parameter update
-  Metrics,  ///< Get strategy metrics
+  Params,  ///< Hot parameter update
+  Metrics, ///< Get strategy metrics
   Unknown
 };
 

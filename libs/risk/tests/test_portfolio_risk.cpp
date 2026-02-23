@@ -35,7 +35,7 @@ KJ_TEST("PortfolioRiskAggregator - update position") {
 
   PortfolioPosition pos2;
   pos2.symbol = kj::str("BTC");
-  pos2.value = 60000.0;  // Updated value
+  pos2.value = 60000.0; // Updated value
   pos2.volatility = 0.03;
   aggregator.update_position(kj::mv(pos2));
 
@@ -62,8 +62,8 @@ KJ_TEST("PortfolioRiskAggregator - correlation management") {
   aggregator.set_correlation("BTC", "ETH", 0.8);
 
   KJ_EXPECT(std::abs(aggregator.get_correlation("BTC", "ETH") - 0.8) < 0.001);
-  KJ_EXPECT(std::abs(aggregator.get_correlation("ETH", "BTC") - 0.8) < 0.001);  // Symmetric
-  KJ_EXPECT(aggregator.get_correlation("BTC", "BTC") == 1.0);  // Self-correlation
+  KJ_EXPECT(std::abs(aggregator.get_correlation("ETH", "BTC") - 0.8) < 0.001); // Symmetric
+  KJ_EXPECT(aggregator.get_correlation("BTC", "BTC") == 1.0);                  // Self-correlation
 
   // Default correlation for unknown pair
   aggregator.set_default_correlation(0.5);
@@ -76,7 +76,7 @@ KJ_TEST("PortfolioRiskAggregator - calculate risk single position") {
   PortfolioPosition pos;
   pos.symbol = kj::str("BTC");
   pos.value = 100000.0;
-  pos.volatility = 0.03;  // 3% daily volatility
+  pos.volatility = 0.03; // 3% daily volatility
   aggregator.update_position(kj::mv(pos));
 
   auto summary = aggregator.calculate_risk(0.95);
@@ -150,8 +150,10 @@ KJ_TEST("PortfolioRiskAggregator - risk contributions") {
   double btc_contrib = 0.0;
   double eth_contrib = 0.0;
   for (const auto& c : contributions) {
-    if (c.symbol == "BTC"_kj) btc_contrib = c.pct_contribution;
-    if (c.symbol == "ETH"_kj) eth_contrib = c.pct_contribution;
+    if (c.symbol == "BTC"_kj)
+      btc_contrib = c.pct_contribution;
+    if (c.symbol == "ETH"_kj)
+      eth_contrib = c.pct_contribution;
   }
   KJ_EXPECT(btc_contrib > eth_contrib);
 }
@@ -232,13 +234,13 @@ KJ_TEST("PortfolioRiskAggregator - suggest reductions") {
   aggregator.update_position(kj::mv(eth));
 
   auto summary = aggregator.calculate_risk();
-  double target_var = summary.total_var_95 * 0.5;  // Reduce to 50%
+  double target_var = summary.total_var_95 * 0.5; // Reduce to 50%
 
   auto suggestions = aggregator.suggest_reductions(target_var);
 
   KJ_EXPECT(suggestions.size() > 0);
   for (const auto& s : suggestions) {
-    KJ_EXPECT(s.second > 0.0);  // Reduction amount should be positive
+    KJ_EXPECT(s.second > 0.0); // Reduction amount should be positive
   }
 }
 
@@ -303,7 +305,7 @@ KJ_TEST("PortfolioRiskMonitor - check risk levels") {
   RiskAllocation alloc;
   alloc.name = kj::str("test_strategy");
   alloc.allocated_var = 1000.0;
-  alloc.used_var = 900.0;  // 90% utilization
+  alloc.used_var = 900.0; // 90% utilization
   alloc.utilization_pct = 90.0;
   summary.allocations.add(kj::mv(alloc));
 
@@ -326,7 +328,7 @@ KJ_TEST("PortfolioRiskMonitor - concentration alert") {
 
   PortfolioRiskSummary summary;
   summary.largest_risk_contributor = kj::str("BTC");
-  summary.largest_contribution_pct = 60.0;  // 60% > 40% threshold
+  summary.largest_contribution_pct = 60.0; // 60% > 40% threshold
 
   auto alerts = monitor.check_risk_levels(summary);
 
@@ -347,15 +349,14 @@ KJ_TEST("PortfolioRiskMonitor - alert callback") {
   monitor.set_var_warning_threshold(0.50);
 
   int alert_count = 0;
-  monitor.set_alert_callback([&alert_count](const PortfolioRiskMonitor::RiskAlert& alert) {
-    alert_count++;
-  });
+  monitor.set_alert_callback(
+      [&alert_count](const PortfolioRiskMonitor::RiskAlert& alert) { alert_count++; });
 
   PortfolioRiskSummary summary;
   RiskAllocation alloc;
   alloc.name = kj::str("test");
   alloc.allocated_var = 1000.0;
-  alloc.used_var = 600.0;  // 60% > 50% threshold
+  alloc.used_var = 600.0; // 60% > 50% threshold
   alloc.utilization_pct = 60.0;
   summary.allocations.add(kj::mv(alloc));
 

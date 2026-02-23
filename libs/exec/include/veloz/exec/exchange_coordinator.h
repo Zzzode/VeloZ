@@ -40,11 +40,11 @@ struct RoutingDecision {
 
 // Routing strategy configuration
 enum class RoutingStrategy : std::uint8_t {
-  BestPrice = 0,       // Route to venue with best price
-  LowestLatency = 1,   // Route to venue with lowest latency
-  Balanced = 2,        // Balance between price and latency
-  RoundRobin = 3,      // Distribute across venues
-  WeightedRandom = 4,  // Random with configurable weights
+  BestPrice = 0,      // Route to venue with best price
+  LowestLatency = 1,  // Route to venue with lowest latency
+  Balanced = 2,       // Balance between price and latency
+  RoundRobin = 3,     // Distribute across venues
+  WeightedRandom = 4, // Random with configurable weights
 };
 
 // Callback for execution reports from any venue

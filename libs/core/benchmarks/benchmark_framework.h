@@ -146,15 +146,15 @@ public:
       func(i);
       auto end = std::chrono::high_resolution_clock::now();
 
-      double elapsed_ns =
-          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count());
+      double elapsed_ns = static_cast<double>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count());
       latencies.add(elapsed_ns);
     }
 
     auto total_end = std::chrono::high_resolution_clock::now();
 
-    result.total_time_ns =
-        static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(total_end - total_start).count());
+    result.total_time_ns = static_cast<double>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(total_end - total_start).count());
     result.ops_per_sec = static_cast<double>(iterations) / (result.total_time_ns / 1e9);
     result.latency = calculate_latency_stats(latencies);
 
@@ -174,8 +174,7 @@ public:
     kj::Vector<double> latencies;
 
     // Warmup (100ms)
-    auto warmup_end =
-        std::chrono::high_resolution_clock::now() + std::chrono::milliseconds(100);
+    auto warmup_end = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds(100);
     while (std::chrono::high_resolution_clock::now() < warmup_end) {
       func();
     }
@@ -190,16 +189,16 @@ public:
       func();
       auto end = std::chrono::high_resolution_clock::now();
 
-      double elapsed_ns =
-          static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count());
+      double elapsed_ns = static_cast<double>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count());
       latencies.add(elapsed_ns);
     }
 
     auto total_end = std::chrono::high_resolution_clock::now();
 
     result.iterations = latencies.size();
-    result.total_time_ns =
-        static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(total_end - total_start).count());
+    result.total_time_ns = static_cast<double>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(total_end - total_start).count());
     result.ops_per_sec = static_cast<double>(result.iterations) / (result.total_time_ns / 1e9);
     result.latency = calculate_latency_stats(latencies);
 
@@ -228,22 +227,26 @@ public:
    * @brief Generate a report of all benchmark results
    */
   [[nodiscard]] kj::String generate_report() const {
-    kj::StringTree tree = kj::strTree("================================================================================\n",
-                                       "Performance Benchmark Report: ", name_, "\n",
-                                       "================================================================================\n\n");
+    kj::StringTree tree = kj::strTree(
+        "================================================================================\n",
+        "Performance Benchmark Report: ", name_, "\n",
+        "================================================================================\n\n");
 
     for (const auto& result : results_) {
       tree = kj::strTree(kj::mv(tree), result.to_string(), "\n");
     }
 
-    tree = kj::strTree(kj::mv(tree),
-                       "================================================================================\n",
-                       "Summary\n",
-                       "================================================================================\n");
+    tree = kj::strTree(
+        kj::mv(tree),
+        "================================================================================\n",
+        "Summary\n",
+        "================================================================================\n");
 
     // Summary table
-    tree = kj::strTree(kj::mv(tree), "Benchmark                          | Throughput (ops/s) | P99 Latency (ns)\n",
-                       "-----------------------------------|--------------------|-----------------\n");
+    tree =
+        kj::strTree(kj::mv(tree),
+                    "Benchmark                          | Throughput (ops/s) | P99 Latency (ns)\n",
+                    "-----------------------------------|--------------------|-----------------\n");
 
     for (const auto& result : results_) {
       tree = kj::strTree(kj::mv(tree), result.name, " | ", result.ops_per_sec, " | ",

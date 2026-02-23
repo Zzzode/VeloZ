@@ -72,8 +72,7 @@ public:
   get_aggregated_position(const veloz::common::SymbolId& symbol) const;
 
   // Get all positions for a venue
-  [[nodiscard]] kj::Vector<ExchangePosition>
-  get_venue_positions(veloz::common::Venue venue) const;
+  [[nodiscard]] kj::Vector<ExchangePosition> get_venue_positions(veloz::common::Venue venue) const;
 
   // Get all aggregated positions
   [[nodiscard]] kj::Vector<AggregatedPosition> get_all_positions() const;
@@ -115,15 +114,12 @@ private:
   struct PositionKeyHasher {
     std::size_t operator()(const PositionKey& key) const {
       // Simple hash combining venue and symbol
-      return static_cast<std::size_t>(key.venue) * 31 +
-             kj::hashCode(key.symbol.asPtr());
+      return static_cast<std::size_t>(key.venue) * 31 + kj::hashCode(key.symbol.asPtr());
     }
   };
 
   struct AggregatorState {
-    kj::HashMap<veloz::common::Venue,
-                kj::HashMap<kj::String, ExchangePosition>>
-        positions;
+    kj::HashMap<veloz::common::Venue, kj::HashMap<kj::String, ExchangePosition>> positions;
     kj::Vector<PositionDiscrepancy> discrepancies;
     kj::Maybe<DiscrepancyCallback> discrepancy_callback;
   };

@@ -88,12 +88,12 @@ public:
   kj::Promise<kj::Vector<ExecutionReport>>
   query_open_orders_async(const veloz::common::SymbolId& symbol) override;
 
-  kj::Promise<kj::Maybe<ExecutionReport>>
-  query_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override;
+  kj::Promise<kj::Maybe<ExecutionReport>> query_order_async(const veloz::common::SymbolId& symbol,
+                                                            kj::StringPtr client_order_id) override;
 
-  kj::Promise<kj::Vector<ExecutionReport>>
-  query_orders_async(const veloz::common::SymbolId& symbol, std::int64_t start_time_ms,
-                     std::int64_t end_time_ms) override;
+  kj::Promise<kj::Vector<ExecutionReport>> query_orders_async(const veloz::common::SymbolId& symbol,
+                                                              std::int64_t start_time_ms,
+                                                              std::int64_t end_time_ms) override;
 
   kj::Promise<kj::Maybe<ExecutionReport>>
   cancel_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override;

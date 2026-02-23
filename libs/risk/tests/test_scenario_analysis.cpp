@@ -1,8 +1,8 @@
 #include "veloz/risk/scenario_analysis.h"
 
 #include <cmath>
-#include <utility>
 #include <kj/test.h>
+#include <utility>
 
 namespace veloz::risk {
 namespace {
@@ -31,15 +31,15 @@ KJ_TEST("get_probability_range returns correct ranges") {
 
 KJ_TEST("EnhancedScenarioBuilder - basic scenario creation") {
   auto scenario = EnhancedScenarioBuilder()
-      .id("test_scenario")
-      .name("Test Scenario")
-      .description("A test scenario")
-      .price_shock("BTC", -0.30)
-      .probability(ScenarioProbability::Low)
-      .category("Market Crash")
-      .tag("crypto")
-      .tag("black_swan")
-      .build();
+                      .id("test_scenario")
+                      .name("Test Scenario")
+                      .description("A test scenario")
+                      .price_shock("BTC", -0.30)
+                      .probability(ScenarioProbability::Low)
+                      .category("Market Crash")
+                      .tag("crypto")
+                      .tag("black_swan")
+                      .build();
 
   KJ_EXPECT(scenario.base_scenario.id == "test_scenario"_kj);
   KJ_EXPECT(scenario.base_scenario.name == "Test Scenario"_kj);
@@ -51,11 +51,11 @@ KJ_TEST("EnhancedScenarioBuilder - basic scenario creation") {
 
 KJ_TEST("EnhancedScenarioBuilder - with recovery") {
   auto scenario = EnhancedScenarioBuilder()
-      .id("recovery_test")
-      .name("Recovery Test")
-      .price_shock("", -0.20)
-      .recovery(30, 0.02)  // 30 days, 2% daily recovery
-      .build();
+                      .id("recovery_test")
+                      .name("Recovery Test")
+                      .price_shock("", -0.20)
+                      .recovery(30, 0.02) // 30 days, 2% daily recovery
+                      .build();
 
   KJ_EXPECT(scenario.expected_recovery_days == 30);
   KJ_EXPECT(std::abs(scenario.recovery_rate - 0.02) < 0.001);
@@ -64,11 +64,7 @@ KJ_TEST("EnhancedScenarioBuilder - with recovery") {
 KJ_TEST("ScenarioAnalysisEngine - add and get scenario") {
   ScenarioAnalysisEngine engine;
 
-  auto scenario = EnhancedScenarioBuilder()
-      .id("test_1")
-      .name("Test 1")
-      .category("Test")
-      .build();
+  auto scenario = EnhancedScenarioBuilder().id("test_1").name("Test 1").category("Test").build();
 
   engine.add_scenario(kj::mv(scenario));
 
@@ -82,12 +78,9 @@ KJ_TEST("ScenarioAnalysisEngine - add and get scenario") {
 KJ_TEST("ScenarioAnalysisEngine - get scenarios by category") {
   ScenarioAnalysisEngine engine;
 
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s1").category("Market Crash").build());
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s2").category("Market Crash").build());
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s3").category("Liquidity Crisis").build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s1").category("Market Crash").build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s2").category("Market Crash").build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s3").category("Liquidity Crisis").build());
 
   auto crashes = engine.get_scenarios_by_category("Market Crash");
   KJ_EXPECT(crashes.size() == 2);
@@ -99,12 +92,9 @@ KJ_TEST("ScenarioAnalysisEngine - get scenarios by category") {
 KJ_TEST("ScenarioAnalysisEngine - get scenarios by tag") {
   ScenarioAnalysisEngine engine;
 
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s1").tag("crypto").tag("major").build());
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s2").tag("crypto").build());
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s3").tag("forex").build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s1").tag("crypto").tag("major").build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s2").tag("crypto").build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s3").tag("forex").build());
 
   auto crypto = engine.get_scenarios_by_tag("crypto");
   KJ_EXPECT(crypto.size() == 2);
@@ -131,12 +121,12 @@ KJ_TEST("ScenarioAnalysisEngine - analyze impact") {
   ScenarioAnalysisEngine engine;
 
   engine.add_scenario(EnhancedScenarioBuilder()
-      .id("crash")
-      .name("Market Crash")
-      .price_shock("", -0.30)
-      .probability(ScenarioProbability::Low)
-      .probability_estimate(0.03)
-      .build());
+                          .id("crash")
+                          .name("Market Crash")
+                          .price_shock("", -0.30)
+                          .probability(ScenarioProbability::Low)
+                          .probability_estimate(0.03)
+                          .build());
 
   kj::Vector<StressPosition> positions;
   StressPosition pos;
@@ -151,17 +141,17 @@ KJ_TEST("ScenarioAnalysisEngine - analyze impact") {
 
   KJ_EXPECT(result.scenario_id == "crash"_kj);
   KJ_EXPECT(result.scenario_name == "Market Crash"_kj);
-  KJ_EXPECT(result.immediate_pnl < 0.0);  // Should be negative (loss)
+  KJ_EXPECT(result.immediate_pnl < 0.0); // Should be negative (loss)
   KJ_EXPECT(result.position_impacts.size() == 1);
 }
 
 KJ_TEST("ScenarioAnalysisEngine - analyze all impacts") {
   ScenarioAnalysisEngine engine;
 
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s1").price_shock("", -0.20).probability_estimate(0.05).build());
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s2").price_shock("", -0.30).probability_estimate(0.02).build());
+  engine.add_scenario(
+      EnhancedScenarioBuilder().id("s1").price_shock("", -0.20).probability_estimate(0.05).build());
+  engine.add_scenario(
+      EnhancedScenarioBuilder().id("s2").price_shock("", -0.30).probability_estimate(0.02).build());
 
   kj::Vector<StressPosition> positions;
   StressPosition pos;
@@ -233,9 +223,9 @@ KJ_TEST("ScenarioAnalysisEngine - rank by severity") {
   auto ranked = engine.rank_by_severity(impacts);
 
   KJ_EXPECT(ranked.size() == 3);
-  KJ_EXPECT(ranked[0] == "severe"_kj);    // Worst first
+  KJ_EXPECT(ranked[0] == "severe"_kj); // Worst first
   KJ_EXPECT(ranked[1] == "moderate"_kj);
-  KJ_EXPECT(ranked[2] == "mild"_kj);      // Best last
+  KJ_EXPECT(ranked[2] == "mild"_kj); // Best last
 }
 
 KJ_TEST("ScenarioAnalysisEngine - calculate expected loss") {
@@ -280,7 +270,7 @@ KJ_TEST("ScenarioAnalysisEngine - budget utilization") {
   kj::Vector<PortfolioImpactResult> impacts;
 
   PortfolioImpactResult r1;
-  r1.immediate_pnl = -25000.0;  // 50% of budget
+  r1.immediate_pnl = -25000.0; // 50% of budget
   impacts.add(kj::mv(r1));
 
   double utilization = engine.calculate_budget_utilization(impacts);
@@ -290,7 +280,7 @@ KJ_TEST("ScenarioAnalysisEngine - budget utilization") {
 
   // Add worse scenario
   PortfolioImpactResult r2;
-  r2.immediate_pnl = -60000.0;  // 120% of budget
+  r2.immediate_pnl = -60000.0; // 120% of budget
   impacts.add(kj::mv(r2));
 
   utilization = engine.calculate_budget_utilization(impacts);
@@ -322,12 +312,10 @@ KJ_TEST("ScenarioAnalysisEngine - generate reverse stress scenario") {
 KJ_TEST("ScenarioAnalysisEngine - generate worst case scenario") {
   ScenarioAnalysisEngine engine;
 
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s1").price_shock("BTC", -0.20).build());
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s2").price_shock("BTC", -0.30).build());  // Worse for BTC
-  engine.add_scenario(EnhancedScenarioBuilder()
-      .id("s3").price_shock("ETH", -0.40).build());
+  engine.add_scenario(EnhancedScenarioBuilder().id("s1").price_shock("BTC", -0.20).build());
+  engine.add_scenario(
+      EnhancedScenarioBuilder().id("s2").price_shock("BTC", -0.30).build()); // Worse for BTC
+  engine.add_scenario(EnhancedScenarioBuilder().id("s3").price_shock("ETH", -0.40).build());
 
   auto worst = engine.generate_worst_case_scenario();
 
@@ -340,9 +328,9 @@ KJ_TEST("ScenarioAnalysisEngine - margin risk detection") {
   ScenarioAnalysisEngine engine;
 
   engine.add_scenario(EnhancedScenarioBuilder()
-      .id("crash")
-      .price_shock("", -0.50)  // 50% drop
-      .build());
+                          .id("crash")
+                          .price_shock("", -0.50) // 50% drop
+                          .build());
 
   kj::Vector<StressPosition> positions;
   StressPosition pos;
@@ -362,15 +350,15 @@ KJ_TEST("ScenarioAnalysisEngine - margin risk detection") {
 
 KJ_TEST("EnhancedScenario - copy constructor") {
   auto original = EnhancedScenarioBuilder()
-      .id("original")
-      .name("Original")
-      .price_shock("BTC", -0.30)
-      .probability(ScenarioProbability::Medium)
-      .category("Test")
-      .tag("tag1")
-      .tag("tag2")
-      .recovery(30, 0.02)
-      .build();
+                      .id("original")
+                      .name("Original")
+                      .price_shock("BTC", -0.30)
+                      .probability(ScenarioProbability::Medium)
+                      .category("Test")
+                      .tag("tag1")
+                      .tag("tag2")
+                      .recovery(30, 0.02)
+                      .build();
 
   EnhancedScenario copy(original);
 

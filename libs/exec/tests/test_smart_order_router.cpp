@@ -1,6 +1,6 @@
-#include "veloz/exec/execution_algorithms.h"
 #include "veloz/exec/exchange_adapter.h"
 #include "veloz/exec/exchange_coordinator.h"
+#include "veloz/exec/execution_algorithms.h"
 #include "veloz/exec/smart_order_router.h"
 
 #include <kj/test.h>

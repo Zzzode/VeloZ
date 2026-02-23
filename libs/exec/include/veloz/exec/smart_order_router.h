@@ -19,19 +19,19 @@ namespace veloz::exec {
 
 // Fee structure for an exchange
 struct ExchangeFees {
-  double maker_fee{0.001};  // 0.1% default
-  double taker_fee{0.001};  // 0.1% default
+  double maker_fee{0.001}; // 0.1% default
+  double taker_fee{0.001}; // 0.1% default
   double withdrawal_fee{0.0};
-  bool fee_in_quote{true};  // Fee deducted from quote currency
+  bool fee_in_quote{true}; // Fee deducted from quote currency
 };
 
 // Execution quality metrics
 struct ExecutionQuality {
-  double slippage{0.0};           // Price slippage from expected
-  double fill_rate{0.0};          // Percentage filled
+  double slippage{0.0};  // Price slippage from expected
+  double fill_rate{0.0}; // Percentage filled
   kj::Duration execution_time{0 * kj::NANOSECONDS};
-  double effective_fee{0.0};      // Actual fee paid
-  double price_improvement{0.0};  // Improvement vs NBBO
+  double effective_fee{0.0};     // Actual fee paid
+  double price_improvement{0.0}; // Improvement vs NBBO
 };
 
 // Smart routing score breakdown
@@ -57,7 +57,7 @@ struct OrderSplit {
 // Batch order request
 struct BatchOrderRequest {
   kj::Vector<PlaceOrderRequest> orders;
-  bool atomic{false};  // If true, all or nothing
+  bool atomic{false}; // If true, all or nothing
 };
 
 // Batch order result
@@ -97,24 +97,24 @@ public:
   [[nodiscard]] kj::Maybe<ExchangeFees> get_fees(veloz::common::Venue venue) const;
 
   // Smart routing with full score breakdown
-  [[nodiscard]] kj::Vector<RoutingScore>
-  score_venues(const veloz::common::SymbolId& symbol, OrderSide side, double quantity) const;
+  [[nodiscard]] kj::Vector<RoutingScore> score_venues(const veloz::common::SymbolId& symbol,
+                                                      OrderSide side, double quantity) const;
 
   // Get optimal venue considering all factors
   [[nodiscard]] RoutingDecision route_order(const PlaceOrderRequest& req) const;
 
   // Split large order across venues for better execution
-  [[nodiscard]] kj::Vector<OrderSplit>
-  split_order(const veloz::common::SymbolId& symbol, OrderSide side, double quantity,
-              double max_single_venue_pct = 0.5) const;
+  [[nodiscard]] kj::Vector<OrderSplit> split_order(const veloz::common::SymbolId& symbol,
+                                                   OrderSide side, double quantity,
+                                                   double max_single_venue_pct = 0.5) const;
 
   // Execute order with smart routing
   kj::Maybe<ExecutionReport> execute(const PlaceOrderRequest& req);
 
   // Execute split order across venues
-  kj::Vector<kj::Maybe<ExecutionReport>>
-  execute_split(const veloz::common::SymbolId& symbol, OrderSide side, double quantity,
-                kj::StringPtr client_order_id_prefix);
+  kj::Vector<kj::Maybe<ExecutionReport>> execute_split(const veloz::common::SymbolId& symbol,
+                                                       OrderSide side, double quantity,
+                                                       kj::StringPtr client_order_id_prefix);
 
   // Batch operations
   BatchOrderResult execute_batch(const BatchOrderRequest& batch);
@@ -126,8 +126,7 @@ public:
   void record_execution(veloz::common::Venue venue, const ExecutionReport& report,
                         double expected_price, kj::Duration execution_time);
 
-  [[nodiscard]] kj::Maybe<ExecutionQuality>
-  get_venue_quality(veloz::common::Venue venue) const;
+  [[nodiscard]] kj::Maybe<ExecutionQuality> get_venue_quality(veloz::common::Venue venue) const;
 
   [[nodiscard]] ExecutionAnalytics get_analytics() const;
 

@@ -23,14 +23,12 @@ BinanceReconciliationAdapter::query_open_orders_async(const veloz::common::Symbo
 
 kj::Promise<kj::Maybe<ExecutionReport>>
 BinanceReconciliationAdapter::query_order_async(const veloz::common::SymbolId& symbol,
-                                                 kj::StringPtr client_order_id) {
+                                                kj::StringPtr client_order_id) {
   return adapter_.get_order_async(symbol, client_order_id);
 }
 
-kj::Promise<kj::Vector<ExecutionReport>>
-BinanceReconciliationAdapter::query_orders_async(const veloz::common::SymbolId& symbol,
-                                                  std::int64_t start_time_ms,
-                                                  std::int64_t end_time_ms) {
+kj::Promise<kj::Vector<ExecutionReport>> BinanceReconciliationAdapter::query_orders_async(
+    const veloz::common::SymbolId& symbol, std::int64_t start_time_ms, std::int64_t end_time_ms) {
   // Binance doesn't have a direct time-range query for orders in the spot API
   // We query open orders and filter by time on the client side
   // For historical orders, you would need to use GET /api/v3/allOrders endpoint
@@ -38,8 +36,8 @@ BinanceReconciliationAdapter::query_orders_async(const veloz::common::SymbolId& 
   (void)end_time_ms;
 
   return adapter_.get_open_orders_async(symbol).then(
-      [start_time_ms, end_time_ms](
-          kj::Maybe<kj::Array<ExecutionReport>> result) -> kj::Vector<ExecutionReport> {
+      [start_time_ms,
+       end_time_ms](kj::Maybe<kj::Array<ExecutionReport>> result) -> kj::Vector<ExecutionReport> {
         kj::Vector<ExecutionReport> orders;
         KJ_IF_SOME(arr, result) {
           for (auto& report : arr) {
@@ -56,7 +54,7 @@ BinanceReconciliationAdapter::query_orders_async(const veloz::common::SymbolId& 
 
 kj::Promise<kj::Maybe<ExecutionReport>>
 BinanceReconciliationAdapter::cancel_order_async(const veloz::common::SymbolId& symbol,
-                                                  kj::StringPtr client_order_id) {
+                                                 kj::StringPtr client_order_id) {
   CancelOrderRequest req;
   req.symbol = symbol;
   req.client_order_id = kj::heapString(client_order_id);

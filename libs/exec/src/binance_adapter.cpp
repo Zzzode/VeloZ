@@ -1062,38 +1062,38 @@ kj::Maybe<kj::Array<ExecutionReport>> BinanceAdapter::get_all_open_orders() {
 kj::Promise<kj::Vector<ExecutionReport>>
 BinanceAdapter::query_open_orders_async(const veloz::common::SymbolId& symbol) {
   // Reuse existing get_open_orders_async and convert Array to Vector
-  return get_open_orders_async(symbol).then([](kj::Maybe<kj::Array<ExecutionReport>> result)
-                                                 -> kj::Vector<ExecutionReport> {
-    KJ_IF_SOME(orders, result) {
-      kj::Vector<ExecutionReport> vec;
-      for (auto& order : orders) {
-        vec.add(kj::mv(order));
-      }
-      return vec;
-    }
-    // Return empty vector if no orders
-    return kj::Vector<ExecutionReport>();
-  });
+  return get_open_orders_async(symbol).then(
+      [](kj::Maybe<kj::Array<ExecutionReport>> result) -> kj::Vector<ExecutionReport> {
+        KJ_IF_SOME(orders, result) {
+          kj::Vector<ExecutionReport> vec;
+          for (auto& order : orders) {
+            vec.add(kj::mv(order));
+          }
+          return vec;
+        }
+        // Return empty vector if no orders
+        return kj::Vector<ExecutionReport>();
+      });
 }
 
 kj::Promise<kj::Maybe<ExecutionReport>>
 BinanceAdapter::query_order_async(const veloz::common::SymbolId& symbol,
-                                   kj::StringPtr client_order_id) {
+                                  kj::StringPtr client_order_id) {
   // Reuse existing get_order_async - signature already matches
   return get_order_async(symbol, client_order_id);
 }
 
 kj::Promise<kj::Vector<ExecutionReport>>
 BinanceAdapter::query_orders_async(const veloz::common::SymbolId& symbol,
-                                    std::int64_t start_time_ms, std::int64_t end_time_ms) {
+                                   std::int64_t start_time_ms, std::int64_t end_time_ms) {
   // Query all orders within time range using Binance allOrders endpoint
   kj::StringPtr endpoint = "/api/v3/allOrders"_kj;
 
   auto formatted_symbol = format_symbol(symbol);
   auto timestamp = get_timestamp_ms();
 
-  auto params = kj::str("symbol=", formatted_symbol, "&startTime=", start_time_ms, "&endTime=",
-                        end_time_ms, "&timestamp=", timestamp);
+  auto params = kj::str("symbol=", formatted_symbol, "&startTime=", start_time_ms,
+                        "&endTime=", end_time_ms, "&timestamp=", timestamp);
 
   // Add signature
   auto signature = build_signature(params);
@@ -1149,7 +1149,7 @@ BinanceAdapter::query_orders_async(const veloz::common::SymbolId& symbol,
 
 kj::Promise<kj::Maybe<ExecutionReport>>
 BinanceAdapter::cancel_order_async(const veloz::common::SymbolId& symbol,
-                                    kj::StringPtr client_order_id) {
+                                   kj::StringPtr client_order_id) {
   // Reuse existing cancel_order_async by creating CancelOrderRequest
   CancelOrderRequest req;
   req.symbol = symbol;

@@ -524,7 +524,8 @@ KJ_TEST("ParseStrategyCommand: Start missing ID") {
 }
 
 KJ_TEST("ParseStrategyCommand: Params") {
-  auto result = parse_strategy_command("STRATEGY PARAMS strat-123456 rsi_period=14 threshold=0.7"_kj);
+  auto result =
+      parse_strategy_command("STRATEGY PARAMS strat-123456 rsi_period=14 threshold=0.7"_kj);
 
   KJ_IF_SOME(strategy, result) {
     KJ_EXPECT(strategy.subcommand == StrategySubCommand::Params);

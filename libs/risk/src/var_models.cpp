@@ -34,15 +34,15 @@ const VaRConfig& VaRCalculator::config() const {
 }
 
 VaRResult VaRCalculator::calculate_historical(const kj::Vector<double>& returns,
-                                               double portfolio_value) const {
+                                              double portfolio_value) const {
   VaRResult result;
   result.method = VaRMethod::Historical;
   result.sample_size = static_cast<int>(returns.size());
 
   if (returns.size() < 10) {
     result.valid = false;
-    result.error_message = kj::str("Insufficient data: need at least 10 observations, got ",
-                                    returns.size());
+    result.error_message =
+        kj::str("Insufficient data: need at least 10 observations, got ", returns.size());
     return result;
   }
 
@@ -85,7 +85,7 @@ VaRResult VaRCalculator::calculate_historical(const kj::Vector<double>& returns,
 }
 
 VaRResult VaRCalculator::calculate_parametric(double mean, double std_dev,
-                                               double portfolio_value) const {
+                                              double portfolio_value) const {
   VaRResult result;
   result.method = VaRMethod::Parametric;
   result.mean_return = mean;
@@ -113,9 +113,7 @@ VaRResult VaRCalculator::calculate_parametric(double mean, double std_dev,
   // ES = mean + std_dev * phi(z) / (1 - confidence)
   // where phi(z) is the standard normal PDF
   if (config_.calculate_cvar) {
-    auto normal_pdf = [](double z) {
-      return std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI);
-    };
+    auto normal_pdf = [](double z) { return std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI); };
 
     double es_95_factor = normal_pdf(z_95) / (1.0 - config_.confidence_95);
     double es_99_factor = normal_pdf(z_99) / (1.0 - config_.confidence_99);
@@ -141,7 +139,7 @@ VaRResult VaRCalculator::calculate_parametric(double mean, double std_dev,
 }
 
 VaRResult VaRCalculator::calculate_monte_carlo(double mean, double std_dev,
-                                                double portfolio_value) const {
+                                               double portfolio_value) const {
   VaRResult result;
   result.method = VaRMethod::MonteCarlo;
   result.mean_return = mean;
@@ -156,16 +154,16 @@ VaRResult VaRCalculator::calculate_monte_carlo(double mean, double std_dev,
 
   if (config_.monte_carlo_paths < 100) {
     result.valid = false;
-    result.error_message = kj::str("Need at least 100 Monte Carlo paths, got ",
-                                    config_.monte_carlo_paths);
+    result.error_message =
+        kj::str("Need at least 100 Monte Carlo paths, got ", config_.monte_carlo_paths);
     return result;
   }
 
   // Initialize random seed
   uint64_t seed = config_.random_seed;
   if (seed == 0) {
-    seed = static_cast<uint64_t>(
-        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    seed =
+        static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
   }
 
   // Generate simulated returns
@@ -209,7 +207,7 @@ VaRResult VaRCalculator::calculate_monte_carlo(double mean, double std_dev,
 }
 
 VaRResult VaRCalculator::calculate(const kj::Vector<double>& returns,
-                                    double portfolio_value) const {
+                                   double portfolio_value) const {
   switch (config_.method) {
   case VaRMethod::Historical:
     return calculate_historical(returns, portfolio_value);
@@ -233,10 +231,9 @@ VaRResult VaRCalculator::calculate(const kj::Vector<double>& returns,
   return result;
 }
 
-VaRResult VaRCalculator::calculate_portfolio_var(
-    const kj::Vector<VaRPosition>& positions,
-    const kj::Vector<CovarianceEntry>& covariances,
-    double portfolio_value) const {
+VaRResult VaRCalculator::calculate_portfolio_var(const kj::Vector<VaRPosition>& positions,
+                                                 const kj::Vector<CovarianceEntry>& covariances,
+                                                 double portfolio_value) const {
 
   VaRResult result;
   result.method = config_.method;
@@ -263,10 +260,10 @@ VaRResult VaRCalculator::calculate_portfolio_var(
       } else {
         // Find covariance from matrix
         for (const auto& entry : covariances) {
-          bool match1 = (entry.symbol1 == positions[i].symbol &&
-                         entry.symbol2 == positions[j].symbol);
-          bool match2 = (entry.symbol1 == positions[j].symbol &&
-                         entry.symbol2 == positions[i].symbol);
+          bool match1 =
+              (entry.symbol1 == positions[i].symbol && entry.symbol2 == positions[j].symbol);
+          bool match2 =
+              (entry.symbol1 == positions[j].symbol && entry.symbol2 == positions[i].symbol);
           if (match1 || match2) {
             cov = entry.covariance;
             break;
@@ -294,9 +291,7 @@ VaRResult VaRCalculator::calculate_portfolio_var(
 
   // Calculate CVaR for normal distribution
   if (config_.calculate_cvar) {
-    auto normal_pdf = [](double z) {
-      return std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI);
-    };
+    auto normal_pdf = [](double z) { return std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI); };
 
     double es_95_factor = normal_pdf(z_95) / (1.0 - config_.confidence_95);
     double es_99_factor = normal_pdf(z_99) / (1.0 - config_.confidence_99);
@@ -381,7 +376,7 @@ double VaRCalculator::scale_var_to_holding_period(double var_1day, int holding_d
 }
 
 double VaRCalculator::get_percentile(const kj::Vector<double>& sorted_returns,
-                                      double percentile) const {
+                                     double percentile) const {
   if (sorted_returns.size() == 0) {
     return 0.0;
   }
@@ -400,13 +395,14 @@ double VaRCalculator::get_percentile(const kj::Vector<double>& sorted_returns,
 }
 
 double VaRCalculator::calculate_cvar_from_sorted(const kj::Vector<double>& sorted_returns,
-                                                  double percentile) const {
+                                                 double percentile) const {
   if (sorted_returns.size() == 0) {
     return 0.0;
   }
 
   // CVaR is the average of returns below the VaR threshold
-  size_t cutoff_index = static_cast<size_t>(percentile * static_cast<double>(sorted_returns.size()));
+  size_t cutoff_index =
+      static_cast<size_t>(percentile * static_cast<double>(sorted_returns.size()));
   if (cutoff_index == 0) {
     cutoff_index = 1;
   }
@@ -423,16 +419,16 @@ double VaRCalculator::get_z_score(double confidence) {
   // Approximate inverse normal CDF using Abramowitz and Stegun approximation
   // For common confidence levels, use exact values
   if (std::abs(confidence - 0.95) < 0.001) {
-    return 1.6449;  // 95% one-tailed
+    return 1.6449; // 95% one-tailed
   }
   if (std::abs(confidence - 0.99) < 0.001) {
-    return 2.3263;  // 99% one-tailed
+    return 2.3263; // 99% one-tailed
   }
   if (std::abs(confidence - 0.975) < 0.001) {
-    return 1.96;    // 97.5% one-tailed (95% two-tailed)
+    return 1.96; // 97.5% one-tailed (95% two-tailed)
   }
   if (std::abs(confidence - 0.995) < 0.001) {
-    return 2.5758;  // 99.5% one-tailed (99% two-tailed)
+    return 2.5758; // 99.5% one-tailed (99% two-tailed)
   }
 
   // Rational approximation for other values
@@ -516,8 +512,7 @@ double VaRCalculator::generate_normal_random(uint64_t& seed) const {
 // IncrementalVaRCalculator Implementation
 // ============================================================================
 
-IncrementalVaRCalculator::IncrementalVaRCalculator(int window_size)
-    : window_size_(window_size) {}
+IncrementalVaRCalculator::IncrementalVaRCalculator(int window_size) : window_size_(window_size) {}
 
 void IncrementalVaRCalculator::add_return(double return_value) {
   // If at capacity, remove oldest
@@ -589,7 +584,7 @@ double IncrementalVaRCalculator::std_dev() const {
   double n = static_cast<double>(returns_.size());
   double variance = (sum_sq_ - (sum_ * sum_) / n) / (n - 1.0);
   if (variance < 0.0) {
-    variance = 0.0;  // Numerical stability
+    variance = 0.0; // Numerical stability
   }
   return std::sqrt(variance);
 }
@@ -612,10 +607,10 @@ void IncrementalVaRCalculator::reset() {
 // ComponentVaRCalculator Implementation
 // ============================================================================
 
-kj::Vector<ComponentVaRCalculator::RiskContribution> ComponentVaRCalculator::calculate(
-    const kj::Vector<VaRPosition>& positions,
-    const kj::Vector<CovarianceEntry>& covariances,
-    double portfolio_var) const {
+kj::Vector<ComponentVaRCalculator::RiskContribution>
+ComponentVaRCalculator::calculate(const kj::Vector<VaRPosition>& positions,
+                                  const kj::Vector<CovarianceEntry>& covariances,
+                                  double portfolio_var) const {
 
   kj::Vector<RiskContribution> contributions;
 
@@ -672,8 +667,7 @@ kj::Vector<ComponentVaRCalculator::RiskContribution> ComponentVaRCalculator::cal
 }
 
 double ComponentVaRCalculator::find_covariance(const kj::Vector<CovarianceEntry>& covariances,
-                                                kj::StringPtr symbol1,
-                                                kj::StringPtr symbol2) const {
+                                               kj::StringPtr symbol1, kj::StringPtr symbol2) const {
   for (const auto& entry : covariances) {
     bool match1 = (entry.symbol1 == symbol1 && entry.symbol2 == symbol2);
     bool match2 = (entry.symbol1 == symbol2 && entry.symbol2 == symbol1);

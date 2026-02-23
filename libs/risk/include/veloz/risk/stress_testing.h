@@ -12,9 +12,9 @@ namespace veloz::risk {
  * @brief Stress scenario type enumeration
  */
 enum class StressScenarioType : std::uint8_t {
-  Historical = 0,    ///< Replay of historical market event
-  Hypothetical = 1,  ///< User-defined shock scenario
-  Sensitivity = 2,   ///< Single-factor sensitivity analysis
+  Historical = 0,   ///< Replay of historical market event
+  Hypothetical = 1, ///< User-defined shock scenario
+  Sensitivity = 2,  ///< Single-factor sensitivity analysis
 };
 
 /**
@@ -26,12 +26,12 @@ enum class StressScenarioType : std::uint8_t {
  * @brief Market factor for stress testing
  */
 enum class MarketFactor : std::uint8_t {
-  Price = 0,           ///< Asset price
-  Volatility = 1,      ///< Implied/realized volatility
-  Correlation = 2,     ///< Cross-asset correlation
-  Liquidity = 3,       ///< Market liquidity/spread
-  InterestRate = 4,    ///< Interest rate
-  FundingRate = 5,     ///< Crypto funding rate
+  Price = 0,        ///< Asset price
+  Volatility = 1,   ///< Implied/realized volatility
+  Correlation = 2,  ///< Cross-asset correlation
+  Liquidity = 3,    ///< Market liquidity/spread
+  InterestRate = 4, ///< Interest rate
+  FundingRate = 5,  ///< Crypto funding rate
 };
 
 /**
@@ -44,9 +44,9 @@ enum class MarketFactor : std::uint8_t {
  */
 struct FactorShock {
   MarketFactor factor{MarketFactor::Price};
-  kj::String symbol;           ///< Asset symbol (empty for portfolio-wide)
-  double shock_value{0.0};     ///< Shock magnitude
-  bool is_relative{true};      ///< True: percentage change, False: absolute change
+  kj::String symbol;       ///< Asset symbol (empty for portfolio-wide)
+  double shock_value{0.0}; ///< Shock magnitude
+  bool is_relative{true};  ///< True: percentage change, False: absolute change
 
   FactorShock() = default;
   FactorShock(FactorShock&&) = default;
@@ -60,10 +60,10 @@ struct FactorShock {
  */
 struct StressPosition {
   kj::String symbol;
-  double size{0.0};           ///< Position size (signed)
-  double entry_price{0.0};    ///< Entry price
-  double current_price{0.0};  ///< Current market price
-  double volatility{0.0};     ///< Current volatility
+  double size{0.0};          ///< Position size (signed)
+  double entry_price{0.0};   ///< Entry price
+  double current_price{0.0}; ///< Current market price
+  double volatility{0.0};    ///< Current volatility
 
   StressPosition() = default;
   StressPosition(StressPosition&&) = default;
@@ -85,9 +85,9 @@ struct StressScenario {
   kj::Vector<FactorShock> shocks;
 
   // Historical scenario metadata
-  kj::String historical_event;     ///< e.g., "COVID-19 March 2020"
-  int64_t historical_start_ns{0};  ///< Start timestamp
-  int64_t historical_end_ns{0};    ///< End timestamp
+  kj::String historical_event;    ///< e.g., "COVID-19 March 2020"
+  int64_t historical_start_ns{0}; ///< Start timestamp
+  int64_t historical_end_ns{0};   ///< End timestamp
 
   // Scenario metadata
   int64_t created_at_ns{0};
@@ -105,10 +105,10 @@ struct StressScenario {
  */
 struct PositionStressResult {
   kj::String symbol;
-  double base_value{0.0};      ///< Value before stress
-  double stressed_value{0.0};  ///< Value after stress
-  double pnl_impact{0.0};      ///< P&L change
-  double pnl_impact_pct{0.0};  ///< P&L change as percentage
+  double base_value{0.0};     ///< Value before stress
+  double stressed_value{0.0}; ///< Value after stress
+  double pnl_impact{0.0};     ///< P&L change
+  double pnl_impact_pct{0.0}; ///< P&L change as percentage
 
   PositionStressResult() = default;
   PositionStressResult(PositionStressResult&&) = default;
@@ -156,12 +156,12 @@ struct StressTestResult {
 struct SensitivityResult {
   MarketFactor factor{MarketFactor::Price};
   kj::String symbol;
-  kj::Vector<double> shock_levels;   ///< Shock magnitudes tested
-  kj::Vector<double> pnl_impacts;    ///< Corresponding P&L impacts
+  kj::Vector<double> shock_levels; ///< Shock magnitudes tested
+  kj::Vector<double> pnl_impacts;  ///< Corresponding P&L impacts
 
   // Key metrics
-  double delta{0.0};    ///< First-order sensitivity (linear)
-  double gamma{0.0};    ///< Second-order sensitivity (convexity)
+  double delta{0.0}; ///< First-order sensitivity (linear)
+  double gamma{0.0}; ///< Second-order sensitivity (convexity)
 
   SensitivityResult() = default;
   SensitivityResult(SensitivityResult&&) = default;
@@ -250,9 +250,8 @@ public:
    * @param positions Portfolio positions
    * @return Stress test result
    */
-  [[nodiscard]] StressTestResult run_stress_test(
-      kj::StringPtr scenario_id,
-      const kj::Vector<StressPosition>& positions) const;
+  [[nodiscard]] StressTestResult run_stress_test(kj::StringPtr scenario_id,
+                                                 const kj::Vector<StressPosition>& positions) const;
 
   /**
    * @brief Run stress test with a custom scenario (not stored)
@@ -260,17 +259,16 @@ public:
    * @param positions Portfolio positions
    * @return Stress test result
    */
-  [[nodiscard]] StressTestResult run_stress_test(
-      const StressScenario& scenario,
-      const kj::Vector<StressPosition>& positions) const;
+  [[nodiscard]] StressTestResult run_stress_test(const StressScenario& scenario,
+                                                 const kj::Vector<StressPosition>& positions) const;
 
   /**
    * @brief Run all scenarios and return results
    * @param positions Portfolio positions
    * @return Vector of stress test results
    */
-  [[nodiscard]] kj::Vector<StressTestResult> run_all_scenarios(
-      const kj::Vector<StressPosition>& positions) const;
+  [[nodiscard]] kj::Vector<StressTestResult>
+  run_all_scenarios(const kj::Vector<StressPosition>& positions) const;
 
   // === Sensitivity Analysis ===
 
@@ -282,23 +280,17 @@ public:
    * @param num_points Number of points in the range
    * @return Sensitivity result
    */
-  [[nodiscard]] SensitivityResult run_sensitivity_analysis(
-      MarketFactor factor,
-      const kj::Vector<StressPosition>& positions,
-      double shock_min,
-      double shock_max,
-      int num_points = 21) const;
+  [[nodiscard]] SensitivityResult
+  run_sensitivity_analysis(MarketFactor factor, const kj::Vector<StressPosition>& positions,
+                           double shock_min, double shock_max, int num_points = 21) const;
 
   /**
    * @brief Run sensitivity analysis for a specific symbol
    */
-  [[nodiscard]] SensitivityResult run_sensitivity_analysis(
-      MarketFactor factor,
-      kj::StringPtr symbol,
-      const kj::Vector<StressPosition>& positions,
-      double shock_min,
-      double shock_max,
-      int num_points = 21) const;
+  [[nodiscard]] SensitivityResult
+  run_sensitivity_analysis(MarketFactor factor, kj::StringPtr symbol,
+                           const kj::Vector<StressPosition>& positions, double shock_min,
+                           double shock_max, int num_points = 21) const;
 
   // === Scenario Comparison ===
 
@@ -315,31 +307,27 @@ public:
     int scenarios_tested{0};
   };
 
-  [[nodiscard]] ScenarioComparison compare_scenarios(
-      const kj::Vector<StressTestResult>& results) const;
+  [[nodiscard]] ScenarioComparison
+  compare_scenarios(const kj::Vector<StressTestResult>& results) const;
 
 private:
   /**
    * @brief Apply shocks to positions and calculate stressed values
    */
-  [[nodiscard]] StressTestResult apply_shocks(
-      const StressScenario& scenario,
-      const kj::Vector<StressPosition>& positions) const;
+  [[nodiscard]] StressTestResult apply_shocks(const StressScenario& scenario,
+                                              const kj::Vector<StressPosition>& positions) const;
 
   /**
    * @brief Calculate stressed price for a position
    */
-  [[nodiscard]] double calculate_stressed_price(
-      const StressPosition& position,
-      const kj::Vector<FactorShock>& shocks) const;
+  [[nodiscard]] double calculate_stressed_price(const StressPosition& position,
+                                                const kj::Vector<FactorShock>& shocks) const;
 
   /**
    * @brief Find shock for a specific symbol and factor
    */
-  [[nodiscard]] const FactorShock* find_shock(
-      const kj::Vector<FactorShock>& shocks,
-      kj::StringPtr symbol,
-      MarketFactor factor) const;
+  [[nodiscard]] const FactorShock* find_shock(const kj::Vector<FactorShock>& shocks,
+                                              kj::StringPtr symbol, MarketFactor factor) const;
 
   kj::Vector<StressScenario> scenarios_;
 };

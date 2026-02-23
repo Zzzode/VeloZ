@@ -5,11 +5,11 @@
 
 #include <cstdint>
 // std::pair for return type (KJ lacks pair equivalent)
-#include <utility>
 #include <kj/common.h>
 #include <kj/map.h>
 #include <kj/string.h>
 #include <kj/vector.h>
+#include <utility>
 
 namespace veloz::risk {
 
@@ -17,21 +17,21 @@ namespace veloz::risk {
  * @brief Scenario impact type
  */
 enum class ScenarioImpactType : std::uint8_t {
-  PnL = 0,           ///< Profit/Loss impact
-  VaR = 1,           ///< VaR change
-  Margin = 2,        ///< Margin requirement change
-  Liquidity = 3,     ///< Liquidation risk
+  PnL = 0,       ///< Profit/Loss impact
+  VaR = 1,       ///< VaR change
+  Margin = 2,    ///< Margin requirement change
+  Liquidity = 3, ///< Liquidation risk
 };
 
 /**
  * @brief Scenario probability assessment
  */
 enum class ScenarioProbability : std::uint8_t {
-  VeryLow = 0,   ///< < 1% probability
-  Low = 1,       ///< 1-5% probability
-  Medium = 2,    ///< 5-20% probability
-  High = 3,      ///< 20-50% probability
-  VeryHigh = 4,  ///< > 50% probability
+  VeryLow = 0,  ///< < 1% probability
+  Low = 1,      ///< 1-5% probability
+  Medium = 2,   ///< 5-20% probability
+  High = 3,     ///< 20-50% probability
+  VeryHigh = 4, ///< > 50% probability
 };
 
 /**
@@ -54,19 +54,19 @@ struct EnhancedScenario {
 
   // Probability assessment
   ScenarioProbability probability{ScenarioProbability::Low};
-  double probability_estimate{0.05};  ///< Numeric probability (0-1)
+  double probability_estimate{0.05}; ///< Numeric probability (0-1)
 
   // Time horizon
-  int time_horizon_days{1};           ///< Scenario time horizon
-  bool is_instantaneous{true};        ///< True if shock is immediate
+  int time_horizon_days{1};    ///< Scenario time horizon
+  bool is_instantaneous{true}; ///< True if shock is immediate
 
   // Scenario category
-  kj::String category;                ///< e.g., "Market Crash", "Liquidity Crisis"
-  kj::Vector<kj::String> tags;        ///< Additional tags for filtering
+  kj::String category;         ///< e.g., "Market Crash", "Liquidity Crisis"
+  kj::Vector<kj::String> tags; ///< Additional tags for filtering
 
   // Expected recovery
-  int expected_recovery_days{0};      ///< Expected days to recover
-  double recovery_rate{0.0};          ///< Expected daily recovery rate
+  int expected_recovery_days{0}; ///< Expected days to recover
+  double recovery_rate{0.0};     ///< Expected daily recovery rate
 
   EnhancedScenario() = default;
   EnhancedScenario(EnhancedScenario&&) = default;
@@ -84,9 +84,9 @@ struct PortfolioImpactResult {
   kj::String scenario_name;
 
   // P&L impact
-  double immediate_pnl{0.0};          ///< Immediate P&L impact
-  double expected_pnl{0.0};           ///< Probability-weighted P&L
-  double worst_case_pnl{0.0};         ///< Worst case P&L (no recovery)
+  double immediate_pnl{0.0};  ///< Immediate P&L impact
+  double expected_pnl{0.0};   ///< Probability-weighted P&L
+  double worst_case_pnl{0.0}; ///< Worst case P&L (no recovery)
 
   // Risk metrics impact
   double base_var_95{0.0};
@@ -97,13 +97,13 @@ struct PortfolioImpactResult {
   kj::Vector<PositionStressResult> position_impacts;
 
   // Risk indicators
-  bool margin_call_risk{false};       ///< Would trigger margin call
-  bool liquidation_risk{false};       ///< Would trigger liquidation
-  double margin_utilization{0.0};     ///< Post-stress margin utilization
+  bool margin_call_risk{false};   ///< Would trigger margin call
+  bool liquidation_risk{false};   ///< Would trigger liquidation
+  double margin_utilization{0.0}; ///< Post-stress margin utilization
 
   // Recovery analysis
-  int days_to_breakeven{0};           ///< Days to recover losses
-  double recovery_probability{0.0};   ///< Probability of full recovery
+  int days_to_breakeven{0};         ///< Days to recover losses
+  double recovery_probability{0.0}; ///< Probability of full recovery
 
   PortfolioImpactResult() = default;
   PortfolioImpactResult(PortfolioImpactResult&&) = default;
@@ -125,7 +125,7 @@ struct ScenarioComparisonResult {
   double best_pnl{0.0};
   double average_pnl{0.0};
   double median_pnl{0.0};
-  double expected_pnl{0.0};           ///< Probability-weighted average
+  double expected_pnl{0.0}; ///< Probability-weighted average
 
   // Worst scenario details
   kj::String worst_scenario_id;
@@ -133,11 +133,11 @@ struct ScenarioComparisonResult {
 
   // Risk distribution
   double pnl_std_dev{0.0};
-  double pnl_5th_percentile{0.0};     ///< 5th percentile P&L
-  double pnl_95th_percentile{0.0};    ///< 95th percentile P&L
+  double pnl_5th_percentile{0.0};  ///< 5th percentile P&L
+  double pnl_95th_percentile{0.0}; ///< 95th percentile P&L
 
   // Correlation analysis
-  int correlated_scenarios{0};        ///< Scenarios with similar impacts
+  int correlated_scenarios{0}; ///< Scenarios with similar impacts
 
   ScenarioComparisonResult() = default;
   ScenarioComparisonResult(ScenarioComparisonResult&&) = default;
@@ -149,11 +149,11 @@ struct ScenarioComparisonResult {
  */
 struct RiskBudget {
   kj::String name;
-  double max_var{0.0};                ///< Maximum VaR allocation
-  double max_stress_loss{0.0};        ///< Maximum stress loss
+  double max_var{0.0};         ///< Maximum VaR allocation
+  double max_stress_loss{0.0}; ///< Maximum stress loss
   double current_var{0.0};
   double current_stress_loss{0.0};
-  double utilization_pct{0.0};        ///< Current utilization percentage
+  double utilization_pct{0.0}; ///< Current utilization percentage
 
   RiskBudget() = default;
   RiskBudget(RiskBudget&&) = default;
@@ -195,14 +195,13 @@ public:
   /**
    * @brief Get scenarios by category
    */
-  [[nodiscard]] kj::Vector<const EnhancedScenario*> get_scenarios_by_category(
-      kj::StringPtr category) const;
+  [[nodiscard]] kj::Vector<const EnhancedScenario*>
+  get_scenarios_by_category(kj::StringPtr category) const;
 
   /**
    * @brief Get scenarios by tag
    */
-  [[nodiscard]] kj::Vector<const EnhancedScenario*> get_scenarios_by_tag(
-      kj::StringPtr tag) const;
+  [[nodiscard]] kj::Vector<const EnhancedScenario*> get_scenarios_by_tag(kj::StringPtr tag) const;
 
   /**
    * @brief Remove scenario
@@ -224,19 +223,17 @@ public:
    * @param margin_requirement Current margin requirement
    * @return Portfolio impact result
    */
-  [[nodiscard]] PortfolioImpactResult analyze_impact(
-      kj::StringPtr scenario_id,
-      const kj::Vector<StressPosition>& positions,
-      double account_equity,
-      double margin_requirement = 0.0) const;
+  [[nodiscard]] PortfolioImpactResult analyze_impact(kj::StringPtr scenario_id,
+                                                     const kj::Vector<StressPosition>& positions,
+                                                     double account_equity,
+                                                     double margin_requirement = 0.0) const;
 
   /**
    * @brief Analyze portfolio impact for all scenarios
    */
-  [[nodiscard]] kj::Vector<PortfolioImpactResult> analyze_all_impacts(
-      const kj::Vector<StressPosition>& positions,
-      double account_equity,
-      double margin_requirement = 0.0) const;
+  [[nodiscard]] kj::Vector<PortfolioImpactResult>
+  analyze_all_impacts(const kj::Vector<StressPosition>& positions, double account_equity,
+                      double margin_requirement = 0.0) const;
 
   // === Scenario Comparison ===
 
@@ -245,24 +242,24 @@ public:
    * @param impacts Vector of impact results to compare
    * @return Comparison result with statistics
    */
-  [[nodiscard]] ScenarioComparisonResult compare_scenarios(
-      const kj::Vector<PortfolioImpactResult>& impacts) const;
+  [[nodiscard]] ScenarioComparisonResult
+  compare_scenarios(const kj::Vector<PortfolioImpactResult>& impacts) const;
 
   /**
    * @brief Rank scenarios by impact severity
    * @param impacts Impact results to rank
    * @return Vector of scenario IDs sorted by severity (worst first)
    */
-  [[nodiscard]] kj::Vector<kj::String> rank_by_severity(
-      const kj::Vector<PortfolioImpactResult>& impacts) const;
+  [[nodiscard]] kj::Vector<kj::String>
+  rank_by_severity(const kj::Vector<PortfolioImpactResult>& impacts) const;
 
   /**
    * @brief Calculate expected loss across all scenarios
    * @param impacts Impact results
    * @return Probability-weighted expected loss
    */
-  [[nodiscard]] double calculate_expected_loss(
-      const kj::Vector<PortfolioImpactResult>& impacts) const;
+  [[nodiscard]] double
+  calculate_expected_loss(const kj::Vector<PortfolioImpactResult>& impacts) const;
 
   // === Risk Budgeting ===
 
@@ -281,16 +278,15 @@ public:
    * @param impacts Scenario impact results
    * @return True if within budget
    */
-  [[nodiscard]] bool is_within_budget(
-      const kj::Vector<PortfolioImpactResult>& impacts) const;
+  [[nodiscard]] bool is_within_budget(const kj::Vector<PortfolioImpactResult>& impacts) const;
 
   /**
    * @brief Calculate budget utilization
    * @param impacts Scenario impact results
    * @return Budget utilization percentage
    */
-  [[nodiscard]] double calculate_budget_utilization(
-      const kj::Vector<PortfolioImpactResult>& impacts) const;
+  [[nodiscard]] double
+  calculate_budget_utilization(const kj::Vector<PortfolioImpactResult>& impacts) const;
 
   // === Scenario Generation ===
 
@@ -303,9 +299,9 @@ public:
    * @param target_loss Target loss amount
    * @return Generated scenario that would cause approximately target_loss
    */
-  [[nodiscard]] EnhancedScenario generate_reverse_stress_scenario(
-      const kj::Vector<StressPosition>& positions,
-      double target_loss) const;
+  [[nodiscard]] EnhancedScenario
+  generate_reverse_stress_scenario(const kj::Vector<StressPosition>& positions,
+                                   double target_loss) const;
 
   /**
    * @brief Generate worst-case scenario
@@ -334,23 +330,20 @@ private:
   /**
    * @brief Calculate stressed VaR for a scenario
    */
-  [[nodiscard]] double calculate_stressed_var(
-      const kj::Vector<StressPosition>& positions,
-      const EnhancedScenario& scenario,
-      double confidence = 0.95) const;
+  [[nodiscard]] double calculate_stressed_var(const kj::Vector<StressPosition>& positions,
+                                              const EnhancedScenario& scenario,
+                                              double confidence = 0.95) const;
 
   /**
    * @brief Check margin/liquidation risk
    */
-  void check_margin_risk(
-      PortfolioImpactResult& result,
-      double account_equity,
-      double margin_requirement) const;
+  void check_margin_risk(PortfolioImpactResult& result, double account_equity,
+                         double margin_requirement) const;
 
   kj::Vector<EnhancedScenario> scenarios_;
   RiskBudget risk_budget_;
-  double liquidation_threshold_{0.9};   // 90% margin utilization
-  double margin_call_threshold_{0.8};   // 80% margin utilization
+  double liquidation_threshold_{0.9}; // 90% margin utilization
+  double margin_call_threshold_{0.8}; // 80% margin utilization
 };
 
 /**

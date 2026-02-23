@@ -6,7 +6,7 @@
 namespace veloz::exec {
 
 void PositionAggregator::on_fill(veloz::common::Venue venue, const ExecutionReport& report,
-                                  OrderSide side, double fill_qty, double fill_price) {
+                                 OrderSide side, double fill_qty, double fill_price) {
   auto lock = guarded_.lockExclusive();
 
   // Get or create venue map
@@ -45,8 +45,8 @@ void PositionAggregator::on_fill(veloz::common::Venue venue, const ExecutionRepo
     if ((old_qty > 0 && qty_change < 0) || (old_qty < 0 && qty_change > 0)) {
       // Reducing or closing position
       double closed_qty = (std::min)(std::abs(old_qty), std::abs(qty_change));
-      double pnl_per_unit = (old_qty > 0) ? (fill_price - pos->avg_entry_price)
-                                          : (pos->avg_entry_price - fill_price);
+      double pnl_per_unit =
+          (old_qty > 0) ? (fill_price - pos->avg_entry_price) : (pos->avg_entry_price - fill_price);
       pos->realized_pnl += closed_qty * pnl_per_unit;
     }
 
@@ -70,8 +70,8 @@ void PositionAggregator::on_fill(veloz::common::Venue venue, const ExecutionRepo
 }
 
 void PositionAggregator::set_position(veloz::common::Venue venue,
-                                       const veloz::common::SymbolId& symbol, double quantity,
-                                       double avg_price) {
+                                      const veloz::common::SymbolId& symbol, double quantity,
+                                      double avg_price) {
   auto lock = guarded_.lockExclusive();
 
   // Get or create venue map
@@ -97,7 +97,7 @@ void PositionAggregator::set_position(veloz::common::Venue venue,
 }
 
 void PositionAggregator::update_mark_price(const veloz::common::SymbolId& symbol,
-                                            double mark_price) {
+                                           double mark_price) {
   auto lock = guarded_.lockExclusive();
 
   for (auto& venue_entry : lock->positions) {
@@ -113,7 +113,7 @@ void PositionAggregator::update_mark_price(const veloz::common::SymbolId& symbol
 
 kj::Maybe<ExchangePosition>
 PositionAggregator::get_position(veloz::common::Venue venue,
-                                  const veloz::common::SymbolId& symbol) const {
+                                 const veloz::common::SymbolId& symbol) const {
   auto lock = guarded_.lockExclusive();
 
   KJ_IF_SOME(venue_map, lock->positions.find(venue)) {
@@ -287,8 +287,8 @@ double PositionAggregator::get_total_realized_pnl() const {
 }
 
 void PositionAggregator::reconcile_position(veloz::common::Venue venue,
-                                             const veloz::common::SymbolId& symbol,
-                                             double exchange_quantity) {
+                                            const veloz::common::SymbolId& symbol,
+                                            double exchange_quantity) {
   auto lock = guarded_.lockExclusive();
 
   double our_quantity = 0.0;

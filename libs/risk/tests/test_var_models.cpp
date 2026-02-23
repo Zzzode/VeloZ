@@ -21,9 +21,9 @@ KJ_TEST("VaRCalculator - prices to returns conversion") {
 
   auto returns = VaRCalculator::prices_to_returns(prices);
   KJ_EXPECT(returns.size() == 3);
-  KJ_EXPECT(std::abs(returns[0] - 0.05) < 0.0001);   // (105-100)/100 = 0.05
-  KJ_EXPECT(std::abs(returns[1] - (-0.019047619)) < 0.0001);  // (103-105)/105
-  KJ_EXPECT(std::abs(returns[2] - 0.048543689) < 0.0001);  // (108-103)/103
+  KJ_EXPECT(std::abs(returns[0] - 0.05) < 0.0001);           // (105-100)/100 = 0.05
+  KJ_EXPECT(std::abs(returns[1] - (-0.019047619)) < 0.0001); // (103-105)/105
+  KJ_EXPECT(std::abs(returns[2] - 0.048543689) < 0.0001);    // (108-103)/103
 }
 
 KJ_TEST("VaRCalculator - prices to log returns conversion") {
@@ -33,7 +33,7 @@ KJ_TEST("VaRCalculator - prices to log returns conversion") {
 
   auto returns = VaRCalculator::prices_to_log_returns(prices);
   KJ_EXPECT(returns.size() == 1);
-  KJ_EXPECT(std::abs(returns[0] - 0.09531) < 0.001);  // ln(110/100)
+  KJ_EXPECT(std::abs(returns[0] - 0.09531) < 0.001); // ln(110/100)
 }
 
 KJ_TEST("VaRCalculator - mean and std dev calculation") {
@@ -45,11 +45,11 @@ KJ_TEST("VaRCalculator - mean and std dev calculation") {
   returns.add(0.02);
 
   double mean = VaRCalculator::calculate_mean(returns);
-  KJ_EXPECT(std::abs(mean - 0.006) < 0.0001);  // (0.01-0.02+0.03-0.01+0.02)/5
+  KJ_EXPECT(std::abs(mean - 0.006) < 0.0001); // (0.01-0.02+0.03-0.01+0.02)/5
 
   double std_dev = VaRCalculator::calculate_std_dev(returns);
   KJ_EXPECT(std_dev > 0.0);
-  KJ_EXPECT(std_dev < 0.03);  // Reasonable range
+  KJ_EXPECT(std_dev < 0.03); // Reasonable range
 }
 
 KJ_TEST("VaRCalculator - Historical VaR with insufficient data") {
@@ -75,7 +75,7 @@ KJ_TEST("VaRCalculator - Historical VaR calculation") {
   for (int i = 0; i < 100; ++i) {
     // Simple pattern: alternating positive/negative with some variation
     double ret = (i % 2 == 0) ? 0.01 : -0.015;
-    ret += (i % 7) * 0.001;  // Add some variation
+    ret += (i % 7) * 0.001; // Add some variation
     returns.add(ret);
   }
 
@@ -87,7 +87,7 @@ KJ_TEST("VaRCalculator - Historical VaR calculation") {
   KJ_EXPECT(result.var_95 > 0.0);
   KJ_EXPECT(result.var_99 > 0.0);
   KJ_EXPECT(result.var_99 >= result.var_95);  // 99% VaR should be >= 95% VaR
-  KJ_EXPECT(result.cvar_95 >= result.var_95);  // CVaR should be >= VaR
+  KJ_EXPECT(result.cvar_95 >= result.var_95); // CVaR should be >= VaR
   KJ_EXPECT(result.cvar_99 >= result.var_99);
 }
 
@@ -98,8 +98,8 @@ KJ_TEST("VaRCalculator - Parametric VaR calculation") {
 
   VaRCalculator calc(config);
 
-  double mean = 0.001;  // 0.1% daily return
-  double std_dev = 0.02;  // 2% daily volatility
+  double mean = 0.001;   // 0.1% daily return
+  double std_dev = 0.02; // 2% daily volatility
   double portfolio_value = 100000.0;
 
   auto result = calc.calculate_parametric(mean, std_dev, portfolio_value);
@@ -131,7 +131,7 @@ KJ_TEST("VaRCalculator - Monte Carlo VaR calculation") {
   VaRConfig config;
   config.method = VaRMethod::MonteCarlo;
   config.monte_carlo_paths = 10000;
-  config.random_seed = 12345;  // Fixed seed for reproducibility
+  config.random_seed = 12345; // Fixed seed for reproducibility
   config.calculate_cvar = true;
 
   VaRCalculator calc(config);
@@ -155,7 +155,7 @@ KJ_TEST("VaRCalculator - Monte Carlo VaR calculation") {
 
 KJ_TEST("VaRCalculator - Monte Carlo with insufficient paths") {
   VaRConfig config;
-  config.monte_carlo_paths = 50;  // Too few
+  config.monte_carlo_paths = 50; // Too few
 
   VaRCalculator calc(config);
   auto result = calc.calculate_monte_carlo(0.001, 0.02, 100000.0);
@@ -206,7 +206,7 @@ KJ_TEST("VaRCalculator - holding period scaling") {
 
   // 10-day VaR should be sqrt(10) * 1-day VaR
   double var_10day = VaRCalculator::scale_var_to_holding_period(var_1day, 10);
-  KJ_EXPECT(std::abs(var_10day - 3162.28) < 1.0);  // sqrt(10) * 1000
+  KJ_EXPECT(std::abs(var_10day - 3162.28) < 1.0); // sqrt(10) * 1000
 }
 
 KJ_TEST("VaRCalculator - portfolio VaR calculation") {
@@ -221,14 +221,14 @@ KJ_TEST("VaRCalculator - portfolio VaR calculation") {
   pos1.symbol = kj::str("BTC");
   pos1.weight = 0.6;
   pos1.value = 60000.0;
-  pos1.volatility = 0.03;  // 3% daily vol
+  pos1.volatility = 0.03; // 3% daily vol
   positions.add(kj::mv(pos1));
 
   VaRPosition pos2;
   pos2.symbol = kj::str("ETH");
   pos2.weight = 0.4;
   pos2.value = 40000.0;
-  pos2.volatility = 0.04;  // 4% daily vol
+  pos2.volatility = 0.04; // 4% daily vol
   positions.add(kj::mv(pos2));
 
   // Covariance between BTC and ETH (correlation ~0.8)
@@ -236,7 +236,7 @@ KJ_TEST("VaRCalculator - portfolio VaR calculation") {
   CovarianceEntry cov;
   cov.symbol1 = kj::str("BTC");
   cov.symbol2 = kj::str("ETH");
-  cov.covariance = 0.8 * 0.03 * 0.04;  // correlation * vol1 * vol2
+  cov.covariance = 0.8 * 0.03 * 0.04; // correlation * vol1 * vol2
   covariances.add(kj::mv(cov));
 
   auto result = calc.calculate_portfolio_var(positions, covariances, 100000.0);
@@ -262,7 +262,7 @@ KJ_TEST("IncrementalVaRCalculator - basic operations") {
   for (int i = 0; i < 30; ++i) {
     double ret;
     if (i % 10 == 0) {
-      ret = -0.03;  // Occasional large loss
+      ret = -0.03; // Occasional large loss
     } else if (i % 2 == 0) {
       ret = 0.008;
     } else {
@@ -272,7 +272,7 @@ KJ_TEST("IncrementalVaRCalculator - basic operations") {
   }
 
   KJ_EXPECT(calc.count() == 30);
-  KJ_EXPECT(calc.is_valid());  // Now have enough data
+  KJ_EXPECT(calc.is_valid()); // Now have enough data
 
   double mean = calc.mean();
   double std = calc.std_dev();
@@ -288,7 +288,7 @@ KJ_TEST("IncrementalVaRCalculator - basic operations") {
 }
 
 KJ_TEST("IncrementalVaRCalculator - window rolling") {
-  IncrementalVaRCalculator calc(10);  // Small window
+  IncrementalVaRCalculator calc(10); // Small window
 
   // Add more than window size
   for (int i = 0; i < 15; ++i) {
@@ -336,10 +336,10 @@ KJ_TEST("ComponentVaRCalculator - risk contribution") {
   CovarianceEntry cov;
   cov.symbol1 = kj::str("BTC");
   cov.symbol2 = kj::str("ETH");
-  cov.covariance = 0.7 * 0.03 * 0.04;  // correlation 0.7
+  cov.covariance = 0.7 * 0.03 * 0.04; // correlation 0.7
   covariances.add(kj::mv(cov));
 
-  double portfolio_var = 5000.0;  // Assume this is calculated
+  double portfolio_var = 5000.0; // Assume this is calculated
 
   auto contributions = calc.calculate(positions, covariances, portfolio_var);
 

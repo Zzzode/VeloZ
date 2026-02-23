@@ -144,13 +144,12 @@ BenchmarkResult benchmark_json_build_nested() {
   Benchmark bench("JSON Build (nested object)");
   return bench.run(50000, [](uint64_t i) {
     auto builder = JsonBuilder::object();
-    builder.put("stream", "btcusdt@trade")
-        .put_object("data", [i](JsonBuilder& data) {
-          data.put("e", "trade")
-              .put("s", "BTCUSDT")
-              .put("p", "50000.50")
-              .put("t", static_cast<int64_t>(i));
-        });
+    builder.put("stream", "btcusdt@trade").put_object("data", [i](JsonBuilder& data) {
+      data.put("e", "trade")
+          .put("s", "BTCUSDT")
+          .put("p", "50000.50")
+          .put("t", static_cast<int64_t>(i));
+    });
     [[maybe_unused]] auto json = builder.build();
   });
 }

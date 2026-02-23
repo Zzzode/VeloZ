@@ -19,10 +19,10 @@ namespace veloz::exec {
 
 // Execution algorithm type
 enum class AlgorithmType : std::uint8_t {
-  TWAP = 0,  // Time-Weighted Average Price
-  VWAP = 1,  // Volume-Weighted Average Price
-  POV = 2,   // Percentage of Volume
-  IS = 3,    // Implementation Shortfall
+  TWAP = 0, // Time-Weighted Average Price
+  VWAP = 1, // Volume-Weighted Average Price
+  POV = 2,  // Percentage of Volume
+  IS = 3,   // Implementation Shortfall
 };
 
 // Algorithm execution state
@@ -67,20 +67,20 @@ struct AlgorithmProgress {
 
 // TWAP configuration
 struct TwapConfig {
-  kj::Duration duration{60 * kj::SECONDS};  // Total execution duration
-  kj::Duration slice_interval{5 * kj::SECONDS};  // Time between slices
-  double randomization{0.1};  // Random variation in timing (0-1)
+  kj::Duration duration{60 * kj::SECONDS};      // Total execution duration
+  kj::Duration slice_interval{5 * kj::SECONDS}; // Time between slices
+  double randomization{0.1};                    // Random variation in timing (0-1)
   bool use_limit_orders{true};
-  double limit_offset_bps{5.0};  // Basis points from mid for limit orders
-  double min_slice_qty{0.0};  // Minimum quantity per slice
+  double limit_offset_bps{5.0}; // Basis points from mid for limit orders
+  double min_slice_qty{0.0};    // Minimum quantity per slice
 };
 
 // VWAP configuration
 struct VwapConfig {
   kj::Duration duration{60 * kj::SECONDS};
   kj::Duration slice_interval{5 * kj::SECONDS};
-  kj::Vector<double> volume_profile;  // Historical volume distribution
-  double participation_rate{0.1};  // Max participation rate
+  kj::Vector<double> volume_profile; // Historical volume distribution
+  double participation_rate{0.1};    // Max participation rate
   bool use_limit_orders{true};
   double limit_offset_bps{5.0};
 };
@@ -161,7 +161,7 @@ private:
     OrderSide side{OrderSide::Buy};
     double target_qty{0.0};
     double filled_qty{0.0};
-    double total_value{0.0};  // For average price calculation
+    double total_value{0.0}; // For average price calculation
     TwapConfig config;
 
     std::int64_t start_time_ns{0};
@@ -285,8 +285,8 @@ public:
 private:
   struct ManagerState {
     kj::HashMap<kj::String, kj::Own<ExecutionAlgorithm>> algorithms;
-    kj::HashMap<kj::String, veloz::common::SymbolId> algo_symbols;  // algo_id -> symbol
-    kj::HashMap<kj::String, kj::String> child_to_algo;  // child_order_id -> algo_id
+    kj::HashMap<kj::String, veloz::common::SymbolId> algo_symbols; // algo_id -> symbol
+    kj::HashMap<kj::String, kj::String> child_to_algo;             // child_order_id -> algo_id
     kj::Maybe<AlgorithmCallback> progress_callback;
     kj::Maybe<ChildOrderCallback> child_order_callback;
     std::size_t algo_counter{0};

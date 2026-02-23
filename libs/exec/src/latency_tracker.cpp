@@ -5,7 +5,7 @@
 namespace veloz::exec {
 
 void LatencyTracker::record_latency(veloz::common::Venue venue, kj::Duration latency,
-                                     kj::TimePoint timestamp) {
+                                    kj::TimePoint timestamp) {
   auto lock = guarded_.lockExclusive();
 
   // Get or create venue data
@@ -130,7 +130,7 @@ kj::Array<veloz::common::Venue> LatencyTracker::get_venues_by_latency() const {
 }
 
 bool LatencyTracker::is_healthy(veloz::common::Venue venue, kj::Duration max_latency,
-                                 kj::Duration max_staleness) const {
+                                kj::Duration max_staleness) const {
   auto lock = guarded_.lockExclusive();
   KJ_IF_SOME(venue_data, lock->venues.find(venue)) {
     if (venue_data.stats.sample_count == 0) {

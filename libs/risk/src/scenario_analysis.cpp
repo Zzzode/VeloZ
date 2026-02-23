@@ -48,14 +48,10 @@ std::pair<double, double> get_probability_range(ScenarioProbability prob) {
 // ============================================================================
 
 EnhancedScenario::EnhancedScenario(const EnhancedScenario& other)
-    : base_scenario(other.base_scenario),
-      probability(other.probability),
-      probability_estimate(other.probability_estimate),
-      time_horizon_days(other.time_horizon_days),
-      is_instantaneous(other.is_instantaneous),
-      category(kj::heapString(other.category)),
-      expected_recovery_days(other.expected_recovery_days),
-      recovery_rate(other.recovery_rate) {
+    : base_scenario(other.base_scenario), probability(other.probability),
+      probability_estimate(other.probability_estimate), time_horizon_days(other.time_horizon_days),
+      is_instantaneous(other.is_instantaneous), category(kj::heapString(other.category)),
+      expected_recovery_days(other.expected_recovery_days), recovery_rate(other.recovery_rate) {
   for (const auto& t : other.tags) {
     tags.add(kj::heapString(t));
   }
@@ -81,18 +77,12 @@ EnhancedScenario& EnhancedScenario::operator=(const EnhancedScenario& other) {
 
 PortfolioImpactResult::PortfolioImpactResult(const PortfolioImpactResult& other)
     : scenario_id(kj::heapString(other.scenario_id)),
-      scenario_name(kj::heapString(other.scenario_name)),
-      immediate_pnl(other.immediate_pnl),
-      expected_pnl(other.expected_pnl),
-      worst_case_pnl(other.worst_case_pnl),
-      base_var_95(other.base_var_95),
-      stressed_var_95(other.stressed_var_95),
-      var_increase_pct(other.var_increase_pct),
-      margin_call_risk(other.margin_call_risk),
-      liquidation_risk(other.liquidation_risk),
-      margin_utilization(other.margin_utilization),
-      days_to_breakeven(other.days_to_breakeven),
-      recovery_probability(other.recovery_probability) {
+      scenario_name(kj::heapString(other.scenario_name)), immediate_pnl(other.immediate_pnl),
+      expected_pnl(other.expected_pnl), worst_case_pnl(other.worst_case_pnl),
+      base_var_95(other.base_var_95), stressed_var_95(other.stressed_var_95),
+      var_increase_pct(other.var_increase_pct), margin_call_risk(other.margin_call_risk),
+      liquidation_risk(other.liquidation_risk), margin_utilization(other.margin_utilization),
+      days_to_breakeven(other.days_to_breakeven), recovery_probability(other.recovery_probability) {
   for (const auto& pi : other.position_impacts) {
     position_impacts.add(PositionStressResult(pi));
   }
@@ -122,12 +112,9 @@ PortfolioImpactResult& PortfolioImpactResult::operator=(const PortfolioImpactRes
 }
 
 RiskBudget::RiskBudget(const RiskBudget& other)
-    : name(kj::heapString(other.name)),
-      max_var(other.max_var),
-      max_stress_loss(other.max_stress_loss),
-      current_var(other.current_var),
-      current_stress_loss(other.current_stress_loss),
-      utilization_pct(other.utilization_pct) {}
+    : name(kj::heapString(other.name)), max_var(other.max_var),
+      max_stress_loss(other.max_stress_loss), current_var(other.current_var),
+      current_stress_loss(other.current_stress_loss), utilization_pct(other.utilization_pct) {}
 
 RiskBudget& RiskBudget::operator=(const RiskBudget& other) {
   if (this != &other) {
@@ -162,8 +149,8 @@ const kj::Vector<EnhancedScenario>& ScenarioAnalysisEngine::get_scenarios() cons
   return scenarios_;
 }
 
-kj::Vector<const EnhancedScenario*> ScenarioAnalysisEngine::get_scenarios_by_category(
-    kj::StringPtr category) const {
+kj::Vector<const EnhancedScenario*>
+ScenarioAnalysisEngine::get_scenarios_by_category(kj::StringPtr category) const {
   kj::Vector<const EnhancedScenario*> result;
   for (const auto& scenario : scenarios_) {
     if (scenario.category == category) {
@@ -173,8 +160,8 @@ kj::Vector<const EnhancedScenario*> ScenarioAnalysisEngine::get_scenarios_by_cat
   return result;
 }
 
-kj::Vector<const EnhancedScenario*> ScenarioAnalysisEngine::get_scenarios_by_tag(
-    kj::StringPtr tag) const {
+kj::Vector<const EnhancedScenario*>
+ScenarioAnalysisEngine::get_scenarios_by_tag(kj::StringPtr tag) const {
   kj::Vector<const EnhancedScenario*> result;
   for (const auto& scenario : scenarios_) {
     for (const auto& t : scenario.tags) {
@@ -207,11 +194,10 @@ void ScenarioAnalysisEngine::clear_scenarios() {
   scenarios_.clear();
 }
 
-PortfolioImpactResult ScenarioAnalysisEngine::analyze_impact(
-    kj::StringPtr scenario_id,
-    const kj::Vector<StressPosition>& positions,
-    double account_equity,
-    double margin_requirement) const {
+PortfolioImpactResult
+ScenarioAnalysisEngine::analyze_impact(kj::StringPtr scenario_id,
+                                       const kj::Vector<StressPosition>& positions,
+                                       double account_equity, double margin_requirement) const {
 
   PortfolioImpactResult result;
 
@@ -236,15 +222,15 @@ PortfolioImpactResult ScenarioAnalysisEngine::analyze_impact(
   // Calculate P&L impacts
   result.immediate_pnl = stress_result.total_pnl_impact;
   result.expected_pnl = result.immediate_pnl * scenario->probability_estimate;
-  result.worst_case_pnl = result.immediate_pnl;  // No recovery assumption
+  result.worst_case_pnl = result.immediate_pnl; // No recovery assumption
 
   // Calculate VaR impact (simplified - uses volatility shock as proxy)
   result.base_var_95 = calculate_stressed_var(positions, *scenario, 0.95);
-  result.stressed_var_95 = result.base_var_95;  // Would need full recalculation
+  result.stressed_var_95 = result.base_var_95; // Would need full recalculation
 
   if (result.base_var_95 > 0.0) {
-    result.var_increase_pct = (result.stressed_var_95 - result.base_var_95) /
-                               result.base_var_95 * 100.0;
+    result.var_increase_pct =
+        (result.stressed_var_95 - result.base_var_95) / result.base_var_95 * 100.0;
   }
 
   // Check margin/liquidation risk
@@ -254,8 +240,8 @@ PortfolioImpactResult ScenarioAnalysisEngine::analyze_impact(
   if (scenario->recovery_rate > 0.0 && result.immediate_pnl < 0.0) {
     double daily_recovery = std::abs(result.immediate_pnl) * scenario->recovery_rate;
     if (daily_recovery > 0.0) {
-      result.days_to_breakeven = static_cast<int>(
-          std::ceil(std::abs(result.immediate_pnl) / daily_recovery));
+      result.days_to_breakeven =
+          static_cast<int>(std::ceil(std::abs(result.immediate_pnl) / daily_recovery));
     }
     result.recovery_probability = std::min(1.0, scenario->recovery_rate * 10.0);
   }
@@ -263,21 +249,21 @@ PortfolioImpactResult ScenarioAnalysisEngine::analyze_impact(
   return result;
 }
 
-kj::Vector<PortfolioImpactResult> ScenarioAnalysisEngine::analyze_all_impacts(
-    const kj::Vector<StressPosition>& positions,
-    double account_equity,
-    double margin_requirement) const {
+kj::Vector<PortfolioImpactResult>
+ScenarioAnalysisEngine::analyze_all_impacts(const kj::Vector<StressPosition>& positions,
+                                            double account_equity,
+                                            double margin_requirement) const {
 
   kj::Vector<PortfolioImpactResult> results;
   for (const auto& scenario : scenarios_) {
-    results.add(analyze_impact(scenario.base_scenario.id, positions,
-                               account_equity, margin_requirement));
+    results.add(
+        analyze_impact(scenario.base_scenario.id, positions, account_equity, margin_requirement));
   }
   return results;
 }
 
-ScenarioComparisonResult ScenarioAnalysisEngine::compare_scenarios(
-    const kj::Vector<PortfolioImpactResult>& impacts) const {
+ScenarioComparisonResult
+ScenarioAnalysisEngine::compare_scenarios(const kj::Vector<PortfolioImpactResult>& impacts) const {
 
   ScenarioComparisonResult result;
   result.scenarios_count = static_cast<int>(impacts.size());
@@ -336,7 +322,8 @@ ScenarioComparisonResult ScenarioAnalysisEngine::compare_scenarios(
   // Calculate percentiles
   size_t idx_5 = static_cast<size_t>(0.05 * sorted_pnl.size());
   size_t idx_95 = static_cast<size_t>(0.95 * sorted_pnl.size());
-  if (idx_95 >= sorted_pnl.size()) idx_95 = sorted_pnl.size() - 1;
+  if (idx_95 >= sorted_pnl.size())
+    idx_95 = sorted_pnl.size() - 1;
 
   result.pnl_5th_percentile = sorted_pnl[idx_5];
   result.pnl_95th_percentile = sorted_pnl[idx_95];
@@ -355,8 +342,8 @@ ScenarioComparisonResult ScenarioAnalysisEngine::compare_scenarios(
   return result;
 }
 
-kj::Vector<kj::String> ScenarioAnalysisEngine::rank_by_severity(
-    const kj::Vector<PortfolioImpactResult>& impacts) const {
+kj::Vector<kj::String>
+ScenarioAnalysisEngine::rank_by_severity(const kj::Vector<PortfolioImpactResult>& impacts) const {
 
   // Create pairs of (pnl, scenario_id) for sorting
   kj::Vector<std::pair<double, kj::String>> ranked;
@@ -420,8 +407,7 @@ double ScenarioAnalysisEngine::calculate_budget_utilization(
 }
 
 EnhancedScenario ScenarioAnalysisEngine::generate_reverse_stress_scenario(
-    const kj::Vector<StressPosition>& positions,
-    double target_loss) const {
+    const kj::Vector<StressPosition>& positions, double target_loss) const {
 
   // Calculate total portfolio value
   double total_value = 0.0;
@@ -450,11 +436,11 @@ EnhancedScenario ScenarioAnalysisEngine::generate_reverse_stress_scenario(
 EnhancedScenario ScenarioAnalysisEngine::generate_worst_case_scenario() const {
   EnhancedScenarioBuilder builder;
   builder.id("worst_case")
-         .name("Worst Case Combined Scenario")
-         .description("Combined worst factors from all scenarios")
-         .probability(ScenarioProbability::VeryLow)
-         .probability_estimate(0.001)
-         .category("Worst Case");
+      .name("Worst Case Combined Scenario")
+      .description("Combined worst factors from all scenarios")
+      .probability(ScenarioProbability::VeryLow)
+      .probability_estimate(0.001)
+      .category("Worst Case");
 
   // Find worst price shock for each symbol
   kj::HashMap<kj::String, double> worst_shocks;
@@ -465,10 +451,10 @@ EnhancedScenario ScenarioAnalysisEngine::generate_worst_case_scenario() const {
         auto key = kj::str(shock.symbol);
         KJ_IF_SOME(existing, worst_shocks.find(key)) {
           if (shock.shock_value < existing) {
-            worst_shocks.upsert(kj::mv(key), shock.shock_value,
-                [](double& e, double v) { e = v; });
+            worst_shocks.upsert(kj::mv(key), shock.shock_value, [](double& e, double v) { e = v; });
           }
-        } else {
+        }
+        else {
           worst_shocks.insert(kj::mv(key), shock.shock_value);
         }
       }
@@ -491,10 +477,9 @@ void ScenarioAnalysisEngine::set_margin_call_threshold(double threshold) {
   margin_call_threshold_ = threshold;
 }
 
-double ScenarioAnalysisEngine::calculate_stressed_var(
-    const kj::Vector<StressPosition>& positions,
-    const EnhancedScenario& scenario,
-    double confidence) const {
+double ScenarioAnalysisEngine::calculate_stressed_var(const kj::Vector<StressPosition>& positions,
+                                                      const EnhancedScenario& scenario,
+                                                      double confidence) const {
 
   // Simplified VaR calculation based on position volatilities
   double portfolio_variance = 0.0;
@@ -527,10 +512,8 @@ double ScenarioAnalysisEngine::calculate_stressed_var(
   return z_score * portfolio_std;
 }
 
-void ScenarioAnalysisEngine::check_margin_risk(
-    PortfolioImpactResult& result,
-    double account_equity,
-    double margin_requirement) const {
+void ScenarioAnalysisEngine::check_margin_risk(PortfolioImpactResult& result, double account_equity,
+                                               double margin_requirement) const {
 
   if (margin_requirement <= 0.0 || account_equity <= 0.0) {
     return;
@@ -573,7 +556,7 @@ EnhancedScenarioBuilder& EnhancedScenarioBuilder::description(kj::StringPtr desc
 }
 
 EnhancedScenarioBuilder& EnhancedScenarioBuilder::price_shock(kj::StringPtr symbol,
-                                                               double shock_pct) {
+                                                              double shock_pct) {
   FactorShock shock;
   shock.factor = MarketFactor::Price;
   shock.symbol = kj::str(symbol);
@@ -584,7 +567,7 @@ EnhancedScenarioBuilder& EnhancedScenarioBuilder::price_shock(kj::StringPtr symb
 }
 
 EnhancedScenarioBuilder& EnhancedScenarioBuilder::volatility_shock(kj::StringPtr symbol,
-                                                                    double shock_pct) {
+                                                                   double shock_pct) {
   FactorShock shock;
   shock.factor = MarketFactor::Volatility;
   shock.symbol = kj::str(symbol);
@@ -634,7 +617,8 @@ EnhancedScenarioBuilder& EnhancedScenarioBuilder::recovery(int days, double rate
 
 EnhancedScenario EnhancedScenarioBuilder::build() {
   scenario_.base_scenario.created_at_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+                                              std::chrono::system_clock::now().time_since_epoch())
+                                              .count();
   return kj::mv(scenario_);
 }
 

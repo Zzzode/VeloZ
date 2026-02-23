@@ -60,22 +60,24 @@ enum class SyncStatus : uint8_t {
  * @brief Clock offset measurement
  */
 struct ClockOffset {
-  int64_t offset_ns{0};       // Offset from reference (positive = local ahead)
-  int64_t round_trip_ns{0};   // Round-trip time for measurement
-  int64_t measurement_ns{0};  // When measurement was taken
-  double confidence{0.0};     // Confidence level (0-1)
+  int64_t offset_ns{0};      // Offset from reference (positive = local ahead)
+  int64_t round_trip_ns{0};  // Round-trip time for measurement
+  int64_t measurement_ns{0}; // When measurement was taken
+  double confidence{0.0};    // Confidence level (0-1)
 
-  [[nodiscard]] bool is_valid() const { return confidence > 0.0; }
+  [[nodiscard]] bool is_valid() const {
+    return confidence > 0.0;
+  }
 };
 
 /**
  * @brief Clock drift statistics
  */
 struct ClockDrift {
-  double drift_ppm{0.0};           // Drift in parts per million
-  double drift_ns_per_sec{0.0};    // Drift in nanoseconds per second
-  int64_t last_measurement_ns{0};  // When last measured
-  size_t sample_count{0};          // Number of samples used
+  double drift_ppm{0.0};          // Drift in parts per million
+  double drift_ns_per_sec{0.0};   // Drift in nanoseconds per second
+  int64_t last_measurement_ns{0}; // When last measured
+  size_t sample_count{0};         // Number of samples used
 
   [[nodiscard]] bool is_stable() const {
     return sample_count >= 10 && std::abs(drift_ppm) < 100.0;
@@ -93,20 +95,20 @@ struct ClockDrift {
 struct TimeSyncConfig {
   // NTP configuration
   kj::Vector<kj::String> ntp_servers;
-  int64_t ntp_poll_interval_ms = 60000;  // 1 minute
-  int64_t ntp_timeout_ms = 5000;         // 5 seconds
+  int64_t ntp_poll_interval_ms = 60000; // 1 minute
+  int64_t ntp_timeout_ms = 5000;        // 5 seconds
 
   // Drift monitoring
-  int64_t drift_sample_interval_ms = 1000;  // 1 second
-  size_t drift_sample_count = 60;           // 1 minute of samples
-  double max_drift_ppm = 100.0;             // Max acceptable drift
+  int64_t drift_sample_interval_ms = 1000; // 1 second
+  size_t drift_sample_count = 60;          // 1 minute of samples
+  double max_drift_ppm = 100.0;            // Max acceptable drift
 
   // Exchange calibration
-  int64_t exchange_poll_interval_ms = 30000;  // 30 seconds
-  size_t exchange_sample_count = 10;          // Samples per calibration
+  int64_t exchange_poll_interval_ms = 30000; // 30 seconds
+  size_t exchange_sample_count = 10;         // Samples per calibration
 
   // Alerts
-  int64_t max_offset_ns = 1000000;  // 1ms max offset before alert
+  int64_t max_offset_ns = 1000000; // 1ms max offset before alert
 };
 
 /**
@@ -195,8 +197,8 @@ public:
    * @param local_time_ns Local time when exchange time was received
    * @param round_trip_ns Round-trip time for the request
    */
-  void calibrate_exchange(kj::StringPtr exchange, int64_t exchange_time_ns,
-                          int64_t local_time_ns, int64_t round_trip_ns);
+  void calibrate_exchange(kj::StringPtr exchange, int64_t exchange_time_ns, int64_t local_time_ns,
+                          int64_t round_trip_ns);
 
   /**
    * @brief Get calibrated offset for an exchange
@@ -257,7 +259,7 @@ private:
     ClockDrift current_drift;
 
     // Offset samples for drift calculation
-    kj::Vector<std::pair<int64_t, int64_t>> offset_samples;  // (time, offset)
+    kj::Vector<std::pair<int64_t, int64_t>> offset_samples; // (time, offset)
 
     // Exchange calibration data
     struct ExchangeData {
@@ -301,7 +303,7 @@ struct LatencyCheckpoint {
  */
 struct LatencyProfile {
   kj::String name;
-  kj::Vector<std::pair<kj::String, int64_t>> segments;  // (name, duration_ns)
+  kj::Vector<std::pair<kj::String, int64_t>> segments; // (name, duration_ns)
   int64_t total_ns{0};
 
   [[nodiscard]] kj::String to_string() const;

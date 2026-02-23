@@ -6,15 +6,13 @@
 
 namespace veloz::exec {
 
-SmartOrderRouter::SmartOrderRouter(ExchangeCoordinator& coordinator)
-    : coordinator_(coordinator) {}
+SmartOrderRouter::SmartOrderRouter(ExchangeCoordinator& coordinator) : coordinator_(coordinator) {}
 
 void SmartOrderRouter::set_fees(veloz::common::Venue venue, const ExchangeFees& fees) {
   auto lock = guarded_.lockExclusive();
-  lock->fees.upsert(venue, fees,
-                    [](ExchangeFees& existing, ExchangeFees&& replacement) {
-                      existing = replacement;
-                    });
+  lock->fees.upsert(venue, fees, [](ExchangeFees& existing, ExchangeFees&& replacement) {
+    existing = replacement;
+  });
 }
 
 kj::Maybe<ExchangeFees> SmartOrderRouter::get_fees(veloz::common::Venue venue) const {
@@ -25,9 +23,8 @@ kj::Maybe<ExchangeFees> SmartOrderRouter::get_fees(veloz::common::Venue venue) c
   return kj::none;
 }
 
-kj::Vector<RoutingScore>
-SmartOrderRouter::score_venues(const veloz::common::SymbolId& symbol, OrderSide side,
-                               double quantity) const {
+kj::Vector<RoutingScore> SmartOrderRouter::score_venues(const veloz::common::SymbolId& symbol,
+                                                        OrderSide side, double quantity) const {
   auto lock = guarded_.lockExclusive();
   kj::Vector<RoutingScore> scores;
 
@@ -109,21 +106,20 @@ SmartOrderRouter::score_venues(const veloz::common::SymbolId& symbol, OrderSide 
                         lock->reliability_weight * score.reliability_score;
 
     // Generate explanation
-    score.explanation = kj::str(
-        "Price: ", static_cast<int>(score.price_score * 100), "%, ",
-        "Fee: ", static_cast<int>(score.fee_score * 100), "%, ",
-        "Latency: ", static_cast<int>(score.latency_score * 100), "%, ",
-        "Liquidity: ", static_cast<int>(score.liquidity_score * 100), "%, ",
-        "Reliability: ", static_cast<int>(score.reliability_score * 100), "%");
+    score.explanation =
+        kj::str("Price: ", static_cast<int>(score.price_score * 100), "%, ",
+                "Fee: ", static_cast<int>(score.fee_score * 100), "%, ",
+                "Latency: ", static_cast<int>(score.latency_score * 100), "%, ",
+                "Liquidity: ", static_cast<int>(score.liquidity_score * 100), "%, ",
+                "Reliability: ", static_cast<int>(score.reliability_score * 100), "%");
 
     scores.add(kj::mv(score));
   }
 
   // Sort by total score descending
-  std::sort(scores.begin(), scores.end(),
-            [](const RoutingScore& a, const RoutingScore& b) {
-              return a.total_score > b.total_score;
-            });
+  std::sort(scores.begin(), scores.end(), [](const RoutingScore& a, const RoutingScore& b) {
+    return a.total_score > b.total_score;
+  });
 
   return scores;
 }
@@ -159,9 +155,9 @@ RoutingDecision SmartOrderRouter::route_order(const PlaceOrderRequest& req) cons
   return decision;
 }
 
-kj::Vector<OrderSplit>
-SmartOrderRouter::split_order(const veloz::common::SymbolId& symbol, OrderSide side,
-                              double quantity, double max_single_venue_pct) const {
+kj::Vector<OrderSplit> SmartOrderRouter::split_order(const veloz::common::SymbolId& symbol,
+                                                     OrderSide side, double quantity,
+                                                     double max_single_venue_pct) const {
   auto lock = guarded_.lockExclusive();
   kj::Vector<OrderSplit> splits;
 
@@ -330,9 +326,8 @@ SmartOrderRouter::cancel_merged(const CancelMergeRequest& req) {
   return results;
 }
 
-void SmartOrderRouter::record_execution(veloz::common::Venue venue,
-                                        const ExecutionReport& report, double expected_price,
-                                        kj::Duration execution_time) {
+void SmartOrderRouter::record_execution(veloz::common::Venue venue, const ExecutionReport& report,
+                                        double expected_price, kj::Duration execution_time) {
   auto lock = guarded_.lockExclusive();
 
   // Update venue quality
@@ -381,8 +376,7 @@ void SmartOrderRouter::record_execution(veloz::common::Venue venue,
   }
 }
 
-kj::Maybe<ExecutionQuality>
-SmartOrderRouter::get_venue_quality(veloz::common::Venue venue) const {
+kj::Maybe<ExecutionQuality> SmartOrderRouter::get_venue_quality(veloz::common::Venue venue) const {
   auto lock = guarded_.lockExclusive();
 
   KJ_IF_SOME(quality, lock->quality.find(venue)) {
@@ -484,10 +478,8 @@ double SmartOrderRouter::reliability_weight() const {
 
 void SmartOrderRouter::set_min_order_size(veloz::common::Venue venue, double size) {
   auto lock = guarded_.lockExclusive();
-  lock->min_order_sizes.upsert(venue, size,
-                               [](double& existing, double&& replacement) {
-                                 existing = replacement;
-                               });
+  lock->min_order_sizes.upsert(
+      venue, size, [](double& existing, double&& replacement) { existing = replacement; });
 }
 
 double SmartOrderRouter::get_min_order_size(veloz::common::Venue venue) const {
@@ -542,8 +534,8 @@ double SmartOrderRouter::calculate_liquidity_score(veloz::common::Venue venue,
 }
 
 // Internal helper that works with already-locked state
-double SmartOrderRouter::calculate_reliability_score_locked(
-    const RouterState& state, veloz::common::Venue venue) const {
+double SmartOrderRouter::calculate_reliability_score_locked(const RouterState& state,
+                                                            veloz::common::Venue venue) const {
   KJ_IF_SOME(quality, state.quality.find(venue)) {
     if (quality.sample_count == 0) {
       return 0.5; // Unknown

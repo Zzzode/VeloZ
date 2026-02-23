@@ -23,12 +23,12 @@ KJ_TEST("MarketFactor to string conversion") {
 
 KJ_TEST("StressScenarioBuilder - basic scenario creation") {
   auto scenario = StressScenarioBuilder()
-      .id("test_scenario")
-      .name("Test Scenario")
-      .description("A test scenario for unit testing")
-      .type(StressScenarioType::Hypothetical)
-      .price_shock("BTC", -0.20)
-      .build();
+                      .id("test_scenario")
+                      .name("Test Scenario")
+                      .description("A test scenario for unit testing")
+                      .type(StressScenarioType::Hypothetical)
+                      .price_shock("BTC", -0.20)
+                      .build();
 
   KJ_EXPECT(scenario.id == "test_scenario"_kj);
   KJ_EXPECT(scenario.name == "Test Scenario"_kj);
@@ -41,13 +41,13 @@ KJ_TEST("StressScenarioBuilder - basic scenario creation") {
 
 KJ_TEST("StressScenarioBuilder - multiple shocks") {
   auto scenario = StressScenarioBuilder()
-      .id("multi_shock")
-      .name("Multi-Shock Scenario")
-      .price_shock("BTC", -0.30)
-      .price_shock("ETH", -0.40)
-      .volatility_shock("", 2.0)
-      .liquidity_shock(1.5)
-      .build();
+                      .id("multi_shock")
+                      .name("Multi-Shock Scenario")
+                      .price_shock("BTC", -0.30)
+                      .price_shock("ETH", -0.40)
+                      .volatility_shock("", 2.0)
+                      .liquidity_shock(1.5)
+                      .build();
 
   KJ_EXPECT(scenario.shocks.size() == 4);
 }
@@ -55,10 +55,7 @@ KJ_TEST("StressScenarioBuilder - multiple shocks") {
 KJ_TEST("StressTestEngine - add and get scenario") {
   StressTestEngine engine;
 
-  auto scenario = StressScenarioBuilder()
-      .id("test_1")
-      .name("Test 1")
-      .build();
+  auto scenario = StressScenarioBuilder().id("test_1").name("Test 1").build();
 
   engine.add_scenario(kj::mv(scenario));
 
@@ -111,10 +108,7 @@ KJ_TEST("StressTestEngine - add historical scenarios") {
 
 KJ_TEST("StressTestEngine - run stress test with empty positions") {
   StressTestEngine engine;
-  engine.add_scenario(StressScenarioBuilder()
-      .id("test")
-      .price_shock("", -0.20)
-      .build());
+  engine.add_scenario(StressScenarioBuilder().id("test").price_shock("", -0.20).build());
 
   kj::Vector<StressPosition> positions;
   auto result = engine.run_stress_test("test", positions);
@@ -127,9 +121,9 @@ KJ_TEST("StressTestEngine - run stress test with empty positions") {
 KJ_TEST("StressTestEngine - run stress test with single position") {
   StressTestEngine engine;
   engine.add_scenario(StressScenarioBuilder()
-      .id("test")
-      .price_shock("", -0.20)  // 20% drop
-      .build());
+                          .id("test")
+                          .price_shock("", -0.20) // 20% drop
+                          .build());
 
   kj::Vector<StressPosition> positions;
   StressPosition pos;
@@ -156,10 +150,10 @@ KJ_TEST("StressTestEngine - run stress test with single position") {
 KJ_TEST("StressTestEngine - run stress test with symbol-specific shock") {
   StressTestEngine engine;
   engine.add_scenario(StressScenarioBuilder()
-      .id("test")
-      .price_shock("BTC", -0.30)  // BTC drops 30%
-      .price_shock("ETH", -0.10)  // ETH drops 10%
-      .build());
+                          .id("test")
+                          .price_shock("BTC", -0.30) // BTC drops 30%
+                          .price_shock("ETH", -0.10) // ETH drops 10%
+                          .build());
 
   kj::Vector<StressPosition> positions;
 
@@ -184,8 +178,8 @@ KJ_TEST("StressTestEngine - run stress test with symbol-specific shock") {
 
   // BTC: 50000 -> 35000 (30% drop)
   // ETH: 3000 -> 2700 (10% drop), position value: 30000 -> 27000
-  KJ_EXPECT(std::abs(result.base_portfolio_value - 80000.0) < 1.0);  // 50000 + 30000
-  KJ_EXPECT(std::abs(result.stressed_portfolio_value - 62000.0) < 1.0);  // 35000 + 27000
+  KJ_EXPECT(std::abs(result.base_portfolio_value - 80000.0) < 1.0);     // 50000 + 30000
+  KJ_EXPECT(std::abs(result.stressed_portfolio_value - 62000.0) < 1.0); // 35000 + 27000
 }
 
 KJ_TEST("StressTestEngine - run stress test with non-existent scenario") {
@@ -229,12 +223,10 @@ KJ_TEST("StressTestEngine - sensitivity analysis") {
   pos.current_price = 50000.0;
   positions.add(kj::mv(pos));
 
-  auto result = engine.run_sensitivity_analysis(
-      MarketFactor::Price,
-      positions,
-      -0.30,  // -30%
-      0.30,   // +30%
-      7);     // 7 points
+  auto result = engine.run_sensitivity_analysis(MarketFactor::Price, positions,
+                                                -0.30, // -30%
+                                                0.30,  // +30%
+                                                7);    // 7 points
 
   KJ_EXPECT(result.factor == MarketFactor::Price);
   KJ_EXPECT(result.shock_levels.size() == 7);
@@ -285,14 +277,14 @@ KJ_TEST("StressTestEngine - compare scenarios") {
 KJ_TEST("StressTestEngine - short position stress test") {
   StressTestEngine engine;
   engine.add_scenario(StressScenarioBuilder()
-      .id("test")
-      .price_shock("", -0.20)  // 20% drop
-      .build());
+                          .id("test")
+                          .price_shock("", -0.20) // 20% drop
+                          .build());
 
   kj::Vector<StressPosition> positions;
   StressPosition pos;
   pos.symbol = kj::str("BTC");
-  pos.size = -1.0;  // Short position
+  pos.size = -1.0; // Short position
   pos.entry_price = 50000.0;
   pos.current_price = 50000.0;
   positions.add(kj::mv(pos));
@@ -325,14 +317,14 @@ KJ_TEST("FactorShock - copy constructor") {
 
 KJ_TEST("StressScenario - copy constructor") {
   auto original = StressScenarioBuilder()
-      .id("original")
-      .name("Original Scenario")
-      .description("Test description")
-      .type(StressScenarioType::Historical)
-      .price_shock("BTC", -0.30)
-      .volatility_shock("", 2.0)
-      .historical_event("Test Event")
-      .build();
+                      .id("original")
+                      .name("Original Scenario")
+                      .description("Test description")
+                      .type(StressScenarioType::Historical)
+                      .price_shock("BTC", -0.30)
+                      .volatility_shock("", 2.0)
+                      .historical_event("Test Event")
+                      .build();
 
   StressScenario copy(original);
 
@@ -369,10 +361,7 @@ KJ_TEST("StressTestResult - copy constructor") {
 
 KJ_TEST("StressTestEngine - execution time tracking") {
   StressTestEngine engine;
-  engine.add_scenario(StressScenarioBuilder()
-      .id("test")
-      .price_shock("", -0.20)
-      .build());
+  engine.add_scenario(StressScenarioBuilder().id("test").price_shock("", -0.20).build());
 
   kj::Vector<StressPosition> positions;
   StressPosition pos;

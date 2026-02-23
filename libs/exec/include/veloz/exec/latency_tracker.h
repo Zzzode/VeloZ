@@ -74,7 +74,7 @@ private:
 
   struct TrackerState {
     kj::HashMap<veloz::common::Venue, VenueData> venues;
-    std::size_t window_size{1000};               // Max samples to keep
+    std::size_t window_size{1000};                  // Max samples to keep
     kj::Duration window_duration{60 * kj::SECONDS}; // Time window for samples
   };
 

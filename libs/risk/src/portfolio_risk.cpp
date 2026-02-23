@@ -11,17 +11,13 @@ namespace veloz::risk {
 // ============================================================================
 
 PositionRiskContribution::PositionRiskContribution(const PositionRiskContribution& other)
-    : symbol(kj::heapString(other.symbol)),
-      position_value(other.position_value),
-      weight(other.weight),
-      standalone_var(other.standalone_var),
-      marginal_var(other.marginal_var),
-      component_var(other.component_var),
-      pct_contribution(other.pct_contribution),
+    : symbol(kj::heapString(other.symbol)), position_value(other.position_value),
+      weight(other.weight), standalone_var(other.standalone_var), marginal_var(other.marginal_var),
+      component_var(other.component_var), pct_contribution(other.pct_contribution),
       diversification_benefit(other.diversification_benefit) {}
 
-PositionRiskContribution& PositionRiskContribution::operator=(
-    const PositionRiskContribution& other) {
+PositionRiskContribution&
+PositionRiskContribution::operator=(const PositionRiskContribution& other) {
   if (this != &other) {
     symbol = kj::heapString(other.symbol);
     position_value = other.position_value;
@@ -36,12 +32,9 @@ PositionRiskContribution& PositionRiskContribution::operator=(
 }
 
 RiskAllocation::RiskAllocation(const RiskAllocation& other)
-    : name(kj::heapString(other.name)),
-      allocated_var(other.allocated_var),
-      used_var(other.used_var),
-      utilization_pct(other.utilization_pct),
-      remaining_var(other.remaining_var),
-      is_breached(other.is_breached) {}
+    : name(kj::heapString(other.name)), allocated_var(other.allocated_var),
+      used_var(other.used_var), utilization_pct(other.utilization_pct),
+      remaining_var(other.remaining_var), is_breached(other.is_breached) {}
 
 RiskAllocation& RiskAllocation::operator=(const RiskAllocation& other) {
   if (this != &other) {
@@ -56,12 +49,8 @@ RiskAllocation& RiskAllocation::operator=(const RiskAllocation& other) {
 }
 
 PortfolioPosition::PortfolioPosition(const PortfolioPosition& other)
-    : symbol(kj::heapString(other.symbol)),
-      size(other.size),
-      price(other.price),
-      value(other.value),
-      volatility(other.volatility),
-      strategy(kj::heapString(other.strategy)) {}
+    : symbol(kj::heapString(other.symbol)), size(other.size), price(other.price),
+      value(other.value), volatility(other.volatility), strategy(kj::heapString(other.strategy)) {}
 
 PortfolioPosition& PortfolioPosition::operator=(const PortfolioPosition& other) {
   if (this != &other) {
@@ -123,7 +112,7 @@ void PortfolioRiskAggregator::clear_positions() {
 }
 
 void PortfolioRiskAggregator::set_correlation(kj::StringPtr symbol1, kj::StringPtr symbol2,
-                                               double correlation) {
+                                              double correlation) {
   // Store with consistent key ordering
   kj::String key;
   if (symbol1 < symbol2) {
@@ -136,7 +125,7 @@ void PortfolioRiskAggregator::set_correlation(kj::StringPtr symbol1, kj::StringP
 }
 
 double PortfolioRiskAggregator::get_correlation(kj::StringPtr symbol1,
-                                                 kj::StringPtr symbol2) const {
+                                                kj::StringPtr symbol2) const {
   if (symbol1 == symbol2) {
     return 1.0;
   }
@@ -215,9 +204,7 @@ PortfolioRiskSummary PortfolioRiskAggregator::calculate_risk(double confidence) 
   }
 
   // Calculate CVaR (Expected Shortfall) for normal distribution
-  auto normal_pdf = [](double z) {
-    return std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI);
-  };
+  auto normal_pdf = [](double z) { return std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI); };
   double es_factor = normal_pdf(z_score) / (1.0 - confidence);
   summary.total_cvar_95 = portfolio_std * es_factor * summary.total_value;
 
@@ -256,13 +243,14 @@ PortfolioRiskSummary PortfolioRiskAggregator::calculate_risk(double confidence) 
   summary.allocations = calculate_allocations();
 
   summary.calculated_at_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
 
   return summary;
 }
 
-kj::Vector<PositionRiskContribution> PortfolioRiskAggregator::calculate_contributions(
-    double confidence) const {
+kj::Vector<PositionRiskContribution>
+PortfolioRiskAggregator::calculate_contributions(double confidence) const {
 
   kj::Vector<PositionRiskContribution> contributions;
 
@@ -339,7 +327,8 @@ kj::Vector<RiskAllocation> PortfolioRiskAggregator::calculate_allocations() cons
     KJ_IF_SOME(existing, strategy_vars.find(strategy)) {
       strategy_vars.upsert(kj::mv(strategy), existing + pos_var,
                            [](double& e, double v) { e = v; });
-    } else {
+    }
+    else {
       strategy_vars.insert(kj::mv(strategy), pos_var);
     }
   }
@@ -384,14 +373,14 @@ bool PortfolioRiskAggregator::is_any_budget_breached() const {
   return false;
 }
 
-kj::Vector<std::pair<kj::String, double>> PortfolioRiskAggregator::suggest_reductions(
-    double target_var) const {
+kj::Vector<std::pair<kj::String, double>>
+PortfolioRiskAggregator::suggest_reductions(double target_var) const {
 
   kj::Vector<std::pair<kj::String, double>> suggestions;
 
   auto summary = calculate_risk();
   if (summary.total_var_95 <= target_var) {
-    return suggestions;  // Already within target
+    return suggestions; // Already within target
   }
 
   double excess_var = summary.total_var_95 - target_var;
@@ -402,9 +391,7 @@ kj::Vector<std::pair<kj::String, double>> PortfolioRiskAggregator::suggest_reduc
     sorted_contribs.add(PositionRiskContribution(c));
   }
   std::sort(sorted_contribs.begin(), sorted_contribs.end(),
-            [](const auto& a, const auto& b) {
-              return a.pct_contribution > b.pct_contribution;
-            });
+            [](const auto& a, const auto& b) { return a.pct_contribution > b.pct_contribution; });
 
   // Suggest reductions starting from largest contributors
   double remaining_excess = excess_var;
@@ -426,7 +413,7 @@ kj::Vector<std::pair<kj::String, double>> PortfolioRiskAggregator::suggest_reduc
 }
 
 double PortfolioRiskAggregator::calculate_max_position(kj::StringPtr symbol,
-                                                        double available_budget) const {
+                                                       double available_budget) const {
   if (available_budget <= 0.0) {
     return 0.0;
   }
@@ -441,7 +428,7 @@ double PortfolioRiskAggregator::calculate_max_position(kj::StringPtr symbol,
   }
 
   if (volatility <= 0.0) {
-    volatility = 0.02;  // Default 2% daily volatility
+    volatility = 0.02; // Default 2% daily volatility
   }
 
   double z_score = VaRCalculator::get_z_score(0.95);
@@ -527,12 +514,13 @@ void PortfolioRiskMonitor::set_drawdown_warning_threshold(double pct) {
   drawdown_warning_threshold_ = pct;
 }
 
-kj::Vector<PortfolioRiskMonitor::RiskAlert> PortfolioRiskMonitor::check_risk_levels(
-    const PortfolioRiskSummary& summary) const {
+kj::Vector<PortfolioRiskMonitor::RiskAlert>
+PortfolioRiskMonitor::check_risk_levels(const PortfolioRiskSummary& summary) const {
 
   kj::Vector<RiskAlert> alerts;
   int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
 
   // Check budget utilization for each allocation
   for (const auto& alloc : summary.allocations) {
@@ -542,8 +530,8 @@ kj::Vector<PortfolioRiskMonitor::RiskAlert> PortfolioRiskMonitor::check_risk_lev
       if (utilization >= var_critical_threshold_) {
         RiskAlert alert;
         alert.level = AlertLevel::Critical;
-        alert.message = kj::str("VaR budget critical for ", alloc.name,
-                                ": ", alloc.utilization_pct, "% utilized");
+        alert.message = kj::str("VaR budget critical for ", alloc.name, ": ", alloc.utilization_pct,
+                                "% utilized");
         alert.current_value = alloc.used_var;
         alert.threshold = alloc.allocated_var * var_critical_threshold_;
         alert.timestamp_ns = now;
@@ -551,8 +539,8 @@ kj::Vector<PortfolioRiskMonitor::RiskAlert> PortfolioRiskMonitor::check_risk_lev
       } else if (utilization >= var_warning_threshold_) {
         RiskAlert alert;
         alert.level = AlertLevel::Warning;
-        alert.message = kj::str("VaR budget warning for ", alloc.name,
-                                ": ", alloc.utilization_pct, "% utilized");
+        alert.message = kj::str("VaR budget warning for ", alloc.name, ": ", alloc.utilization_pct,
+                                "% utilized");
         alert.current_value = alloc.used_var;
         alert.threshold = alloc.allocated_var * var_warning_threshold_;
         alert.timestamp_ns = now;
@@ -565,8 +553,8 @@ kj::Vector<PortfolioRiskMonitor::RiskAlert> PortfolioRiskMonitor::check_risk_lev
   if (summary.largest_contribution_pct >= concentration_warning_threshold_ * 100.0) {
     RiskAlert alert;
     alert.level = AlertLevel::Warning;
-    alert.message = kj::str("High concentration in ", summary.largest_risk_contributor,
-                            ": ", summary.largest_contribution_pct, "% of risk");
+    alert.message = kj::str("High concentration in ", summary.largest_risk_contributor, ": ",
+                            summary.largest_contribution_pct, "% of risk");
     alert.symbol = kj::str(summary.largest_risk_contributor);
     alert.current_value = summary.largest_contribution_pct;
     alert.threshold = concentration_warning_threshold_ * 100.0;

@@ -4,13 +4,13 @@
 #include "veloz/market/market_event.h"
 
 #include <cstdint>
-#include <utility>
 #include <kj/common.h>
 #include <kj/map.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
 #include <kj/time.h>
 #include <kj/vector.h>
+#include <utility>
 
 namespace veloz::exec {
 

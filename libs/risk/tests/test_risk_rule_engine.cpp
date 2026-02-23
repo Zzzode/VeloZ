@@ -624,9 +624,9 @@ KJ_TEST("RiskRuleEngine: Audit log records evaluations") {
   EvaluationContext ctx;
   ctx.order = &order;
 
-  engine.evaluate(ctx);
-  engine.evaluate(ctx);
-  engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
 
   auto recent = engine.get_recent_evaluations(10);
   KJ_EXPECT(recent.size() == 3);
@@ -643,7 +643,7 @@ KJ_TEST("RiskRuleEngine: Audit log respects max size") {
   ctx.order = &order;
 
   for (int i = 0; i < 10; ++i) {
-    engine.evaluate(ctx);
+    (void)engine.evaluate(ctx);
   }
 
   auto recent = engine.get_recent_evaluations(100);
@@ -663,8 +663,8 @@ KJ_TEST("RiskRuleEngine: Audit callback called") {
   EvaluationContext ctx;
   ctx.order = &order;
 
-  engine.evaluate(ctx);
-  engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
 
   KJ_EXPECT(callback_count == 2);
 }
@@ -678,8 +678,8 @@ KJ_TEST("RiskRuleEngine: Clear audit log") {
   EvaluationContext ctx;
   ctx.order = &order;
 
-  engine.evaluate(ctx);
-  engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
+  (void)engine.evaluate(ctx);
 
   auto recent = engine.get_recent_evaluations(10);
   KJ_EXPECT(recent.size() == 2);

@@ -7,7 +7,7 @@
 namespace veloz::exec {
 
 void ExchangeCoordinator::register_adapter(veloz::common::Venue venue,
-                                            kj::Own<ExchangeAdapter> adapter) {
+                                           kj::Own<ExchangeAdapter> adapter) {
   auto lock = guarded_.lockExclusive();
   lock->adapters.upsert(
       venue, kj::mv(adapter),
@@ -26,8 +26,7 @@ bool ExchangeCoordinator::has_adapter(veloz::common::Venue venue) const {
   return lock->adapters.find(venue) != kj::none;
 }
 
-kj::Maybe<ExchangeAdapter&>
-ExchangeCoordinator::get_adapter(veloz::common::Venue venue) const {
+kj::Maybe<ExchangeAdapter&> ExchangeCoordinator::get_adapter(veloz::common::Venue venue) const {
   auto lock = guarded_.lockExclusive();
   KJ_IF_SOME(adapter, lock->adapters.find(venue)) {
     return *adapter;
@@ -45,7 +44,7 @@ kj::Array<veloz::common::Venue> ExchangeCoordinator::get_registered_venues() con
 }
 
 RoutingDecision ExchangeCoordinator::select_venue(const veloz::common::SymbolId& symbol,
-                                                   OrderSide side, double quantity) {
+                                                  OrderSide side, double quantity) {
   auto lock = guarded_.lockExclusive();
 
   switch (lock->routing_strategy) {
@@ -76,7 +75,7 @@ kj::Maybe<ExecutionReport> ExchangeCoordinator::place_order(const PlaceOrderRequ
 }
 
 kj::Maybe<ExecutionReport> ExchangeCoordinator::place_order(veloz::common::Venue venue,
-                                                             const PlaceOrderRequest& req) {
+                                                            const PlaceOrderRequest& req) {
   auto lock = guarded_.lockExclusive();
 
   KJ_IF_SOME(adapter, lock->adapters.find(venue)) {
@@ -106,7 +105,7 @@ kj::Maybe<ExecutionReport> ExchangeCoordinator::place_order(veloz::common::Venue
 }
 
 kj::Maybe<ExecutionReport> ExchangeCoordinator::cancel_order(veloz::common::Venue venue,
-                                                              const CancelOrderRequest& req) {
+                                                             const CancelOrderRequest& req) {
   auto lock = guarded_.lockExclusive();
 
   KJ_IF_SOME(adapter, lock->adapters.find(venue)) {
@@ -130,9 +129,9 @@ kj::Maybe<ExecutionReport> ExchangeCoordinator::cancel_order(veloz::common::Venu
 }
 
 void ExchangeCoordinator::update_order_book(veloz::common::Venue venue,
-                                             const veloz::common::SymbolId& symbol,
-                                             const veloz::market::BookData& book,
-                                             std::int64_t timestamp_ns) {
+                                            const veloz::common::SymbolId& symbol,
+                                            const veloz::market::BookData& book,
+                                            std::int64_t timestamp_ns) {
   auto lock = guarded_.lockExclusive();
 
   kj::String symbol_key = kj::heapString(symbol.value);
@@ -154,9 +153,9 @@ void ExchangeCoordinator::update_order_book(veloz::common::Venue venue,
 }
 
 void ExchangeCoordinator::update_bbo(veloz::common::Venue venue,
-                                      const veloz::common::SymbolId& symbol, double bid_price,
-                                      double bid_qty, double ask_price, double ask_qty,
-                                      std::int64_t timestamp_ns) {
+                                     const veloz::common::SymbolId& symbol, double bid_price,
+                                     double bid_qty, double ask_price, double ask_qty,
+                                     std::int64_t timestamp_ns) {
   auto lock = guarded_.lockExclusive();
 
   kj::String symbol_key = kj::heapString(symbol.value);
@@ -199,7 +198,7 @@ ExchangeCoordinator::get_aggregated_book(const veloz::common::SymbolId& symbol) 
 }
 
 void ExchangeCoordinator::record_latency(veloz::common::Venue venue, kj::Duration latency,
-                                          kj::TimePoint timestamp) {
+                                         kj::TimePoint timestamp) {
   auto lock = guarded_.lockExclusive();
   lock->latency_tracker.record_latency(venue, latency, timestamp);
 }
@@ -215,7 +214,7 @@ kj::Array<veloz::common::Venue> ExchangeCoordinator::get_venues_by_latency() con
 }
 
 void ExchangeCoordinator::on_fill(veloz::common::Venue venue, const ExecutionReport& report,
-                                   OrderSide side) {
+                                  OrderSide side) {
   auto lock = guarded_.lockExclusive();
   lock->position_aggregator.on_fill(venue, report, side, report.last_fill_qty,
                                     report.last_fill_price);
@@ -249,11 +248,10 @@ ExchangeStatus ExchangeCoordinator::get_exchange_status(veloz::common::Venue ven
     status.latency_stats = lock->latency_tracker.get_stats(venue);
 
     // Check health based on latency
-    status.is_healthy =
-        lock->latency_tracker.is_healthy(venue, 1 * kj::SECONDS, 30 * kj::SECONDS);
+    status.is_healthy = lock->latency_tracker.is_healthy(venue, 1 * kj::SECONDS, 30 * kj::SECONDS);
 
-    status.status_message = status.is_healthy ? kj::heapString("OK"_kj)
-                                              : kj::heapString("Degraded"_kj);
+    status.status_message =
+        status.is_healthy ? kj::heapString("OK"_kj) : kj::heapString("Degraded"_kj);
   }
   else {
     status.is_connected = false;
@@ -312,8 +310,8 @@ double ExchangeCoordinator::latency_weight() const {
 
 void ExchangeCoordinator::set_venue_weight(veloz::common::Venue venue, double weight) {
   auto lock = guarded_.lockExclusive();
-  lock->venue_weights.upsert(venue, weight,
-                             [](double& existing, double&& replacement) { existing = replacement; });
+  lock->venue_weights.upsert(
+      venue, weight, [](double& existing, double&& replacement) { existing = replacement; });
 }
 
 double ExchangeCoordinator::get_venue_weight(veloz::common::Venue venue) const {
@@ -359,7 +357,7 @@ void ExchangeCoordinator::check_health(std::int64_t current_time_ns) {
 }
 
 kj::String ExchangeCoordinator::normalize_symbol(veloz::common::Venue venue,
-                                                  const veloz::common::SymbolId& symbol) const {
+                                                 const veloz::common::SymbolId& symbol) const {
   // Handle exchange-specific symbol formats
   switch (venue) {
   case veloz::common::Venue::Binance:
@@ -388,9 +386,8 @@ kj::String ExchangeCoordinator::normalize_symbol(veloz::common::Venue venue,
 // Private routing implementations
 
 RoutingDecision ExchangeCoordinator::select_by_best_price(const CoordinatorState& state,
-                                                           const veloz::common::SymbolId& symbol,
-                                                           OrderSide side,
-                                                           double quantity) const {
+                                                          const veloz::common::SymbolId& symbol,
+                                                          OrderSide side, double quantity) const {
   RoutingDecision decision;
   decision.rationale = kj::heapString("Best price routing"_kj);
 
@@ -432,7 +429,7 @@ RoutingDecision ExchangeCoordinator::select_by_best_price(const CoordinatorState
 
 RoutingDecision
 ExchangeCoordinator::select_by_lowest_latency(const CoordinatorState& state,
-                                               const veloz::common::SymbolId& symbol) const {
+                                              const veloz::common::SymbolId& symbol) const {
   RoutingDecision decision;
   decision.rationale = kj::heapString("Lowest latency routing"_kj);
 
@@ -466,8 +463,8 @@ ExchangeCoordinator::select_by_lowest_latency(const CoordinatorState& state,
 }
 
 RoutingDecision ExchangeCoordinator::select_balanced(const CoordinatorState& state,
-                                                      const veloz::common::SymbolId& symbol,
-                                                      OrderSide side, double quantity) const {
+                                                     const veloz::common::SymbolId& symbol,
+                                                     OrderSide side, double quantity) const {
   RoutingDecision decision;
   decision.rationale = kj::heapString("Balanced routing (price + latency)"_kj);
 
@@ -515,15 +512,14 @@ RoutingDecision ExchangeCoordinator::select_balanced(const CoordinatorState& sta
       double latency_score = 0.0;
       KJ_IF_SOME(latency, state.latency_tracker.get_expected_latency(venue_bbo.venue)) {
         if (best_latency > 0 * kj::NANOSECONDS) {
-          latency_score =
-              static_cast<double>(best_latency / kj::NANOSECONDS) /
-              static_cast<double>(latency / kj::NANOSECONDS);
+          latency_score = static_cast<double>(best_latency / kj::NANOSECONDS) /
+                          static_cast<double>(latency / kj::NANOSECONDS);
         }
       }
 
       // Combined score
-      double combined_score = (1.0 - state.latency_weight) * price_score +
-                              state.latency_weight * latency_score;
+      double combined_score =
+          (1.0 - state.latency_weight) * price_score + state.latency_weight * latency_score;
 
       venue_scores.add(std::make_pair(venue_bbo.venue, combined_score));
     }

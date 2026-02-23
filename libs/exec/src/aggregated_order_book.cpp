@@ -7,8 +7,8 @@
 namespace veloz::exec {
 
 void AggregatedOrderBook::update_venue(veloz::common::Venue venue,
-                                        const veloz::market::BookData& book,
-                                        std::int64_t timestamp_ns) {
+                                       const veloz::market::BookData& book,
+                                       std::int64_t timestamp_ns) {
   auto lock = guarded_.lockExclusive();
 
   // Get or create venue book
@@ -63,8 +63,8 @@ void AggregatedOrderBook::update_venue(veloz::common::Venue venue,
 }
 
 void AggregatedOrderBook::update_venue_bbo(veloz::common::Venue venue, double bid_price,
-                                            double bid_qty, double ask_price, double ask_qty,
-                                            std::int64_t timestamp_ns) {
+                                           double bid_qty, double ask_price, double ask_qty,
+                                           std::int64_t timestamp_ns) {
   auto lock = guarded_.lockExclusive();
 
   // Get or create venue book

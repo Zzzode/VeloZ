@@ -646,8 +646,7 @@ void AlgorithmManager::cleanup_completed() {
   for (const auto& entry : lock->algorithms) {
     auto progress = entry.value->get_progress();
     if (progress.state == AlgorithmState::Completed ||
-        progress.state == AlgorithmState::Cancelled ||
-        progress.state == AlgorithmState::Failed) {
+        progress.state == AlgorithmState::Cancelled || progress.state == AlgorithmState::Failed) {
       to_remove.add(kj::heapString(entry.key));
     }
   }

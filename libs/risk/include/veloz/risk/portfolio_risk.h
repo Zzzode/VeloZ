@@ -17,11 +17,11 @@ namespace veloz::risk {
 struct PositionRiskContribution {
   kj::String symbol;
   double position_value{0.0};
-  double weight{0.0};              ///< Portfolio weight (0-1)
-  double standalone_var{0.0};      ///< VaR if only this position
-  double marginal_var{0.0};        ///< Change in portfolio VaR per unit
-  double component_var{0.0};       ///< Contribution to portfolio VaR
-  double pct_contribution{0.0};    ///< Percentage of total VaR
+  double weight{0.0};                  ///< Portfolio weight (0-1)
+  double standalone_var{0.0};          ///< VaR if only this position
+  double marginal_var{0.0};            ///< Change in portfolio VaR per unit
+  double component_var{0.0};           ///< Contribution to portfolio VaR
+  double pct_contribution{0.0};        ///< Percentage of total VaR
   double diversification_benefit{0.0}; ///< Reduction from diversification
 
   PositionRiskContribution() = default;
@@ -36,11 +36,11 @@ struct PositionRiskContribution {
  */
 struct RiskAllocation {
   kj::String name;
-  double allocated_var{0.0};       ///< Allocated VaR budget
-  double used_var{0.0};            ///< Current VaR usage
-  double utilization_pct{0.0};     ///< Usage as percentage
-  double remaining_var{0.0};       ///< Remaining VaR budget
-  bool is_breached{false};         ///< True if over budget
+  double allocated_var{0.0};   ///< Allocated VaR budget
+  double used_var{0.0};        ///< Current VaR usage
+  double utilization_pct{0.0}; ///< Usage as percentage
+  double remaining_var{0.0};   ///< Remaining VaR budget
+  bool is_breached{false};     ///< True if over budget
 
   RiskAllocation() = default;
   RiskAllocation(RiskAllocation&&) = default;
@@ -58,7 +58,7 @@ struct PortfolioRiskSummary {
   double total_var_95{0.0};
   double total_var_99{0.0};
   double total_cvar_95{0.0};
-  double undiversified_var{0.0};   ///< Sum of individual VaRs
+  double undiversified_var{0.0};       ///< Sum of individual VaRs
   double diversification_benefit{0.0}; ///< Reduction from diversification
 
   // Risk breakdown
@@ -89,8 +89,8 @@ struct PortfolioPosition {
   double size{0.0};
   double price{0.0};
   double value{0.0};
-  double volatility{0.0};          ///< Annualized volatility
-  kj::String strategy;             ///< Optional: strategy name
+  double volatility{0.0}; ///< Annualized volatility
+  kj::String strategy;    ///< Optional: strategy name
 
   PortfolioPosition() = default;
   PortfolioPosition(PortfolioPosition&&) = default;
@@ -187,8 +187,8 @@ public:
   /**
    * @brief Calculate risk contribution for each position
    */
-  [[nodiscard]] kj::Vector<PositionRiskContribution> calculate_contributions(
-      double confidence = 0.95) const;
+  [[nodiscard]] kj::Vector<PositionRiskContribution>
+  calculate_contributions(double confidence = 0.95) const;
 
   /**
    * @brief Calculate risk budget utilization
@@ -207,8 +207,8 @@ public:
    * @param target_var Target portfolio VaR
    * @return Vector of (symbol, reduction_amount) pairs
    */
-  [[nodiscard]] kj::Vector<std::pair<kj::String, double>> suggest_reductions(
-      double target_var) const;
+  [[nodiscard]] kj::Vector<std::pair<kj::String, double>>
+  suggest_reductions(double target_var) const;
 
   /**
    * @brief Calculate maximum position size within risk budget
@@ -216,8 +216,7 @@ public:
    * @param available_budget Available VaR budget
    * @return Maximum position value
    */
-  [[nodiscard]] double calculate_max_position(kj::StringPtr symbol,
-                                               double available_budget) const;
+  [[nodiscard]] double calculate_max_position(kj::StringPtr symbol, double available_budget) const;
 
   // === Configuration ===
 
@@ -243,8 +242,8 @@ private:
   [[nodiscard]] double calculate_portfolio_variance() const;
 
   kj::Vector<PortfolioPosition> positions_;
-  kj::HashMap<kj::String, double> correlations_;  // "sym1:sym2" -> correlation
-  kj::HashMap<kj::String, double> risk_budgets_;  // strategy -> var_budget
+  kj::HashMap<kj::String, double> correlations_; // "sym1:sym2" -> correlation
+  kj::HashMap<kj::String, double> risk_budgets_; // strategy -> var_budget
   double default_correlation_{0.5};
   double total_risk_budget_{0.0};
   VaRMethod var_method_{VaRMethod::Parametric};
@@ -276,7 +275,7 @@ public:
   struct RiskAlert {
     AlertLevel level{AlertLevel::Info};
     kj::String message;
-    kj::String symbol;             ///< Related symbol (if applicable)
+    kj::String symbol; ///< Related symbol (if applicable)
     double current_value{0.0};
     double threshold{0.0};
     int64_t timestamp_ns{0};
@@ -316,8 +315,7 @@ public:
    * @param summary Current portfolio risk summary
    * @return Vector of alerts
    */
-  [[nodiscard]] kj::Vector<RiskAlert> check_risk_levels(
-      const PortfolioRiskSummary& summary) const;
+  [[nodiscard]] kj::Vector<RiskAlert> check_risk_levels(const PortfolioRiskSummary& summary) const;
 
   /**
    * @brief Set alert callback
@@ -330,10 +328,10 @@ public:
   void process(const PortfolioRiskSummary& summary);
 
 private:
-  double var_warning_threshold_{0.8};    // 80% of budget
-  double var_critical_threshold_{0.95};  // 95% of budget
-  double concentration_warning_threshold_{0.5};  // 50% in one position
-  double drawdown_warning_threshold_{0.1};  // 10% drawdown
+  double var_warning_threshold_{0.8};           // 80% of budget
+  double var_critical_threshold_{0.95};         // 95% of budget
+  double concentration_warning_threshold_{0.5}; // 50% in one position
+  double drawdown_warning_threshold_{0.1};      // 10% drawdown
   kj::Maybe<AlertCallback> alert_callback_;
 };
 
