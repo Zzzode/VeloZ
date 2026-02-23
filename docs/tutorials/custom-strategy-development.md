@@ -18,7 +18,7 @@
 
 - Completed [Production Deployment](./production-deployment.md) tutorial
 - C++ development experience (C++20 or later)
-- Familiarity with KJ library types (see [KJ Library Guide](../../.claude/skills/kj-library/library_usage_guide.md))
+- Familiarity with KJ library types (see [KJ Library Guide](../../docs/references/kjdoc/library_usage_guide.md))
 - VeloZ development environment configured
 
 ---
@@ -132,7 +132,7 @@ VeloZ strategies implement the `IStrategy` interface defined in `libs/strategy/i
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Strategy Architecture                                │
+│                         Strategy Architecture                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────┐                                                        │
@@ -146,12 +146,12 @@ VeloZ strategies implement the `IStrategy` interface defined in `libs/strategy/i
 │  │  (base class)   │                                                        │
 │  └────────┬────────┘                                                        │
 │           │                                                                 │
-│     ┌─────┴─────┬─────────────┬─────────────┬─────────────┐                │
-│     v           v             v             v             v                │
-│  ┌──────┐  ┌──────────┐  ┌─────────┐  ┌──────────┐  ┌──────────┐          │
-│  │Custom│  │Momentum  │  │Grid     │  │Mean      │  │Market    │          │
-│  │Strat │  │Strategy  │  │Strategy │  │Reversion │  │Making    │          │
-│  └──────┘  └──────────┘  └─────────┘  └──────────┘  └──────────┘          │
+│     ┌─────┴─────┬─────────────┬─────────────┬─────────────┐                 │
+│     v           v             v             v             v                 │
+│  ┌──────┐  ┌──────────┐  ┌─────────┐  ┌──────────┐  ┌──────────┐            │
+│  │Custom│  │Momentum  │  │Grid     │  │Mean      │  │Market    │            │
+│  │Strat │  │Strategy  │  │Strategy │  │Reversion │  │Making    │            │
+│  └──────┘  └──────────┘  └─────────┘  └──────────┘  └──────────┘            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -169,28 +169,28 @@ VeloZ strategies implement the `IStrategy` interface defined in `libs/strategy/i
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Strategy Lifecycle States                            │
+│                         Strategy Lifecycle States                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────┐   initialize()   ┌─────────┐   on_start()   ┌─────────┐       │
-│  │ Created │ ───────────────> │ Ready   │ ─────────────> │ Running │       │
-│  └─────────┘                  └─────────┘                └────┬────┘       │
-│                                                               │            │
-│                                    ┌──────────────────────────┤            │
-│                                    │                          │            │
-│                               on_pause()                  on_stop()        │
-│                                    │                          │            │
-│                                    v                          v            │
-│                               ┌─────────┐                ┌─────────┐       │
-│                               │ Paused  │                │ Stopped │       │
-│                               └────┬────┘                └─────────┘       │
-│                                    │                                       │
-│                               on_resume()                                  │
-│                                    │                                       │
-│                                    v                                       │
-│                               ┌─────────┐                                  │
-│                               │ Running │                                  │
-│                               └─────────┘                                  │
+│  ┌─────────┐   initialize()   ┌─────────┐   on_start()   ┌─────────┐        │
+│  │ Created │ ───────────────> │ Ready   │ ─────────────> │ Running │        │
+│  └─────────┘                  └─────────┘                └────┬────┘        │
+│                                                               │             │
+│                                    ┌──────────────────────────┤             │
+│                                    │                          │             │
+│                               on_pause()                  on_stop()         │
+│                                    │                          │             │
+│                                    v                          v             │
+│                               ┌─────────┐                ┌─────────┐        │
+│                               │ Paused  │                │ Stopped │        │
+│                               └────┬────┘                └─────────┘        │
+│                                    │                                        │
+│                               on_resume()                                   │
+│                                    │                                        │
+│                                    v                                        │
+│                               ┌─────────┐                                   │
+│                               │ Running │                                   │
+│                               └─────────┘                                   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -971,29 +971,29 @@ curl -X POST http://127.0.0.1:8080/api/data/download \
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Walk-Forward Analysis                                │
+│                         Walk-Forward Analysis                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                          Full Data Period                           │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                          Full Data Period                           │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  Window 1:                                                                  │
-│  ┌───────────────────────────┐ ┌───────────┐                               │
-│  │    Training (Optimize)    │ │   Test    │                               │
-│  └───────────────────────────┘ └───────────┘                               │
+│  ┌───────────────────────────┐ ┌───────────┐                                │
+│  │    Training (Optimize)    │ │   Test    │                                │
+│  └───────────────────────────┘ └───────────┘                                │
 │                                                                             │
 │  Window 2:                                                                  │
-│       ┌───────────────────────────┐ ┌───────────┐                          │
-│       │    Training (Optimize)    │ │   Test    │                          │
-│       └───────────────────────────┘ └───────────┘                          │
+│       ┌───────────────────────────┐ ┌───────────┐                           │
+│       │    Training (Optimize)    │ │   Test    │                           │
+│       └───────────────────────────┘ └───────────┘                           │
 │                                                                             │
 │  Window 3:                                                                  │
-│            ┌───────────────────────────┐ ┌───────────┐                     │
-│            │    Training (Optimize)    │ │   Test    │                     │
-│            └───────────────────────────┘ └───────────┘                     │
+│            ┌───────────────────────────┐ ┌───────────┐                      │
+│            │    Training (Optimize)    │ │   Test    │                      │
+│            └───────────────────────────┘ └───────────┘                      │
 │                                                                             │
-│  Final Performance = Average of all out-of-sample test results             │
+│  Final Performance = Average of all out-of-sample test results              │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1263,39 +1263,39 @@ For detailed risk management configuration, see [Risk Management Guide](../guide
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Deployment Stages                                    │
+│                         Deployment Stages                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  Stage 1: Paper Trading                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ - Real market data, simulated execution                             │   │
-│  │ - Validate signal generation                                        │   │
-│  │ - Test risk controls                                                │   │
-│  │ - Duration: 1-2 weeks                                               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ - Real market data, simulated execution                             │    │
+│  │ - Validate signal generation                                        │    │
+│  │ - Test risk controls                                                │    │
+│  │ - Duration: 1-2 weeks                                               │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  Stage 2: Testnet Trading                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ - Real API, test funds                                              │   │
-│  │ - Validate order execution                                          │   │
-│  │ - Test error handling                                               │   │
-│  │ - Duration: 1-2 weeks                                               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ - Real API, test funds                                              │    │
+│  │ - Validate order execution                                          │    │
+│  │ - Test error handling                                               │    │
+│  │ - Duration: 1-2 weeks                                               │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  Stage 3: Live Trading (Minimal)                                            │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ - Real API, real funds (minimal position size)                      │   │
-│  │ - Validate live performance                                         │   │
-│  │ - Monitor for issues                                                │   │
-│  │ - Duration: 2-4 weeks                                               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ - Real API, real funds (minimal position size)                      │    │
+│  │ - Validate live performance                                         │    │
+│  │ - Monitor for issues                                                │    │
+│  │ - Duration: 2-4 weeks                                               │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  Stage 4: Production Scaling                                                │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ - Gradually increase position size                                  │   │
-│  │ - Full monitoring and alerting                                      │   │
-│  │ - Ongoing performance review                                        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ - Gradually increase position size                                  │    │
+│  │ - Full monitoring and alerting                                      │    │
+│  │ - Ongoing performance review                                        │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
