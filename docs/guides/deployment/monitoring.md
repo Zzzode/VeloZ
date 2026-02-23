@@ -589,7 +589,7 @@ route:
 receivers:
   - name: 'default'
     email_configs:
-      - to: 'ops@example.com'
+      - to: 'ops@yourdomain.com'
 
   - name: 'slack'
     slack_configs:
@@ -747,3 +747,6 @@ services:
 - [Production Architecture](production_architecture.md)
 - [Troubleshooting](troubleshooting.md)
 - [CI/CD Pipeline](ci_cd.md)
+- [User Monitoring Guide](../user/monitoring.md) - User-facing monitoring guide
+- [Risk Management Guide](../user/risk-management.md) - Risk metrics and alerts
+- [Glossary](../user/glossary.md) - Technical term definitions

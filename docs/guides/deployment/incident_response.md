@@ -284,6 +284,8 @@ When handing off IC role:
 - [DR Runbook](dr_runbook.md)
 - [On-Call Handbook](oncall_handbook.md)
 - [Monitoring](monitoring.md)
+- [User Troubleshooting Guide](../user/troubleshooting.md) - User-facing troubleshooting
+- [Glossary](../user/glossary.md) - Technical term definitions
 
 ## Emergency Contacts
 

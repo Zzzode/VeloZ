@@ -318,7 +318,7 @@ The `dist/` directory contains all static assets ready for deployment.
 ```nginx
 server {
     listen 80;
-    server_name veloz.example.com;
+    server_name veloz.yourdomain.com;
     root /path/to/apps/ui/dist;
     index index.html;
 
@@ -341,7 +341,7 @@ server {
 
 ```apache
 <VirtualHost *:80>
-    ServerName veloz.example.com
+    ServerName veloz.yourdomain.com
     DocumentRoot /path/to/apps/ui/dist
 
     <Directory /path/to/apps/ui/dist>

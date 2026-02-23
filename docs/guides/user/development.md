@@ -69,7 +69,7 @@ sudo dnf install -y clang
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/VeloZ.git
+git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
 # Configure (uses CMake presets)
@@ -314,7 +314,7 @@ All modules use KJ library for core functionality.
        self.do_GET_your_endpoint()
    ```
 
-3. Update API documentation in `docs/api/http-api.md`
+3. Update API documentation in `docs/api/http_api.md`
 
 ## Contributing
 
@@ -330,5 +330,5 @@ All modules use KJ library for core functionality.
 
 - [Getting Started](getting-started.md) - Quick start guide
 - [Configuration](configuration.md) - Configuration options
-- [HTTP API Reference](../../api/http-api.md) - API endpoints
+- [HTTP API Reference](../../api/http_api.md) - API endpoints
 - [Design Documents](../../design) - Architecture details

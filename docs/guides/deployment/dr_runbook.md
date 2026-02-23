@@ -371,3 +371,5 @@ Post-mortem: [LINK]
 - [Production Architecture](production_architecture.md)
 - [Monitoring](monitoring.md)
 - [Troubleshooting](troubleshooting.md)
+- [Best Practices Guide](../user/best-practices.md) - Operational best practices
+- [Glossary](../user/glossary.md) - Technical term definitions

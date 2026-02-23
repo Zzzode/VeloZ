@@ -478,13 +478,14 @@ grep 'WebSocket reconnect' /var/log/veloz/*.log | wc -l
 - [Installation Guide](../user/installation.md)
 - [Configuration Guide](../user/configuration.md)
 - [API Reference](../../api/http_api.md)
+- [User Troubleshooting Guide](../user/troubleshooting.md) - User-facing troubleshooting
+- [Glossary](../user/glossary.md) - Technical term definitions
 
 ### Community
 
-- GitHub Issues: https://github.com/your-org/VeloZ/issues
-- Discord: https://discord.gg/veloz
+- GitHub Issues: https://github.com/Zzzode/VeloZ/issues
 
 ### Emergency Contacts
 
-- On-call: ops@example.com
-- Escalation: engineering@example.com
+- On-call: Configure in your organization
+- Escalation: Configure in your organization

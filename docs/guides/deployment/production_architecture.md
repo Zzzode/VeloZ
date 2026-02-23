@@ -246,7 +246,7 @@ ufw deny 6379/tcp
 # nginx.conf
 server {
     listen 443 ssl http2;
-    server_name veloz.example.com;
+    server_name veloz.yourdomain.com;
 
     ssl_certificate /etc/ssl/certs/veloz.crt;
     ssl_certificate_key /etc/ssl/private/veloz.key;
@@ -384,3 +384,6 @@ sysctl -w net.ipv4.tcp_fastopen=3
 - [Backup & Recovery](backup_recovery.md) - Disaster recovery
 - [CI/CD Pipeline](ci_cd.md) - Deployment automation
 - [Troubleshooting](troubleshooting.md) - Common issues
+- [Installation Guide](../user/installation.md) - Build and installation
+- [Best Practices Guide](../user/best-practices.md) - Production best practices
+- [Glossary](../user/glossary.md) - Technical term definitions

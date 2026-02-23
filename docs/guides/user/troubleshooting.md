@@ -749,7 +749,7 @@ Paste relevant log entries here
 
 | Resource | Use For |
 |----------|---------|
-| [GitHub Issues](https://github.com/your-org/veloz/issues) | Bug reports, feature requests |
+| [GitHub Issues](https://github.com/Zzzode/VeloZ/issues) | Bug reports, feature requests |
 | Documentation | Reference and guides |
 | Logs | Debugging specific issues |
 
@@ -789,3 +789,13 @@ When in doubt:
 2. Restart the gateway
 3. Run reconciliation
 4. Consult this guide
+
+---
+
+## Related Documentation
+
+- [FAQ](faq.md) - Frequently asked questions and quick answers
+- [Monitoring Guide](monitoring.md) - Metrics, dashboards, and alerting
+- [Best Practices Guide](best-practices.md) - Recommendations for production environments
+- [Configuration Guide](configuration.md) - Environment variables and settings
+- [Glossary](glossary.md) - Definitions of trading and technical terms

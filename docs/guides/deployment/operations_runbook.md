@@ -409,3 +409,5 @@ systemctl start veloz
 - [DR Runbook](dr_runbook.md)
 - [Monitoring](monitoring.md)
 - [On-Call Handbook](oncall_handbook.md)
+- [Best Practices Guide](../user/best-practices.md) - Operational best practices
+- [Glossary](../user/glossary.md) - Technical term definitions

@@ -74,10 +74,10 @@ export VELOZ_JWT_SECRET=$(openssl rand -base64 64)
 # nginx configuration example
 server {
     listen 443 ssl;
-    server_name veloz.example.com;
+    server_name veloz.yourdomain.com;
 
-    ssl_certificate /etc/letsencrypt/live/veloz.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/veloz.example.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/veloz.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/veloz.yourdomain.com/privkey.pem;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -360,7 +360,7 @@ curl http://127.0.0.1:8080/api/health
 
 ```bash
 export VELOZ_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/xxx
-export VELOZ_ALERT_EMAIL=alerts@example.com
+export VELOZ_ALERT_EMAIL=alerts@yourdomain.com
 ```
 
 ### Logging
@@ -545,3 +545,13 @@ Following these best practices helps ensure:
 | Backup | Recover from failures with minimal data loss |
 
 Remember: **Start conservative, monitor closely, and adjust gradually.**
+
+---
+
+## Related Documentation
+
+- [Configuration Guide](configuration.md) - Environment variables and settings
+- [Monitoring Guide](monitoring.md) - Prometheus, Grafana, and alerting setup
+- [Risk Management Guide](risk-management.md) - VaR, stress testing, and circuit breakers
+- [Troubleshooting Guide](troubleshooting.md) - Diagnosing and resolving common issues
+- [Glossary](glossary.md) - Definitions of trading and technical terms

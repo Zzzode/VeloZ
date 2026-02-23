@@ -322,3 +322,5 @@ docker stop veloz-engine-1
 - [DR Runbook](dr_runbook.md)
 - [Production Architecture](production_architecture.md)
 - [Monitoring](monitoring.md)
+- [Best Practices Guide](../user/best-practices.md) - Production best practices
+- [Glossary](../user/glossary.md) - Technical term definitions

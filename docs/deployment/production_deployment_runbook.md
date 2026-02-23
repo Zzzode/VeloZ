@@ -231,16 +231,16 @@ kubectl rollout history deployment/veloz-engine -n ${NAMESPACE}
 
 ```bash
 # Health check endpoints
-curl -f https://veloz.example.com/health
-curl -f https://veloz.example.com/health/ready
-curl -f https://veloz.example.com/health/startup
+curl -f https://veloz.yourdomain.com/health
+curl -f https://veloz.yourdomain.com/health/ready
+curl -f https://veloz.yourdomain.com/health/startup
 
 # API functionality
-curl -s https://veloz.example.com/api/market | jq '.status'
-curl -s https://veloz.example.com/api/orders_state | jq '.count'
+curl -s https://veloz.yourdomain.com/api/market | jq '.status'
+curl -s https://veloz.yourdomain.com/api/orders_state | jq '.count'
 
 # Metrics endpoint
-curl -s https://veloz.example.com/metrics | grep veloz_
+curl -s https://veloz.yourdomain.com/metrics | grep veloz_
 
 # Check pod status
 kubectl get pods -n veloz -l app.kubernetes.io/name=veloz
@@ -250,7 +250,7 @@ kubectl get pods -n veloz -l app.kubernetes.io/name=veloz
 
 ```bash
 # Test order placement (use test account)
-curl -X POST https://veloz.example.com/api/order \
+curl -X POST https://veloz.yourdomain.com/api/order \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TEST_TOKEN}" \
   -d '{
@@ -261,13 +261,13 @@ curl -X POST https://veloz.example.com/api/order \
   }'
 
 # Verify order appears in state
-curl -s https://veloz.example.com/api/orders_state | jq '.orders | length'
+curl -s https://veloz.yourdomain.com/api/orders_state | jq '.orders | length'
 
 # Test SSE stream
-timeout 30 curl -N https://veloz.example.com/api/stream
+timeout 30 curl -N https://veloz.yourdomain.com/api/stream
 
 # Test WebSocket connection
-wscat -c wss://veloz.example.com/ws/market
+wscat -c wss://veloz.yourdomain.com/ws/market
 ```
 
 ### 3.3 Monitoring Validation (15-30 minutes)
@@ -282,7 +282,7 @@ wscat -c wss://veloz.example.com/ws/market
 
 ```bash
 # Check Grafana dashboards
-open https://grafana.example.com/d/veloz-overview
+open https://grafana.yourdomain.com/d/veloz-overview
 
 # Query Prometheus metrics
 curl -s "http://prometheus:9090/api/v1/query?query=rate(veloz_http_requests_total[5m])"
@@ -368,15 +368,15 @@ helm rollback ${HELM_RELEASE} -n ${NAMESPACE}
 
 # 5. Verify recovery
 kubectl scale deployment veloz-engine -n ${NAMESPACE} --replicas=2
-curl -f https://veloz.example.com/health
+curl -f https://veloz.yourdomain.com/health
 ```
 
 ### 4.5 Post-Rollback Actions
 
 ```bash
 # 1. Verify service health
-curl -f https://veloz.example.com/health
-curl -f https://veloz.example.com/api/orders_state
+curl -f https://veloz.yourdomain.com/health
+curl -f https://veloz.yourdomain.com/api/orders_state
 
 # 2. Check for data consistency
 kubectl exec -n veloz veloz-postgres-0 -- psql -U veloz -c \
@@ -486,9 +486,9 @@ helm rollback veloz -n veloz
 
 ```bash
 # All health endpoints
-curl https://veloz.example.com/health
-curl https://veloz.example.com/health/ready
-curl https://veloz.example.com/health/startup
+curl https://veloz.yourdomain.com/health
+curl https://veloz.yourdomain.com/health/ready
+curl https://veloz.yourdomain.com/health/startup
 ```
 
 ### Logs

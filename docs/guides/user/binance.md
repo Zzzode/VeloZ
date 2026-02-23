@@ -51,8 +51,8 @@ export VELOZ_BINANCE_BASE_URL=https://api.binance.com
 # Execution Mode (testnet)
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
 export VELOZ_BINANCE_TRADE_BASE_URL=https://testnet.binance.vision
-export VELOZ_BINANCE_API_KEY=your_api_key_here
-export VELOZ_BINANCE_API_SECRET=your_api_secret_here
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 
 # WebSocket (optional, for user data stream)
 export VELOZ_BINANCE_WS_BASE_URL=wss://testnet.binance.vision/ws
@@ -584,4 +584,5 @@ Look for these log patterns:
 - [SSE API](../../api/sse_api.md) - Real-time event stream
 - [Configuration Guide](configuration.md) - All configuration options
 - [Getting Started](getting-started.md) - Quick start guide
-- [Backtest Guide](backtest.md) - Using historical data for backtesting
+- [Trading Guide](trading-guide.md) - Order types and execution algorithms
+- [Glossary](glossary.md) - Exchange and trading term definitions

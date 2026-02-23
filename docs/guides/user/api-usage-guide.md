@@ -592,24 +592,24 @@ curl http://127.0.0.1:8080/api/config
 ```bash
 # Binance
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
-export VELOZ_BINANCE_API_KEY=your_key
-export VELOZ_BINANCE_API_SECRET=your_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 
 # OKX
 export VELOZ_EXECUTION_MODE=okx_testnet
-export VELOZ_OKX_API_KEY=your_key
-export VELOZ_OKX_API_SECRET=your_secret
-export VELOZ_OKX_PASSPHRASE=your_passphrase
+export VELOZ_OKX_API_KEY=<your-api-key>
+export VELOZ_OKX_API_SECRET=<your-api-secret>
+export VELOZ_OKX_PASSPHRASE=<your-passphrase>
 
 # Bybit
 export VELOZ_EXECUTION_MODE=bybit_testnet
-export VELOZ_BYBIT_API_KEY=your_key
-export VELOZ_BYBIT_API_SECRET=your_secret
+export VELOZ_BYBIT_API_KEY=<your-api-key>
+export VELOZ_BYBIT_API_SECRET=<your-api-secret>
 
 # Coinbase
 export VELOZ_EXECUTION_MODE=coinbase_sandbox
-export VELOZ_COINBASE_API_KEY=your_key
-export VELOZ_COINBASE_API_SECRET=your_secret
+export VELOZ_COINBASE_API_KEY=<your-api-key>
+export VELOZ_COINBASE_API_SECRET=<your-api-secret>
 ```
 
 ---

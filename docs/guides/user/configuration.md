@@ -229,8 +229,8 @@ VeloZ supports multiple methods for managing sensitive credentials.
 Set secrets directly as environment variables:
 
 ```bash
-export VELOZ_BINANCE_API_KEY=your_api_key
-export VELOZ_BINANCE_API_SECRET=your_api_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 ```
 
 **Security Note:** Avoid storing secrets in shell history. Use:
@@ -252,7 +252,7 @@ read -s VELOZ_BINANCE_API_SECRET && export VELOZ_BINANCE_API_SECRET
 ```bash
 # Enable Vault
 export VELOZ_VAULT_ENABLED=true
-export VELOZ_VAULT_ADDR=https://vault.example.com:8200
+export VELOZ_VAULT_ADDR=https://vault.internal:8200
 export VELOZ_VAULT_TOKEN=s.xxxxxxxxxxxxxxxx
 
 # Or use AppRole authentication
@@ -263,11 +263,11 @@ export VELOZ_VAULT_SECRET_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 **Store secrets in Vault:**
 ```bash
 vault kv put secret/veloz \
-  binance_api_key=your_key \
-  binance_api_secret=your_secret \
-  okx_api_key=your_key \
-  okx_api_secret=your_secret \
-  okx_passphrase=your_passphrase
+  binance_api_key=<your-api-key> \
+  binance_api_secret=<your-api-secret> \
+  okx_api_key=<your-api-key> \
+  okx_api_secret=<your-api-secret> \
+  okx_passphrase=<your-passphrase>
 ```
 
 #### Kubernetes Secrets Integration
@@ -287,11 +287,11 @@ metadata:
   namespace: veloz
 type: Opaque
 stringData:
-  VELOZ_BINANCE_API_KEY: "your_api_key"
-  VELOZ_BINANCE_API_SECRET: "your_api_secret"
-  VELOZ_OKX_API_KEY: "your_okx_key"
-  VELOZ_OKX_API_SECRET: "your_okx_secret"
-  VELOZ_OKX_PASSPHRASE: "your_passphrase"
+  VELOZ_BINANCE_API_KEY: "<your-api-key>"
+  VELOZ_BINANCE_API_SECRET: "<your-api-secret>"
+  VELOZ_OKX_API_KEY: "<your-api-key>"
+  VELOZ_OKX_API_SECRET: "<your-api-secret>"
+  VELOZ_OKX_PASSPHRASE: "<your-passphrase>"
 ```
 
 **Mount in Deployment:**
@@ -377,7 +377,7 @@ Enable authentication with JWT tokens and API keys:
 ```bash
 export VELOZ_AUTH_ENABLED=true
 export VELOZ_ADMIN_PASSWORD=your_secure_password
-export VELOZ_JWT_SECRET=your_secret_key_min_32_chars
+export VELOZ_JWT_SECRET=<your-secret-key-min-32-chars>
 export VELOZ_TOKEN_EXPIRY=3600
 export VELOZ_AUDIT_LOG_FILE=/var/log/veloz/audit.log
 ./scripts/run_gateway.sh dev
@@ -403,8 +403,8 @@ export VELOZ_PORT=8443
 export VELOZ_MARKET_SOURCE=binance_rest
 export VELOZ_MARKET_SYMBOL=ETHUSDT
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
-export VELOZ_BINANCE_API_KEY=your_key
-export VELOZ_BINANCE_API_SECRET=your_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 export VELOZ_PRESET=release
 ./scripts/run_gateway.sh
 ```
@@ -415,9 +415,9 @@ Trade on OKX testnet:
 
 ```bash
 export VELOZ_EXECUTION_MODE=okx_testnet
-export VELOZ_OKX_API_KEY=your_okx_api_key
-export VELOZ_OKX_API_SECRET=your_okx_api_secret
-export VELOZ_OKX_PASSPHRASE=your_passphrase
+export VELOZ_OKX_API_KEY=<your-api-key>
+export VELOZ_OKX_API_SECRET=<your-api-secret>
+export VELOZ_OKX_PASSPHRASE=<your-passphrase>
 export VELOZ_OKX_TRADE_URL=https://www.okx.com
 ./scripts/run_gateway.sh dev
 ```
@@ -428,8 +428,8 @@ Trade on Bybit testnet:
 
 ```bash
 export VELOZ_EXECUTION_MODE=bybit_testnet
-export VELOZ_BYBIT_API_KEY=your_bybit_api_key
-export VELOZ_BYBIT_API_SECRET=your_bybit_api_secret
+export VELOZ_BYBIT_API_KEY=<your-api-key>
+export VELOZ_BYBIT_API_SECRET=<your-api-secret>
 export VELOZ_BYBIT_BASE_URL=https://api-testnet.bybit.com
 export VELOZ_BYBIT_TRADE_URL=https://api-testnet.bybit.com
 ./scripts/run_gateway.sh dev
@@ -455,7 +455,7 @@ Production setup with HashiCorp Vault:
 export VELOZ_PRESET=release
 export VELOZ_EXECUTION_MODE=binance_spot
 export VELOZ_VAULT_ENABLED=true
-export VELOZ_VAULT_ADDR=https://vault.example.com:8200
+export VELOZ_VAULT_ADDR=https://vault.internal:8200
 export VELOZ_VAULT_TOKEN=s.xxxxxxxxxxxxxxxx
 export VELOZ_WAL_ENABLED=true
 export VELOZ_WAL_SYNC_MODE=fsync
@@ -504,6 +504,305 @@ export VELOZ_WAL_SYNC_MODE=async
 3. **Save Keys**: Copy API Key and Secret Key
 
 **Important**: Never share your API Secret Keys publicly. Never commit credentials to version control.
+
+---
+
+## Security Configuration
+
+### TLS/SSL Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_TLS_ENABLED` | `false` | Enable TLS/SSL encryption |
+| `VELOZ_TLS_CERT` | (empty) | Path to TLS certificate file |
+| `VELOZ_TLS_KEY` | (empty) | Path to TLS private key file |
+| `VELOZ_TLS_CA` | (empty) | Path to CA certificate file (for client verification) |
+| `VELOZ_TLS_CLIENT_CERT` | `false` | Require client certificate (mTLS) |
+
+**Example (TLS Enabled):**
+```bash
+export VELOZ_TLS_ENABLED=true
+export VELOZ_TLS_CERT=/etc/veloz/certs/server.crt
+export VELOZ_TLS_KEY=/etc/veloz/certs/server.key
+```
+
+**Example (Mutual TLS):**
+```bash
+export VELOZ_TLS_ENABLED=true
+export VELOZ_TLS_CERT=/etc/veloz/certs/server.crt
+export VELOZ_TLS_KEY=/etc/veloz/certs/server.key
+export VELOZ_TLS_CA=/etc/veloz/certs/ca.crt
+export VELOZ_TLS_CLIENT_CERT=true
+```
+
+### CORS Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_CORS_ORIGINS` | `*` (dev) / empty (prod) | Comma-separated list of allowed origins |
+| `VELOZ_CORS_CREDENTIALS` | `false` | Allow credentials in CORS requests |
+| `VELOZ_PRODUCTION_MODE` | `false` | Enable production mode (stricter defaults) |
+
+**Example:**
+```bash
+export VELOZ_CORS_ORIGINS=https://app.yourdomain.com,https://admin.yourdomain.com
+export VELOZ_CORS_CREDENTIALS=true
+export VELOZ_PRODUCTION_MODE=true
+```
+
+### IP Filtering Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_IP_WHITELIST` | (empty) | Comma-separated list of allowed IP addresses/CIDRs |
+| `VELOZ_IP_BLACKLIST` | (empty) | Comma-separated list of blocked IP addresses/CIDRs |
+| `VELOZ_ALLOW_PRIVATE_IPS` | `true` | Allow connections from private IP ranges |
+| `VELOZ_MAX_BODY_SIZE` | `1048576` | Maximum request body size in bytes (1MB) |
+
+**Example:**
+```bash
+export VELOZ_IP_WHITELIST=10.0.0.0/8,192.168.1.0/24
+export VELOZ_IP_BLACKLIST=192.168.1.100
+export VELOZ_ALLOW_PRIVATE_IPS=true
+export VELOZ_MAX_BODY_SIZE=2097152
+```
+
+---
+
+## Database Configuration
+
+VeloZ uses PostgreSQL for persistent storage of orders, positions, and audit logs.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_HOST` | `localhost` | PostgreSQL server hostname |
+| `POSTGRES_PORT` | `5432` | PostgreSQL server port |
+| `POSTGRES_DB` | `veloz` | Database name |
+| `POSTGRES_USER` | `veloz` | Database username |
+| `POSTGRES_PASSWORD` | (empty) | Database password |
+
+**Example:**
+```bash
+export POSTGRES_HOST=db.internal
+export POSTGRES_PORT=5432
+export POSTGRES_DB=veloz_prod
+export POSTGRES_USER=veloz_app
+export POSTGRES_PASSWORD=secure_password
+```
+
+**Docker Compose Example:**
+```yaml
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: veloz
+      POSTGRES_USER: veloz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-veloz_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+```
+
+---
+
+## Observability Configuration
+
+### Tracing Configuration (OpenTelemetry)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_ENABLED` | `true` | Enable OpenTelemetry tracing |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | OTLP collector endpoint |
+| `OTEL_CONSOLE_EXPORT` | `false` | Export traces to console (debugging) |
+| `VELOZ_ENV` | `development` | Deployment environment tag |
+
+**Example:**
+```bash
+export OTEL_ENABLED=true
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+export VELOZ_ENV=production
+```
+
+### Alerting Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAGERDUTY_SERVICE_KEY` | (empty) | PagerDuty service integration key |
+| `OPSGENIE_API_KEY` | (empty) | OpsGenie API key |
+| `SLACK_WEBHOOK_URL` | (empty) | Slack webhook URL for alerts |
+
+**Example (Slack Alerts):**
+```bash
+export SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX
+```
+
+**Example (PagerDuty):**
+```bash
+export PAGERDUTY_SERVICE_KEY=your_service_key
+```
+
+### Logging Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_LOG_DIR` | `/var/log/veloz` | Log directory path |
+| `VELOZ_LOG_LEVEL` | `INFO` | Log level: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` |
+
+**Example:**
+```bash
+export VELOZ_LOG_DIR=/data/logs/veloz
+export VELOZ_LOG_LEVEL=DEBUG
+```
+
+---
+
+## Configuration File Format
+
+VeloZ supports JSON configuration files for complex setups.
+
+### JSON Configuration File
+
+Create a configuration file (e.g., `config.json`):
+
+```json
+{
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "preset": "release"
+  },
+  "market": {
+    "source": "binance_rest",
+    "symbol": "BTCUSDT"
+  },
+  "execution": {
+    "mode": "binance_testnet_spot"
+  },
+  "performance": {
+    "worker_threads": 4,
+    "event_loop_threads": 2,
+    "memory_pool_size": 536870912,
+    "order_rate_limit": 10
+  },
+  "wal": {
+    "enabled": true,
+    "dir": "/var/lib/veloz/wal",
+    "sync_mode": "fsync",
+    "max_size_mb": 100,
+    "max_files": 10
+  },
+  "logging": {
+    "level": "INFO",
+    "dir": "/var/log/veloz"
+  }
+}
+```
+
+**Load configuration file:**
+```bash
+./veloz_engine --config /path/to/config.json
+```
+
+### Configuration Priority
+
+Configuration is loaded in this priority order (highest first):
+
+1. Command-line arguments
+2. Environment variables
+3. Configuration file
+4. Default values
+
+---
+
+## Configuration Profiles
+
+VeloZ supports different configuration profiles for various environments.
+
+### Development Profile
+
+Optimized for local development and debugging:
+
+```bash
+# dev.env
+export VELOZ_PRESET=dev
+export VELOZ_LOG_LEVEL=DEBUG
+export VELOZ_MARKET_SOURCE=sim
+export VELOZ_EXECUTION_MODE=sim_engine
+export VELOZ_WAL_ENABLED=false
+export VELOZ_AUTH_ENABLED=false
+```
+
+**Usage:**
+```bash
+source dev.env && ./scripts/run_gateway.sh
+```
+
+### Staging Profile
+
+Mirrors production with testnet exchanges:
+
+```bash
+# staging.env
+export VELOZ_PRESET=release
+export VELOZ_LOG_LEVEL=INFO
+export VELOZ_MARKET_SOURCE=binance_rest
+export VELOZ_EXECUTION_MODE=binance_testnet_spot
+export VELOZ_WAL_ENABLED=true
+export VELOZ_WAL_SYNC_MODE=fsync
+export VELOZ_AUTH_ENABLED=true
+export VELOZ_VAULT_ENABLED=true
+export VELOZ_ENV=staging
+```
+
+### Production Profile
+
+Full production configuration with all security features:
+
+```bash
+# production.env
+export VELOZ_PRESET=release
+export VELOZ_LOG_LEVEL=WARN
+export VELOZ_PRODUCTION_MODE=true
+export VELOZ_EXECUTION_MODE=binance_spot
+export VELOZ_WAL_ENABLED=true
+export VELOZ_WAL_SYNC_MODE=fsync
+export VELOZ_AUTH_ENABLED=true
+export VELOZ_VAULT_ENABLED=true
+export VELOZ_TLS_ENABLED=true
+export VELOZ_ENV=production
+
+# Performance tuning
+export VELOZ_WORKER_THREADS=8
+export VELOZ_EVENT_LOOP_THREADS=4
+export VELOZ_MEMORY_POOL_SIZE=1073741824
+export VELOZ_ORDER_RATE_LIMIT=100
+```
+
+### Profile Comparison
+
+| Setting | Development | Staging | Production |
+|---------|-------------|---------|------------|
+| Build preset | `dev` | `release` | `release` |
+| Log level | `DEBUG` | `INFO` | `WARN` |
+| Market source | `sim` | `binance_rest` | `binance_rest` |
+| Execution mode | `sim_engine` | `binance_testnet_spot` | `binance_spot` |
+| WAL enabled | No | Yes | Yes |
+| Auth enabled | No | Yes | Yes |
+| TLS enabled | No | Optional | Yes |
+| Vault enabled | No | Yes | Yes |
+
+---
+
+## Backup Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_CONFIG_DIR` | `/etc/veloz` | Configuration directory for backups |
+| `VELOZ_CONFIG_RETENTION_DAYS` | `30` | Configuration backup retention period |
+
+---
 
 ## Configuration Validation
 

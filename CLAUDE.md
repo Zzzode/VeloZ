@@ -175,8 +175,24 @@ Top-level CMake includes: `libs/{common,core,market,exec,oms,risk}` and `apps/en
 
 ## Pointers to docs
 
+**Getting Started:**
+- `docs/guides/user/getting-started.md`: quick start guide
+- `docs/guides/user/installation.md`: installation instructions
+- `docs/guides/user/configuration.md`: environment variables and settings
+- `docs/guides/user/faq.md`: frequently asked questions
+- `docs/guides/user/glossary.md`: trading and technical terms
+
+**Operations:**
+- `docs/guides/user/trading-guide.md`: trading operations and order management
+- `docs/guides/user/monitoring.md`: Prometheus, Grafana, observability
+- `docs/guides/user/troubleshooting.md`: common issues and solutions
+- `docs/guides/user/security-best-practices.md`: security configuration
+- `docs/performance/latency_optimization.md`: performance tuning guide
+
+**Development:**
 - `docs/guides/build_and_run.md`: build/run/scripts and gateway endpoints
 - `docs/design/README.md`: design series index
+- `docs/tutorials/custom-strategy-development.md`: strategy development guide
 - `docs/references/kjdoc/`: KJ library documentation (tour.md, style-guide.md, library_usage_guide.md)
 - `.claude/skills/kj-library/library_usage_guide.md`: KJ library usage patterns for VeloZ
 - `.claude/skills/kj-library/SKILL.md`: KJ skill (name: `kj-library`) for Claude Code recognition

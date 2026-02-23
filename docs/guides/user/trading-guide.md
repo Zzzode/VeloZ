@@ -59,16 +59,16 @@ export VELOZ_BINANCE_API_SECRET=your_testnet_api_secret
 **OKX Testnet:**
 ```bash
 export VELOZ_EXECUTION_MODE=okx_testnet
-export VELOZ_OKX_API_KEY=your_okx_api_key
-export VELOZ_OKX_API_SECRET=your_okx_api_secret
-export VELOZ_OKX_PASSPHRASE=your_passphrase
+export VELOZ_OKX_API_KEY=<your-api-key>
+export VELOZ_OKX_API_SECRET=<your-api-secret>
+export VELOZ_OKX_PASSPHRASE=<your-passphrase>
 ```
 
 **Bybit Testnet:**
 ```bash
 export VELOZ_EXECUTION_MODE=bybit_testnet
-export VELOZ_BYBIT_API_KEY=your_bybit_api_key
-export VELOZ_BYBIT_API_SECRET=your_bybit_api_secret
+export VELOZ_BYBIT_API_KEY=<your-api-key>
+export VELOZ_BYBIT_API_SECRET=<your-api-secret>
 ```
 
 ### Step 2: Start the Gateway
@@ -805,5 +805,6 @@ curl http://127.0.0.1:8080/api/config | jq '.binance_user_stream_connected'
 
 - [API Usage Guide](api-usage-guide.md) - API examples
 - [Configuration Guide](configuration.md) - Exchange setup
-- [Risk Management Guide](risk-management-guide.md) - Risk controls
+- [Risk Management Guide](risk-management.md) - Risk controls
 - [Monitoring Guide](monitoring.md) - Metrics and alerts
+- [Glossary](glossary.md) - Trading and technical term definitions

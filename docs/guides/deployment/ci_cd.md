@@ -216,7 +216,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          curl -f https://staging.veloz.example.com/health
+          curl -f https://staging.veloz.yourdomain.com/health
 
   deploy-production:
     if: github.event.inputs.environment == 'production'
@@ -253,7 +253,7 @@ jobs:
 
       - name: Run smoke tests
         run: |
-          curl -f https://veloz.example.com/health
+          curl -f https://veloz.yourdomain.com/health
 
       - name: Notify deployment
         uses: slackapi/slack-github-action@v1
@@ -349,7 +349,7 @@ branches:
 ```yaml
 # environments/staging.yml
 name: staging
-url: https://staging.veloz.example.com
+url: https://staging.veloz.yourdomain.com
 variables:
   VELOZ_EXECUTION_MODE: sim_engine
   VELOZ_MARKET_SOURCE: binance_rest
@@ -364,7 +364,7 @@ secrets:
 ```yaml
 # environments/production.yml
 name: production
-url: https://veloz.example.com
+url: https://veloz.yourdomain.com
 variables:
   VELOZ_EXECUTION_MODE: binance_testnet_spot
   VELOZ_MARKET_SOURCE: binance_rest
@@ -387,7 +387,7 @@ protection_rules:
   id: health
   run: |
     for i in {1..5}; do
-      if curl -f https://veloz.example.com/health; then
+      if curl -f https://veloz.yourdomain.com/health; then
         echo "healthy=true" >> $GITHUB_OUTPUT
         exit 0
       fi
@@ -484,3 +484,5 @@ gh secret set BINANCE_API_KEY --env staging --body "key"
 - [Production Architecture](production_architecture.md)
 - [Monitoring](monitoring.md)
 - [Troubleshooting](troubleshooting.md)
+- [Installation Guide](../user/installation.md) - Build and installation instructions
+- [Glossary](../user/glossary.md) - Technical term definitions

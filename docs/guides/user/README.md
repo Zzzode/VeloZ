@@ -2,7 +2,7 @@
 
 Complete documentation for VeloZ, the production-ready quantitative trading framework.
 
-> **Production Status:** VeloZ v1.0 is production-ready with 615+ tests passing, 80k events/sec performance, and enterprise-grade security.
+> **Production Status:** VeloZ v1.0 is production-ready with 2000+ tests passing, 80k events/sec performance, and enterprise-grade security.
 
 ---
 
@@ -61,6 +61,15 @@ See [Quick Start Guide](quick-start.md) for detailed steps with expected output.
 | [Monitoring Guide](monitoring.md) | Prometheus, Grafana, Jaeger, Loki setup |
 | [Troubleshooting Guide](troubleshooting.md) | Common issues and solutions |
 | [Best Practices](best-practices.md) | Security, trading, risk, performance best practices |
+| [Security Best Practices](security-best-practices.md) | API key management, network security, access control, audit logging |
+| [Performance Tuning](../../performance/latency_optimization.md) | Latency, memory, CPU, network optimization |
+
+### Reference
+
+| Guide | Description |
+|-------|-------------|
+| [FAQ](faq.md) | Frequently asked questions about installation, configuration, trading, and troubleshooting |
+| [Glossary](glossary.md) | Definitions of trading, risk, technical, and exchange terms |
 
 ### Development
 
@@ -78,8 +87,13 @@ Step-by-step tutorials for hands-on learning.
 |----------|------|-------|-------------|
 | [Your First Trade](../../tutorials/first-trade.md) | 15 min | Beginner | Place your first order, monitor fills, check positions |
 | [Multi-Exchange Arbitrage](../../tutorials/multi-exchange-arbitrage.md) | 25 min | Intermediate | Trade across multiple exchanges with smart routing |
+| [Grid Trading](../../tutorials/grid-trading.md) | 30 min | Intermediate | Set up and run grid trading strategies |
+| [Market Making](../../tutorials/market-making.md) | 35 min | Intermediate | Set up market making with inventory management |
 | [Production Deployment](../../tutorials/production-deployment.md) | 45 min | Intermediate | Deploy VeloZ with systemd, Nginx, TLS |
 | [Custom Strategy Development](../../tutorials/custom-strategy-development.md) | 60 min | Advanced | Build, test, and deploy custom trading strategies |
+| [Risk Management Practice](../../tutorials/risk-management-practice.md) | 30 min | Intermediate | Configure VaR, stress testing, circuit breakers |
+| [Performance Tuning Practice](../../tutorials/performance-tuning-practice.md) | 30 min | Intermediate | Optimize latency, memory, and throughput |
+| [Troubleshooting Practice](../../tutorials/troubleshooting-practice.md) | 25 min | Intermediate | Debug connection, order, and performance problems |
 
 **Note:** For detailed information on risk management, monitoring, and backtesting, see the corresponding User Guides above.
 
@@ -278,13 +292,13 @@ export VELOZ_EXECUTION_MODE=multi_exchange
 export VELOZ_EXCHANGES=binance,okx
 
 # Binance credentials
-export VELOZ_BINANCE_API_KEY=your_key
-export VELOZ_BINANCE_API_SECRET=your_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 
 # OKX credentials
-export VELOZ_OKX_API_KEY=your_key
-export VELOZ_OKX_API_SECRET=your_secret
-export VELOZ_OKX_PASSPHRASE=your_passphrase
+export VELOZ_OKX_API_KEY=<your-api-key>
+export VELOZ_OKX_API_SECRET=<your-api-secret>
+export VELOZ_OKX_PASSPHRASE=<your-passphrase>
 
 ./scripts/run_gateway.sh dev
 ```
@@ -370,7 +384,7 @@ See [Troubleshooting Guide](troubleshooting.md) for common issues:
 ### Support Resources
 
 - [GitHub Issues](https://github.com/veloz-trading/veloz/issues) - Report bugs
-- [FAQ](#frequently-asked-questions) - Quick answers
+- [FAQ](faq.md) - Quick answers to common questions
 - [Best Practices](best-practices.md) - Recommended configurations
 
 ---
@@ -380,7 +394,7 @@ See [Troubleshooting Guide](troubleshooting.md) for common issues:
 ### General
 
 **Q: Is VeloZ production-ready?**
-A: Yes, VeloZ v1.0 is production-ready with 615+ tests, enterprise security, and complete observability.
+A: Yes, VeloZ v1.0 is production-ready with 2000+ tests, enterprise security, and complete observability.
 
 **Q: What exchanges are supported?**
 A: Binance (production), OKX, Bybit, Coinbase (beta).
@@ -414,7 +428,7 @@ A: Yes, comprehensive audit logging with configurable retention.
 
 ## Document Index
 
-### All User Guides (11)
+### All User Guides (15)
 
 1. [Installation Guide](installation.md)
 2. [Quick Start Guide](quick-start.md)
@@ -427,10 +441,19 @@ A: Yes, comprehensive audit logging with configurable retention.
 9. [Monitoring Guide](monitoring.md)
 10. [Troubleshooting Guide](troubleshooting.md)
 11. [Best Practices](best-practices.md)
+12. [Security Best Practices](security-best-practices.md)
+13. [Performance Tuning](../../performance/latency_optimization.md)
+14. [FAQ](faq.md)
+15. [Glossary](glossary.md)
 
-### All Tutorials (4)
+### All Tutorials (9)
 
 1. [Your First Trade](../../tutorials/first-trade.md) - 15 min, Beginner
-2. [Multi-Exchange Arbitrage](../../tutorials/multi-exchange-arbitrage.md) - 25 min, Intermediate
-3. [Production Deployment](../../tutorials/production-deployment.md) - 45 min, Intermediate
-4. [Custom Strategy Development](../../tutorials/custom-strategy-development.md) - 60 min, Advanced
+2. [Grid Trading](../../tutorials/grid-trading.md) - 30 min, Intermediate
+3. [Market Making](../../tutorials/market-making.md) - 35 min, Intermediate
+4. [Multi-Exchange Arbitrage](../../tutorials/multi-exchange-arbitrage.md) - 25 min, Intermediate
+5. [Risk Management Practice](../../tutorials/risk-management-practice.md) - 30 min, Intermediate
+6. [Performance Tuning Practice](../../tutorials/performance-tuning-practice.md) - 35 min, Intermediate
+7. [Troubleshooting Practice](../../tutorials/troubleshooting-practice.md) - 25 min, Intermediate
+8. [Production Deployment](../../tutorials/production-deployment.md) - 45 min, Intermediate
+9. [Custom Strategy Development](../../tutorials/custom-strategy-development.md) - 60 min, Advanced

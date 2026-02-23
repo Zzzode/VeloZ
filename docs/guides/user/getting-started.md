@@ -73,8 +73,8 @@ No manual dependency installation is required.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/veloz-trading/veloz.git
-cd veloz
+git clone https://github.com/Zzzode/VeloZ.git
+cd VeloZ
 ```
 
 ### 2. Build the Project
@@ -183,8 +183,8 @@ Trade on Binance testnet (requires API keys):
 ```bash
 # Get testnet API keys from https://testnet.binance.vision/
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
-export VELOZ_BINANCE_API_KEY=your_testnet_api_key
-export VELOZ_BINANCE_API_SECRET=your_testnet_api_secret
+export VELOZ_BINANCE_API_KEY=<your-testnet-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-testnet-api-secret>
 ./scripts/run_gateway.sh dev
 ```
 
@@ -198,11 +198,11 @@ export VELOZ_EXECUTION_MODE=multi_exchange
 export VELOZ_EXCHANGES=binance,okx,bybit
 
 # Configure each exchange (testnet)
-export VELOZ_BINANCE_API_KEY=your_binance_key
-export VELOZ_BINANCE_API_SECRET=your_binance_secret
-export VELOZ_OKX_API_KEY=your_okx_key
-export VELOZ_OKX_API_SECRET=your_okx_secret
-export VELOZ_OKX_PASSPHRASE=your_okx_passphrase
+export VELOZ_BINANCE_API_KEY=<your-binance-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-binance-api-secret>
+export VELOZ_OKX_API_KEY=<your-okx-api-key>
+export VELOZ_OKX_API_SECRET=<your-okx-api-secret>
+export VELOZ_OKX_PASSPHRASE=<your-okx-passphrase>
 
 ./scripts/run_gateway.sh dev
 ```
@@ -285,8 +285,8 @@ export VELOZ_BINANCE_BASE_URL=https://api.binance.com
 # Trading on Binance testnet
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
 export VELOZ_BINANCE_TRADE_BASE_URL=https://testnet.binance.vision
-export VELOZ_BINANCE_API_KEY=your_api_key
-export VELOZ_BINANCE_API_SECRET=your_api_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 
 # WebSocket for user data stream
 export VELOZ_BINANCE_WS_BASE_URL=wss://testnet.binance.vision/ws
@@ -350,8 +350,8 @@ curl http://127.0.0.1:8080/api/backtest/results
 2. **Configure environment**:
    ```bash
    export VELOZ_EXECUTION_MODE=binance_testnet_spot
-   export VELOZ_BINANCE_API_KEY=your_key
-   export VELOZ_BINANCE_API_SECRET=your_secret
+   export VELOZ_BINANCE_API_KEY=<your-api-key>
+   export VELOZ_BINANCE_API_SECRET=<your-api-secret>
    ```
 3. **Start gateway**: `./scripts/run_gateway.sh dev`
 4. **Monitor** via UI or SSE stream
@@ -623,6 +623,7 @@ See [Configuration Guide](configuration.md#audit-logging-configuration) for deta
 - **[Trading Guide](trading-guide.md)** - Order management, positions, execution algorithms
 - **[API Usage Guide](api-usage-guide.md)** - Practical API examples with Python client
 - **[Best Practices](best-practices.md)** - Security, trading, and operational best practices
+- **[Glossary](glossary.md)** - Definitions of trading, risk, and technical terms
 
 ### Tutorials
 

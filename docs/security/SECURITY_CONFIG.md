@@ -25,10 +25,10 @@ When `VELOZ_PRODUCTION_MODE=true`:
 Examples:
 ```bash
 # Allow specific origins
-export VELOZ_CORS_ORIGINS="https://app.example.com,https://admin.example.com"
+export VELOZ_CORS_ORIGINS="https://app.yourdomain.com,https://admin.yourdomain.com"
 
 # Allow all subdomains
-export VELOZ_CORS_ORIGINS="*.example.com"
+export VELOZ_CORS_ORIGINS="*.yourdomain.com"
 
 # Allow credentials (requires specific origins, not *)
 export VELOZ_CORS_CREDENTIALS=true

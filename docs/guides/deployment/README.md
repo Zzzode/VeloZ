@@ -333,8 +333,8 @@ cmake --preset release && cmake --build --preset release-all -j$(nproc)
 
 # 2. Configure environment
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
-export VELOZ_BINANCE_API_KEY=your_key
-export VELOZ_BINANCE_API_SECRET=your_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 export VELOZ_WAL_DIR=/var/lib/veloz/wal
 export VELOZ_LOG_LEVEL=info
 
@@ -353,3 +353,6 @@ curl http://localhost:8080/health
 - [Monitoring](monitoring.md) - Metrics and alerting
 - [Backup & Recovery](backup_recovery.md) - Disaster recovery
 - [Troubleshooting](troubleshooting.md) - Common issues
+- [User Documentation](../user/README.md) - Complete user guides
+- [Installation Guide](../user/installation.md) - Build and installation
+- [Glossary](../user/glossary.md) - Technical term definitions

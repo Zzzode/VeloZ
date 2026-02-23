@@ -755,7 +755,7 @@ Configure webhooks for external alerting:
 
 ```bash
 export VELOZ_ALERT_WEBHOOK_URL=https://your-webhook.com/alerts
-export VELOZ_ALERT_WEBHOOK_SECRET=your_secret
+export VELOZ_ALERT_WEBHOOK_SECRET=<your-webhook-secret>
 ```
 
 ### SSE Alert Stream
@@ -977,3 +977,12 @@ VeloZ's risk management system provides comprehensive protection for your tradin
 | **Dynamic Thresholds** | Adaptive risk control | Market condition response |
 
 Remember: **Risk management is not about avoiding all risk, but about understanding and controlling it.**
+
+---
+
+## Related Documentation
+
+- [Trading Guide](trading-guide.md) - Order types and position management
+- [Configuration Guide](configuration.md) - Environment variables and settings
+- [Monitoring Guide](monitoring.md) - Metrics and alerting setup
+- [Glossary](glossary.md) - Risk management term definitions

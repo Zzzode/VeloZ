@@ -10,7 +10,7 @@ Welcome to VeloZ documentation. This directory contains all documentation for th
 |--------|--------|
 | **Version** | v1.0.0 (2026-02-23) |
 | **Production Readiness** | ✅ 100/100 |
-| **Total Tests** | ✅ 615+ passing (100%) |
+| **Total Tests** | ✅ 2000+ passing (100%) |
 | **Performance** | ✅ 80k events/sec, P99 < 1ms |
 | **Security** | ✅ Enterprise (Vault, JWT, RBAC, Audit) |
 | **Infrastructure** | ✅ Kubernetes, Helm, Terraform, Ansible |
@@ -92,9 +92,18 @@ Welcome to VeloZ documentation. This directory contains all documentation for th
 
 **Operations:**
 - [Operations Runbook](guides/deployment/operations_runbook.md) - Day-to-day operations
-- [Monitoring Guide](guides/deployment/monitoring.md) - Observability setup
+- [Monitoring Guide](guides/user/monitoring.md) - Observability setup
 - [Incident Response](guides/deployment/incident_response.md) - Incident handling
-- [Troubleshooting](guides/deployment/troubleshooting.md) - Common issues
+- [Troubleshooting](guides/user/troubleshooting.md) - Common issues
+- [Security Best Practices](guides/user/security-best-practices.md) - Security configuration
+- [Performance Tuning](performance/latency_optimization.md) - Performance optimization
+
+**Tutorials:**
+- [Tutorials Index](tutorials/README.md) - All hands-on tutorials
+- [Your First Trade](tutorials/first-trade.md) - Place your first order (15 min)
+- [Grid Trading](tutorials/grid-trading.md) - Grid trading strategies (30 min)
+- [Market Making](tutorials/market-making.md) - Market making with inventory management (35 min)
+- [Production Deployment](tutorials/production-deployment.md) - Deploy to production (45 min)
 
 **Development:**
 - [Build and Run](guides/build_and_run.md) - Build instructions
@@ -147,6 +156,8 @@ docs/
 1. **[Getting Started](guides/user/getting-started.md)** - Begin here to set up and run VeloZ
 2. **[HTTP API Reference](api/http_api.md)** - Learn how to interact with VeloZ via REST API
 3. **[Configuration Guide](guides/user/configuration.md)** - Configure environment variables and settings
+4. **[FAQ](guides/user/faq.md)** - Frequently asked questions
+5. **[Glossary](guides/user/glossary.md)** - Trading and technical terms
 
 ### For Developers
 1. **[Development Guide](guides/user/development.md)** - Set up development environment

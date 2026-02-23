@@ -161,7 +161,7 @@ services:
 
 SECRETS_DIR="/etc/veloz/secrets"
 BACKUP_DIR="/backup/secrets"
-GPG_KEY="veloz-backup@example.com"
+GPG_KEY="veloz-backup@yourdomain.com"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Create encrypted backup
@@ -181,7 +181,7 @@ aws s3 cp "$BACKUP_DIR/secrets_$TIMESTAMP.tar.gz.gpg" \
 vault kv get -format=json secret/veloz > secrets_backup.json
 
 # Encrypt and store
-gpg --encrypt --recipient backup@example.com secrets_backup.json
+gpg --encrypt --recipient backup@yourdomain.com secrets_backup.json
 aws s3 cp secrets_backup.json.gpg s3://veloz-backups/vault/
 rm secrets_backup.json
 ```
@@ -429,3 +429,5 @@ echo "Backup test completed successfully"
 - [Production Architecture](production_architecture.md)
 - [Monitoring](monitoring.md)
 - [Troubleshooting](troubleshooting.md)
+- [Best Practices Guide](../user/best-practices.md) - Backup and recovery best practices
+- [Glossary](../user/glossary.md) - Technical term definitions

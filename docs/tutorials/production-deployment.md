@@ -154,11 +154,11 @@ VELOZ_BINANCE_API_SECRET=your_testnet_api_secret
 ```bash
 # Store credentials in Vault
 vault kv put secret/veloz/binance \
-  api_key=your_api_key \
-  api_secret=your_api_secret
+  api_key=<your-api-key> \
+  api_secret=<your-api-secret>
 
 # Configure VeloZ to use Vault
-echo "VELOZ_VAULT_ADDR=https://vault.example.com:8200" >> /etc/veloz/veloz.env
+echo "VELOZ_VAULT_ADDR=https://vault.internal:8200" >> /etc/veloz/veloz.env
 echo "VELOZ_VAULT_PATH=secret/veloz/binance" >> /etc/veloz/veloz.env
 ```
 
@@ -308,7 +308,7 @@ upstream veloz_backend {
 
 server {
     listen 80;
-    server_name veloz.example.com;
+    server_name veloz.yourdomain.com;
 
     # Redirect HTTP to HTTPS
     return 301 https://$server_name$request_uri;
@@ -316,7 +316,7 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name veloz.example.com;
+    server_name veloz.yourdomain.com;
 
     # TLS configuration (certificates added by certbot)
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -365,7 +365,7 @@ sudo ln -s /etc/nginx/sites-available/veloz /etc/nginx/sites-enabled/
 sudo nginx -t
 
 # Obtain TLS certificate
-sudo certbot --nginx -d veloz.example.com
+sudo certbot --nginx -d veloz.yourdomain.com
 
 # Reload Nginx
 sudo systemctl reload nginx
@@ -477,7 +477,7 @@ sudo systemctl status veloz
 
 ```bash
 # Verify health endpoint
-curl https://veloz.example.com/health
+curl https://veloz.yourdomain.com/health
 ```
 
 **Expected Output:**
@@ -492,7 +492,7 @@ curl https://veloz.example.com/health
 
 ```bash
 # Verify metrics endpoint
-curl https://veloz.example.com/metrics | head -20
+curl https://veloz.yourdomain.com/metrics | head -20
 ```
 
 **Expected Output:**
@@ -505,9 +505,9 @@ veloz_orders_total{status="canceled"} 0
 
 ```bash
 # Test order placement (simulation mode)
-curl -X POST https://veloz.example.com/api/order \
+curl -X POST https://veloz.yourdomain.com/api/order \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_api_key" \
+  -H "Authorization: Bearer <your-access-token>" \
   -d '{
     "side": "BUY",
     "symbol": "BTCUSDT",
@@ -573,3 +573,5 @@ sudo certbot renew --nginx
 - [Custom Strategy Development](./custom-strategy-development.md) - Build and deploy custom trading strategies
 - [Monitoring Guide](../guides/deployment/monitoring.md) - Set up Prometheus and Grafana
 - [Operations Runbook](../guides/deployment/operations_runbook.md) - Day-to-day operational procedures
+- [Best Practices Guide](../guides/user/best-practices.md) - Security and operational best practices
+- [Glossary](../guides/user/glossary.md) - Definitions of technical terms

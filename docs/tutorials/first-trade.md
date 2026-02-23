@@ -327,3 +327,4 @@ kill <PID>
 - [Multi-Exchange Arbitrage](./multi-exchange-arbitrage.md) - Trade across multiple exchanges
 - [Binance Integration](../guides/user/binance.md) - Connect to Binance testnet for realistic simulation
 - [Trading Guide](../guides/user/trading-guide.md) - Learn advanced trading patterns and execution algorithms
+- [Glossary](../guides/user/glossary.md) - Definitions of trading and technical terms

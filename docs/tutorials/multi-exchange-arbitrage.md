@@ -395,9 +395,115 @@ curl https://testnet.binance.vision/api/v3/ping
 curl http://127.0.0.1:8080/api/reconcile/discrepancies
 ```
 
+## Advanced Topics
+
+### Automated Arbitrage Strategy
+
+For automated arbitrage execution, configure an arbitrage strategy:
+
+```bash
+# Create automated arbitrage strategy
+curl -X POST http://127.0.0.1:8080/api/strategy/load \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "btc_arb_auto",
+    "type": "Arbitrage",
+    "symbols": ["BTCUSDT"],
+    "parameters": {
+      "min_spread_bps": 5.0,
+      "max_position": 0.1,
+      "order_size": 0.01,
+      "execution_mode": "simultaneous",
+      "exchanges": ["binance", "okx"]
+    }
+  }'
+```
+
+**Expected Output:**
+```json
+{
+  "ok": true,
+  "strategy_id": "btc_arb_auto",
+  "config": {
+    "min_spread_bps": 5.0,
+    "break_even_spread_bps": 2.0,
+    "expected_profit_per_trade": 15.0
+  }
+}
+```
+
+### Latency Considerations
+
+Arbitrage profitability depends on execution speed. Monitor latency per exchange:
+
+```bash
+# Get per-exchange latency
+curl http://127.0.0.1:8080/api/exchanges/latency
+```
+
+**Expected Output:**
+```json
+{
+  "latencies": [
+    {"exchange": "binance", "order_to_ack_p50_ms": 45, "order_to_fill_p50_ms": 120},
+    {"exchange": "okx", "order_to_ack_p50_ms": 62, "order_to_fill_p50_ms": 150}
+  ],
+  "recommendation": "Use binance as primary execution venue"
+}
+```
+
+### Fee Optimization
+
+Calculate minimum profitable spread including fees:
+
+```bash
+# Get fee analysis
+curl http://127.0.0.1:8080/api/arbitrage/fee_analysis
+```
+
+**Expected Output:**
+```json
+{
+  "fee_analysis": {
+    "binance": {"maker_fee_bps": 10, "taker_fee_bps": 10},
+    "okx": {"maker_fee_bps": 8, "taker_fee_bps": 10},
+    "round_trip_cost_bps": 20,
+    "min_profitable_spread_bps": 25,
+    "recommended_min_spread_bps": 30
+  }
+}
+```
+
+### Transfer and Settlement
+
+For persistent arbitrage, manage asset transfers between exchanges:
+
+```bash
+# Check transfer requirements
+curl http://127.0.0.1:8080/api/arbitrage/transfer_status
+```
+
+**Expected Output:**
+```json
+{
+  "balances": {
+    "binance": {"USDT": 5000.0, "BTC": 0.05},
+    "okx": {"USDT": 3000.0, "BTC": 0.08}
+  },
+  "imbalance": {
+    "USDT": {"from": "binance", "to": "okx", "amount": 1000.0},
+    "BTC": {"from": "okx", "to": "binance", "amount": 0.015}
+  },
+  "recommendation": "Transfer USDT from Binance to OKX to rebalance"
+}
+```
+
 ## Next Steps
 
-- [Risk Management Guide](../guides/user/risk-management.md) - Add VaR and circuit breakers to your strategy
+- [Grid Trading Strategy](./grid-trading.md) - Alternative passive trading strategy
+- [Market Making Strategy](./market-making.md) - Provide liquidity across exchanges
+- [Risk Management in Practice](./risk-management-practice.md) - Add VaR and circuit breakers to your strategy
 - [Monitoring Guide](../guides/user/monitoring.md) - Set up Prometheus, Grafana for multi-exchange observability
 - [Trading Guide](../guides/user/trading-guide.md) - Learn about smart order routing and execution algorithms
 - [Production Deployment](./production-deployment.md) - Deploy your arbitrage system to production
+- [Glossary](../guides/user/glossary.md) - Definitions of trading and exchange terms

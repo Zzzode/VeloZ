@@ -32,8 +32,8 @@ If any are missing, see [Installation Guide](installation.md) for setup instruct
 
 ```bash
 # Clone the repository
-git clone https://github.com/veloz-trading/veloz.git
-cd veloz
+git clone https://github.com/Zzzode/VeloZ.git
+cd VeloZ
 
 # Configure and build
 cmake --preset dev

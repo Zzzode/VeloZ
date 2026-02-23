@@ -201,6 +201,67 @@ VeloZ exposes Prometheus-compatible metrics at `/metrics`.
 | `veloz_memory_pool_used_bytes` | Gauge | Memory pool usage |
 | `veloz_event_loop_tasks` | Gauge | Pending event loop tasks |
 
+### HTTP Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `veloz_http_requests_total` | Counter | method, endpoint, status | Total HTTP requests |
+| `veloz_http_request_duration_seconds` | Histogram | method, endpoint | Request duration |
+| `veloz_http_request_size_bytes` | Histogram | method, endpoint | Request body size |
+| `veloz_http_response_size_bytes` | Histogram | method, endpoint | Response body size |
+
+### Gateway State Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `veloz_gateway_uptime_seconds` | Gauge | Gateway uptime |
+| `veloz_engine_running` | Gauge | Engine status (1=running, 0=stopped) |
+| `veloz_active_connections` | Gauge | Active HTTP connections |
+| `veloz_sse_clients` | Gauge | Connected SSE clients |
+| `veloz_websocket_connected` | Gauge | WebSocket status (1=connected, 0=disconnected) |
+
+### Order Metrics (Detailed)
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `veloz_orders_total` | Counter | side, type | Orders submitted |
+| `veloz_fills_total` | Counter | side | Order fills |
+| `veloz_cancels_total` | Counter | - | Order cancellations |
+| `veloz_active_orders` | Gauge | - | Currently active orders |
+| `veloz_order_latency_seconds` | Histogram | - | Order submission to ack latency |
+
+### Market Data Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `veloz_market_updates_total` | Counter | type | Market data updates received |
+| `veloz_orderbook_updates_total` | Counter | - | Orderbook updates |
+| `veloz_trade_updates_total` | Counter | - | Trade updates |
+| `veloz_market_data_lag_ms` | Gauge | - | Market data lag in milliseconds |
+| `veloz_market_processing_latency_seconds` | Histogram | - | Processing latency |
+
+### Risk Metrics (Detailed)
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `veloz_risk_rejections_total` | Counter | reason | Orders rejected by risk checks |
+| `veloz_risk_utilization_percent` | Gauge | - | Risk limit utilization |
+| `veloz_position_value` | Gauge | symbol | Position value in USD |
+
+### Exchange Connectivity Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `veloz_exchange_api_latency_seconds` | Histogram | exchange, endpoint | Exchange API call latency |
+| `veloz_exchange_api_errors_total` | Counter | exchange, error_type | Exchange API errors |
+| `veloz_websocket_reconnects_total` | Counter | exchange | WebSocket reconnection attempts |
+
+### Error Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `veloz_errors_total` | Counter | type, component | Total errors by type and component |
+
 ---
 
 ## Real-Time Event Monitoring
@@ -548,29 +609,90 @@ veloz_websocket_connections
 
 ### Alert Rules
 
-VeloZ includes pre-configured alert rules for critical conditions.
+VeloZ includes 25+ pre-configured alert rules for critical conditions. Alert rules are defined in `docker/prometheus/alerts/veloz-alerts.yml`.
 
-#### System Alerts
+#### Service Health Alerts
 
-| Alert | Condition | Severity |
-|-------|-----------|----------|
-| VelozEngineDown | `up{job="veloz"} == 0` for 1m | Critical |
-| VelozHighLatency | P99 latency > 100ms for 5m | Warning |
-| VelozHighErrorRate | Error rate > 0.1/s for 5m | Warning |
-| VelozMemoryPressure | Memory > 90% for 5m | Warning |
-| VelozWebSocketDisconnected | Connections == 0 for 1m | Critical |
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| VeloZGatewayDown | `up{job="veloz-gateway"} == 0` for 1m | Critical | Gateway is unreachable |
+| VeloZEngineDown | `veloz_engine_running == 0` for 30s | Critical | Trading engine not running |
+| VeloZWebSocketDisconnected | `veloz_websocket_connected == 0` for 1m | Warning | Market data WebSocket lost |
+
+#### Latency Alerts
+
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| HighOrderLatency | P99 latency > 100ms for 5m | Warning | Order processing slow |
+| CriticalOrderLatency | P99 latency > 500ms for 2m | Critical | Severe performance degradation |
+| HighMarketDataLag | `veloz_market_data_lag_ms > 100` for 2m | Warning | Market data delayed |
+| CriticalMarketDataLag | `veloz_market_data_lag_ms > 500` for 1m | Critical | Trading on stale data |
+| HighAPILatency | HTTP P99 latency > 1s for 5m | Warning | API responses slow |
+
+#### Error Rate Alerts
+
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| HighErrorRate | `rate(veloz_errors_total[5m]) > 0.1` | Warning | Elevated error rate |
+| CriticalErrorRate | `rate(veloz_errors_total[5m]) > 1` | Critical | System unstable |
+| ExchangeAPIErrors | Exchange API error rate > 0.1/s | Warning | Exchange connectivity issues |
+| HighWebSocketReconnects | Reconnect rate > 0.1/s for 5m | Warning | Network instability |
 
 #### Risk Alerts
 
-| Alert | Condition | Severity |
-|-------|-----------|----------|
-| VelozHighDrawdown | Drawdown > 10% for 5m | Warning |
-| VelozCriticalDrawdown | Drawdown > 20% for 1m | Critical |
-| VelozHighLeverage | Leverage > 3x for 5m | Warning |
-| VelozHighConcentration | Largest position > 50% for 5m | Warning |
-| VelozVaRBreach | Loss exceeds VaR 95% for 5m | Critical |
-| VelozNegativeSharpe | Sharpe < 0 for 1h | Warning |
-| VelozLowWinRate | Win rate < 30% (after 100 trades) for 30m | Warning |
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| HighRiskUtilization | `veloz_risk_utilization_percent > 80` for 5m | Warning | Risk limits near capacity |
+| CriticalRiskUtilization | `veloz_risk_utilization_percent > 95` for 1m | Critical | Orders may be rejected |
+| RiskRejectionsSpike | Rejection rate > 0.5/s for 5m | Warning | Many orders failing risk checks |
+| VelozHighDrawdown | Drawdown > 10% for 5m | Warning | Significant losses |
+| VelozCriticalDrawdown | Drawdown > 20% for 1m | Critical | Severe losses |
+| VelozHighLeverage | Leverage > 3x for 5m | Warning | High exposure |
+| VelozHighConcentration | Largest position > 50% for 5m | Warning | Portfolio concentration risk |
+| VelozVaRBreach | Loss exceeds VaR 95% for 5m | Critical | Risk model breach |
+| VelozNegativeSharpe | Sharpe < 0 for 1h | Warning | Negative risk-adjusted returns |
+| VelozLowWinRate | Win rate < 30% (100+ trades) for 30m | Warning | Strategy underperforming |
+
+#### Throughput Alerts
+
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| LowMarketDataRate | Update rate < 1/s for 5m | Warning | Data feed may be stale |
+| EventLoopBacklog | Pending tasks > 100 for 2m | Warning | System overloaded |
+| CriticalEventLoopBacklog | Pending tasks > 500 for 1m | Critical | Severe overload |
+
+#### Resource Alerts
+
+| Alert | Condition | Severity | Description |
+|-------|-----------|----------|-------------|
+| HighActiveOrders | `veloz_active_orders > 1000` for 5m | Warning | Many open orders |
+| HighSSEClients | `veloz_sse_clients > 100` for 5m | Warning | Many connected clients |
+
+### Alert Rule Examples
+
+```yaml
+# Example: High order latency alert
+- alert: HighOrderLatency
+  expr: histogram_quantile(0.99, rate(veloz_order_latency_bucket[5m])) > 0.1
+  for: 5m
+  labels:
+    severity: warning
+    service: execution
+  annotations:
+    summary: "High order latency detected"
+    description: "Order latency p99 is above 100ms for the last 5 minutes."
+
+# Example: Critical risk utilization alert
+- alert: CriticalRiskUtilization
+  expr: veloz_risk_utilization_percent > 95
+  for: 1m
+  labels:
+    severity: critical
+    service: risk
+  annotations:
+    summary: "Critical risk utilization"
+    description: "Risk limit utilization is above 95%. New orders may be rejected."
+```
 
 ### Alertmanager Configuration
 
@@ -596,7 +718,7 @@ route:
 receivers:
   - name: 'default'
     email_configs:
-      - to: 'ops@example.com'
+      - to: 'ops@yourdomain.com'
 
   - name: 'slack'
     slack_configs:

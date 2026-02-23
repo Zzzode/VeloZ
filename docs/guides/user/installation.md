@@ -7,7 +7,7 @@ This guide covers installing VeloZ for development and production environments.
 **Ubuntu/Debian (One-liner):**
 ```bash
 sudo apt update && sudo apt install -y cmake ninja-build build-essential clang-16 libssl-dev python3 git && \
-git clone https://github.com/your-org/VeloZ.git && cd VeloZ && \
+git clone https://github.com/Zzzode/VeloZ.git && cd VeloZ && \
 cmake --preset dev && cmake --build --preset dev-all -j$(nproc) && \
 ctest --preset dev -j$(nproc) && ./scripts/run_gateway.sh dev
 ```
@@ -15,13 +15,13 @@ ctest --preset dev -j$(nproc) && ./scripts/run_gateway.sh dev
 **macOS (One-liner):**
 ```bash
 xcode-select --install && brew install cmake ninja openssl@3 && \
-git clone https://github.com/your-org/VeloZ.git && cd VeloZ && \
+git clone https://github.com/Zzzode/VeloZ.git && cd VeloZ && \
 cmake --preset dev && cmake --build --preset dev-all -j$(sysctl -n hw.ncpu) && \
 ctest --preset dev -j$(sysctl -n hw.ncpu) && ./scripts/run_gateway.sh dev
 ```
 
 **Expected result:**
-- ✓ All 16 tests pass (100%)
+- All tests pass (100%)
 - ✓ Gateway runs on http://127.0.0.1:8080
 - ✓ UI accessible in browser
 
@@ -82,7 +82,7 @@ sudo apt install -y \
     git
 
 # Clone repository
-git clone https://github.com/your-org/VeloZ.git
+git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
 # Build
@@ -103,7 +103,7 @@ xcode-select --install
 brew install cmake ninja openssl@3
 
 # Clone and build
-git clone https://github.com/your-org/VeloZ.git
+git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
 cmake --preset dev
@@ -117,7 +117,7 @@ cmake --build --preset dev -j$(sysctl -n hw.ncpu)
 # Install CMake from https://cmake.org/download/
 
 # Clone repository
-git clone https://github.com/your-org/VeloZ.git
+git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
 # Build with MSVC
@@ -144,7 +144,7 @@ docker compose version
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/VeloZ.git
+git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
 # Start gateway in simulation mode
@@ -196,8 +196,8 @@ Create a `.env` file for custom configuration:
 # .env
 VELOZ_PORT=8080
 VELOZ_MARKET_SOURCE=binance_rest
-VELOZ_BINANCE_API_KEY=your_api_key
-VELOZ_BINANCE_API_SECRET=your_api_secret
+VELOZ_BINANCE_API_KEY=<your-api-key>
+VELOZ_BINANCE_API_SECRET=<your-api-secret>
 GRAFANA_PASSWORD=secure_password
 POSTGRES_PASSWORD=secure_password
 ```
@@ -396,7 +396,7 @@ ctest --preset dev -j$(nproc)
 
 **Expected Results:**
 - Engine starts without errors
-- All 16 tests pass (100% pass rate)
+- All tests pass (100% pass rate)
 - Gateway accessible at http://127.0.0.1:8080
 - UI loads in browser
 
@@ -453,8 +453,8 @@ For live market data or testnet trading:
 # Configure Binance
 export VELOZ_MARKET_SOURCE=binance_rest
 export VELOZ_EXECUTION_MODE=binance_testnet_spot
-export VELOZ_BINANCE_API_KEY=your_api_key
-export VELOZ_BINANCE_API_SECRET=your_api_secret
+export VELOZ_BINANCE_API_KEY=<your-api-key>
+export VELOZ_BINANCE_API_SECRET=<your-api-secret>
 
 # Start gateway
 ./scripts/run_gateway.sh dev
@@ -744,7 +744,7 @@ After installation, verify everything works:
 - [ ] Python >= 3.8: `python3 --version`
 - [ ] OpenSSL installed: `openssl version`
 - [ ] Build succeeds: `cmake --build --preset dev-all -j$(nproc)`
-- [ ] All tests pass: `ctest --preset dev -j$(nproc)` (16/16 expected)
+- [ ] All tests pass: `ctest --preset dev -j$(nproc)`
 - [ ] Engine starts: `./build/dev/apps/engine/veloz_engine --help`
 - [ ] Gateway starts: `./scripts/run_gateway.sh dev`
 - [ ] UI loads: Open http://127.0.0.1:8080 in browser
@@ -768,3 +768,6 @@ After installation, verify everything works:
 ### Development
 - [Development Guide](development.md) - Contributing to VeloZ
 - [API Documentation](../../api/README.md) - Complete API reference
+
+### Reference
+- [Glossary](glossary.md) - Definitions of trading, risk, and technical terms

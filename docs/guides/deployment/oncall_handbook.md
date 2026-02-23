@@ -392,3 +392,5 @@ journalctl -u veloz | grep -i order | tail -50
 - [DR Runbook](dr_runbook.md)
 - [Monitoring](monitoring.md)
 - [Incident Response](incident_response.md)
+- [User Troubleshooting Guide](../user/troubleshooting.md) - User-facing troubleshooting
+- [Glossary](../user/glossary.md) - Technical term definitions
