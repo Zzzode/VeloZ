@@ -4,6 +4,10 @@ add_library(veloz_risk
   src/risk_metrics.cpp
   src/dynamic_threshold.cpp
   src/risk_rule_engine.cpp
+  src/var_models.cpp
+  src/stress_testing.cpp
+  src/scenario_analysis.cpp
+  src/portfolio_risk.cpp
 )
 
 target_include_directories(veloz_risk
@@ -22,6 +26,10 @@ if(VELOZ_BUILD_TESTS)
     tests/test_risk_metrics.cpp
     tests/test_dynamic_threshold.cpp
     tests/test_risk_rule_engine.cpp
+    tests/test_var_models.cpp
+    tests/test_stress_testing.cpp
+    tests/test_scenario_analysis.cpp
+    tests/test_portfolio_risk.cpp
   )
 
   target_link_libraries(veloz_risk_tests

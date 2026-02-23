@@ -3,6 +3,7 @@ add_library(veloz_core
     src/optimized_event_loop.cpp
     src/logger.cpp
     src/time.cpp
+    src/time_sync.cpp
     src/config.cpp
     src/error.cpp
     src/memory.cpp

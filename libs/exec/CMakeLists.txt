@@ -10,6 +10,14 @@ add_library(veloz_exec
     src/resilient_adapter.cpp
     src/hmac_wrapper.cpp
     src/reconciliation.cpp
+    # Multi-exchange coordination layer
+    src/latency_tracker.cpp
+    src/position_aggregator.cpp
+    src/aggregated_order_book.cpp
+    src/exchange_coordinator.cpp
+    # Smart order routing and execution algorithms
+    src/smart_order_router.cpp
+    src/execution_algorithms.cpp
     )
 
 target_include_directories(veloz_exec
@@ -25,6 +33,7 @@ target_link_libraries(veloz_exec
     PRIVATE
         veloz_common
         veloz_core
+        veloz_market # For market types in aggregated order book
         veloz_oms    # For OrderStore in reconciliation
         veloz_risk   # For circuit breaker in resilient adapter
         kj-test
@@ -49,11 +58,14 @@ if(VELOZ_BUILD_TESTS)
         tests/test_exchange_adapters.cpp
         tests/test_resilient_adapter.cpp
         tests/test_reconciliation.cpp
+        tests/test_exchange_coordinator.cpp
+        tests/test_smart_order_router.cpp
     )
     target_link_libraries(veloz_exec_tests
         PRIVATE
             veloz_exec
             veloz_common
+            veloz_market
             veloz_oms
             veloz_risk
             kj-test

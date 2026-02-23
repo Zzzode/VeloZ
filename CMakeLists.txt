@@ -50,3 +50,8 @@ add_subdirectory(apps/engine)
 if(VELOZ_BUILD_TESTS AND VELOZ_BUILD_BACKTEST)
     add_subdirectory(tests/integration)
 endif()
+
+# Load tests
+if(VELOZ_BUILD_TESTS)
+    add_subdirectory(tests/load)
+endif()
