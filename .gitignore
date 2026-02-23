@@ -48,6 +48,9 @@ dist/
 ## Test artifacts (WAL files, reports, etc.)
 *.wal
 test_*.html
+tests/*/results/
+*_test_report.json
+*_load_test*.json
 
 ## Temporary files
 CHANGELOG.md
