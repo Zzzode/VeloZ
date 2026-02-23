@@ -77,6 +77,20 @@ cmake --build --preset dev-tests -j$(nproc)
 | ASan (Clang) | `asan` | `asan-engine` | veloz_engine | Build engine with AddressSanitizer |
 | ASan (Clang) | `asan` | `asan-libs` | core, common, market, exec, oms, risk, strategy | Build libraries with AddressSanitizer |
 | ASan (Clang) | `asan` | `asan-tests` | market_tests, exec_tests, oms_tests, risk_tests, strategy_tests | Build tests with AddressSanitizer |
+| Coverage (GCC) | `coverage` | `coverage-all` | all | Build with coverage instrumentation |
+| Coverage (GCC) | `coverage` | `coverage-tests` | all test targets | Build only tests with coverage |
+
+### Coverage
+
+Generate code coverage reports locally:
+
+```bash
+./scripts/coverage.sh
+```
+
+This builds with the `coverage` preset, runs all tests, and generates an HTML report in `coverage_html/`.
+
+Coverage is automatically collected in CI and uploaded to Codecov. See `docs/guides/codecov-setup.md` for setup instructions.
 
 ### Run (smoke tests)
 
