@@ -19,7 +19,7 @@ cmake --preset dev && cmake --build --preset dev-all -j$(nproc)
 
 Open **http://127.0.0.1:8080** in your browser.
 
-See [Quick Start Guide](quick-start.md) for detailed steps with expected output.
+See [Getting Started Guide](getting-started.md) for detailed steps with expected output.
 
 ### Key Features
 
@@ -40,9 +40,8 @@ See [Quick Start Guide](quick-start.md) for detailed steps with expected output.
 
 | Guide | Description |
 |-------|-------------|
+| [Getting Started](getting-started.md) | Quick setup with step-by-step commands and configuration |
 | [Installation Guide](installation.md) | System requirements, dependencies, build instructions |
-| [Quick Start Guide](quick-start.md) | 5-minute setup with step-by-step commands |
-| [Getting Started](getting-started.md) | Comprehensive setup with all configuration options |
 | [Configuration Guide](configuration.md) | Environment variables, secrets management, tuning |
 
 ### Trading Operations
