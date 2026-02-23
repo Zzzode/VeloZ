@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, afterAll, beforeAll, vi } from 'vitest';
+import React from 'react';
 import { server } from './mocks/server';
 
 // Start MSW server before all tests
@@ -72,6 +73,51 @@ Object.defineProperty(window, 'localStorage', {
 
 // Mock scrollTo
 window.scrollTo = vi.fn();
+
+// Mock Recharts ResponsiveContainer
+vi.mock('recharts', async (importOriginal) => {
+  const OriginalModule = await importOriginal<typeof import('recharts')>();
+  return {
+    ...OriginalModule,
+    ResponsiveContainer: ({ children }: { children: React.ReactElement }) => 
+      React.createElement('div', { style: { width: 800, height: 800 } },
+        React.isValidElement(children)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ? React.cloneElement(children, { width: 800, height: 800 } as any)
+          : children
+      ),
+  };
+});
+
+// Mock Web Animations API
+if (typeof Element !== 'undefined') {
+  Element.prototype.animate = vi.fn().mockReturnValue({
+    finished: Promise.resolve(),
+    cancel: vi.fn(),
+    finish: vi.fn(),
+    play: vi.fn(),
+    pause: vi.fn(),
+    commitStyles: vi.fn(),
+    currentTime: 0,
+    effect: null,
+    id: '',
+    oncancel: null,
+    onfinish: null,
+    onremove: null,
+    pending: false,
+    playbackRate: 1,
+    playState: 'idle',
+    replaceState: 'active',
+    startTime: 0,
+    timeline: null,
+    reverse: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  });
+
+  Element.prototype.getAnimations = vi.fn().mockReturnValue([]);
+}
 
 // Suppress console errors in tests (optional, can be removed if you want to see errors)
 // vi.spyOn(console, 'error').mockImplementation(() => {});
