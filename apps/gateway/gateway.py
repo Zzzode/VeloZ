@@ -2180,6 +2180,9 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/audit/archive":
             self._handle_trigger_archive()
             return
+        if parsed.path == "/api/config":
+            self._handle_update_config()
+            return
         if parsed.path != "/api/order":
             self.send_error(404)
             return
@@ -2804,6 +2807,47 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, {
                 "error": "archive_failed",
+                "message": str(e),
+            })
+
+    def _handle_update_config(self):
+        """Handle configuration update request."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        # Note: This endpoint saves configuration to a file
+        # The gateway must be restarted for changes to take effect
+        config_file = os.path.join(os.path.dirname(__file__), ".veloz_config.json")
+
+        try:
+            # Read existing config if it exists
+            existing_config = {}
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    existing_config = json.load(f)
+
+            # Update with new values
+            existing_config.update(data)
+
+            # Write updated config
+            with open(config_file, 'w') as f:
+                json.dump(existing_config, f, indent=2)
+
+            self._audit_log("update_config", {"fields": list(data.keys())})
+            self._send_json(200, {
+                "ok": True,
+                "message": "Configuration saved. Restart the gateway for changes to take effect.",
+                "config_file": config_file,
+            })
+        except Exception as e:
+            self._send_json(500, {
+                "error": "config_save_failed",
                 "message": str(e),
             })
 
