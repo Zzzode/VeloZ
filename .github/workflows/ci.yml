@@ -35,6 +35,46 @@ jobs:
       - name: Smoke run engine
         run: timeout 3s ./build/dev/apps/engine/veloz_engine || true
 
+  # Code coverage
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmakeVersion: 3.27.7
+
+      - name: Install coverage tools
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Configure (coverage)
+        run: cmake --preset coverage
+
+      - name: Build (coverage-all)
+        run: cmake --build --preset coverage-all -j$(nproc)
+
+      - name: Run all tests with coverage
+        run: ctest --preset coverage -j$(nproc)
+
+      - name: Generate coverage report
+        run: |
+          lcov --directory . --capture --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' '*/tests/*' '*/apps/gateway/*' '*/apps/ui/*' '*_test.cpp' '*_tests.cpp' --output-file coverage.info
+          lcov --list coverage.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: Zzzode/VeloZ
+          files: ./coverage.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: true
+          verbose: true
+
   # Release build
   release-build:
     runs-on: ubuntu-latest
