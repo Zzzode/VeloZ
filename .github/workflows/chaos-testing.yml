@@ -1,0 +1,214 @@
+# VeloZ Chaos Testing Workflow
+# Runs chaos experiments against staging environment
+
+name: Chaos Testing
+
+on:
+  schedule:
+    # Run weekly on Saturday at 2 AM UTC
+    - cron: '0 2 * * 6'
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: 'Specific experiment to run (or "all")'
+        required: false
+        default: 'all'
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  CHAOS_MESH_VERSION: "2.6.2"
+
+jobs:
+  # ==========================================================================
+  # Pre-flight checks
+  # ==========================================================================
+  preflight:
+    name: Pre-flight Checks
+    runs-on: ubuntu-latest
+    outputs:
+      can_proceed: ${{ steps.check.outputs.can_proceed }}
+
+    steps:
+      - name: Check environment status
+        id: check
+        run: |
+          # In production, require manual approval
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            echo "Production chaos testing requires manual approval"
+            echo "can_proceed=false" >> $GITHUB_OUTPUT
+          else
+            echo "can_proceed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Notify team
+        if: steps.check.outputs.can_proceed == 'true'
+        run: |
+          echo "Chaos testing starting in ${{ github.event.inputs.environment || 'staging' }}"
+          # Add Slack notification here
+
+  # ==========================================================================
+  # Docker-based chaos tests
+  # ==========================================================================
+  docker-chaos:
+    name: Docker Chaos Tests
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.can_proceed == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start VeloZ services
+        run: |
+          docker-compose up -d
+          sleep 30  # Wait for services to be ready
+
+      - name: Verify services are healthy
+        run: |
+          for i in $(seq 1 10); do
+            if curl -sf http://localhost:8080/health; then
+              echo "Services are healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Services failed to become healthy"
+          exit 1
+
+      - name: Run chaos experiments
+        run: |
+          python infra/chaos/chaos_runner.py \
+            --all \
+            --gateway-url http://localhost:8080 \
+            --output chaos-results.json
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-chaos-results
+          path: chaos-results.json
+
+      - name: Stop services
+        if: always()
+        run: docker-compose down -v
+
+  # ==========================================================================
+  # Kubernetes chaos tests (Chaos Mesh)
+  # ==========================================================================
+  k8s-chaos:
+    name: Kubernetes Chaos Tests
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.can_proceed == 'true' && github.event.inputs.environment != ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          # Configure kubectl for target cluster
+          # This would use secrets for cluster credentials
+          echo "Configuring kubectl for ${{ github.event.inputs.environment }}"
+
+      - name: Install Chaos Mesh
+        run: |
+          kubectl apply -f https://mirrors.chaos-mesh.org/v${{ env.CHAOS_MESH_VERSION }}/install.yaml
+          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=controller-manager -n chaos-mesh --timeout=300s
+
+      - name: Run pod kill experiment
+        if: github.event.inputs.experiment == 'all' || github.event.inputs.experiment == 'pod-kill'
+        run: |
+          kubectl apply -f infra/chaos/experiments/pod-kill.yaml
+          sleep 120
+          kubectl delete -f infra/chaos/experiments/pod-kill.yaml
+
+      - name: Run network chaos experiment
+        if: github.event.inputs.experiment == 'all' || github.event.inputs.experiment == 'network'
+        run: |
+          kubectl apply -f infra/chaos/experiments/network-chaos.yaml
+          sleep 120
+          kubectl delete -f infra/chaos/experiments/network-chaos.yaml
+
+      - name: Run stress chaos experiment
+        if: github.event.inputs.experiment == 'all' || github.event.inputs.experiment == 'stress'
+        run: |
+          kubectl apply -f infra/chaos/experiments/stress-chaos.yaml
+          sleep 180
+          kubectl delete -f infra/chaos/experiments/stress-chaos.yaml
+
+      - name: Verify system recovery
+        run: |
+          for i in $(seq 1 20); do
+            if kubectl exec -n veloz deploy/veloz-gateway -- curl -sf http://localhost:8080/health; then
+              echo "System recovered successfully"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "System failed to recover"
+          exit 1
+
+      - name: Collect logs
+        if: always()
+        run: |
+          kubectl logs -n veloz -l app=veloz-gateway --tail=1000 > gateway-logs.txt
+          kubectl logs -n veloz -l app=veloz-engine --tail=1000 > engine-logs.txt
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k8s-chaos-logs
+          path: |
+            gateway-logs.txt
+            engine-logs.txt
+
+  # ==========================================================================
+  # Report results
+  # ==========================================================================
+  report:
+    name: Generate Report
+    runs-on: ubuntu-latest
+    needs: [docker-chaos, k8s-chaos]
+    if: always()
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+
+      - name: Generate summary
+        run: |
+          echo "# Chaos Testing Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f results/docker-chaos-results/chaos-results.json ]; then
+            echo "## Docker Chaos Results" >> $GITHUB_STEP_SUMMARY
+            cat results/docker-chaos-results/chaos-results.json >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Chaos testing failed - manual investigation required"
+          # Add PagerDuty/Slack notification here

@@ -146,3 +146,40 @@ jobs:
               flake8 "${targets[@]}" --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
             fi
           fi
+
+  # Database migration tests
+  migration-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install sqlalchemy alembic psycopg2-binary pytest
+
+      - name: Run migration tests
+        working-directory: apps/gateway
+        run: |
+          python -m pytest db/test_migrations.py -v
+
+      - name: Check migration can be applied
+        working-directory: apps/gateway
+        env:
+          VELOZ_DATABASE_URL: sqlite:///test_migrations.db
+        run: |
+          python -m db.migrate init
+          python -m db.migrate check
+          python -m db.migrate current
+
+      - name: Test migration rollback
+        working-directory: apps/gateway
+        env:
+          VELOZ_DATABASE_URL: sqlite:///test_migrations.db
+        run: |
+          python -m db.migrate downgrade base
+          python -m db.migrate upgrade head
