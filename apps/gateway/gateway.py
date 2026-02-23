@@ -35,6 +35,14 @@ from audit import (
     DEFAULT_POLICIES,
 )
 
+# Import metrics module
+from metrics import (
+    get_metrics_manager,
+    init_metrics,
+    RequestTimer,
+    metrics_available,
+)
+
 # Configure audit logger
 audit_logger = logging.getLogger("veloz.audit")
 audit_logger.setLevel(logging.INFO)
@@ -645,12 +653,13 @@ class AuthManager:
         rate_limit_capacity: int = 100,
         rate_limit_refill: float = 10.0,
         auth_enabled: bool = True,
+        admin_password: Optional[str] = None,
     ):
         self._enabled = auth_enabled
         self._jwt = JWTManager(jwt_secret or secrets.token_hex(32), token_expiry)
         self._api_keys = APIKeyManager()
         self._rate_limiter = RateLimiter(capacity=rate_limit_capacity, refill_rate=rate_limit_refill)
-        self._admin_password = os.environ.get("VELOZ_ADMIN_PASSWORD", "")
+        self._admin_password = admin_password if admin_password is not None else os.environ.get("VELOZ_ADMIN_PASSWORD", "")
 
         # Public endpoints that don't require authentication
         self._public_endpoints = {"/health", "/api/stream"}
@@ -904,12 +913,12 @@ class EngineBridge:
                         "price": evt.get("price"),
                         "ts_ns": evt.get("ts_ns"),
                     }
-                elif t in ("order_update", "fill", "error"):
+                elif t in ("order_received", "order_update", "fill", "error"):
                     self._orders.append(evt)
                     if len(self._orders) > self._max_orders:
                         self._orders = self._orders[-self._max_orders :]
                 if (
-                    t in ("order_update", "fill", "order_state")
+                    t in ("order_received", "order_update", "fill", "order_state")
                     and self._order_store is not None
                 ):
                     self._order_store.apply_event(
@@ -1058,6 +1067,7 @@ class OrderState:
     client_order_id: str
     symbol: str | None = None
     side: str | None = None
+    order_type: str | None = None  # "limit" or "market"
     order_qty: float | None = None
     limit_price: float | None = None
     venue_order_id: str | None = None
@@ -1073,7 +1083,7 @@ class OrderStore:
         self._mu = threading.Lock()
         self._orders: dict[str, OrderState] = {}
 
-    def note_order_params(self, *, client_order_id, symbol, side, qty, price):
+    def note_order_params(self, *, client_order_id, symbol, side, qty, price, order_type=None):
         if not client_order_id:
             return
         with self._mu:
@@ -1085,6 +1095,8 @@ class OrderStore:
                 st.symbol = str(symbol)
             if side:
                 st.side = str(side)
+            if order_type:
+                st.order_type = str(order_type)
             try:
                 if qty is not None:
                     st.order_qty = float(qty)
@@ -1098,7 +1110,7 @@ class OrderStore:
 
     def apply_event(self, evt: dict):
         t = evt.get("type")
-        if t not in ("order_update", "fill", "order_state"):
+        if t not in ("order_received", "order_update", "fill", "order_state"):
             return
 
         cid = evt.get("client_order_id")
@@ -1110,6 +1122,27 @@ class OrderStore:
             if st is None:
                 st = OrderState(client_order_id=str(cid))
                 self._orders[cid] = st
+
+            if t == "order_received":
+                # Handle order_received event from engine
+                if evt.get("symbol"):
+                    st.symbol = evt.get("symbol")
+                if evt.get("side"):
+                    st.side = evt.get("side")
+                if evt.get("order_type"):
+                    st.order_type = evt.get("order_type")
+                if evt.get("quantity") is not None:
+                    try:
+                        st.order_qty = float(evt.get("quantity"))
+                    except Exception:
+                        pass
+                if evt.get("price") is not None:
+                    try:
+                        st.limit_price = float(evt.get("price"))
+                    except Exception:
+                        pass
+                st.status = "PENDING"
+                return
 
             if t == "order_state":
                 if evt.get("symbol"):
@@ -1922,9 +1955,23 @@ class ExecutionRouter:
 
 class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-API-Key")
+        # Get security manager from server if available
+        security_manager = getattr(self.server, "security_manager", None)
+        if security_manager:
+            # Get origin from request headers
+            origin = self.headers.get("Origin", "")
+            is_https = self.headers.get("X-Forwarded-Proto", "").lower() == "https"
+
+            # Add security and CORS headers
+            for name, value in security_manager.get_response_headers(
+                origin=origin, is_https=is_https, method=self.command
+            ).items():
+                self.send_header(name, value)
+        else:
+            # Fallback to permissive CORS (development mode)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-API-Key")
         super().end_headers()
 
     def _get_client_identifier(self) -> str:
@@ -2033,6 +2080,11 @@ class Handler(SimpleHTTPRequestHandler):
         # Health check is always public
         if parsed.path == "/health":
             self._send_json(200, {"ok": True})
+            return
+
+        # Metrics endpoint for Prometheus scraping (public)
+        if parsed.path == "/metrics":
+            self._handle_metrics()
             return
 
         # Check auth and rate limit for all other endpoints
@@ -2807,6 +2859,25 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _handle_metrics(self):
+        """Handle Prometheus metrics endpoint."""
+        metrics_manager = get_metrics_manager()
+
+        # Update engine running status
+        bridge = getattr(self.server, "bridge", None)
+        if bridge:
+            metrics_manager.set_engine_running(bridge.is_running())
+
+        # Get metrics output
+        metrics_output = metrics_manager.get_metrics()
+        content_type = metrics_manager.get_content_type()
+
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(metrics_output)))
+        self.end_headers()
+        self.wfile.write(metrics_output)
+
     def log_message(self, format, *args):
         return
 
@@ -2815,6 +2886,38 @@ def main():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     ui_dir = os.path.join(repo_root, "apps", "ui")
     os.chdir(ui_dir)
+
+    # Initialize metrics system
+    metrics_manager = init_metrics()
+    if metrics_available():
+        print("Prometheus metrics enabled at /metrics")
+    else:
+        print("Warning: prometheus_client not installed, metrics will be limited")
+
+    # Initialize Vault client for secrets management
+    vault_client = None
+    vault_enabled = os.environ.get("VELOZ_VAULT_ENABLED", "false").lower() in ("true", "1", "yes")
+    if vault_enabled:
+        try:
+            from vault_client import VaultClient, VaultConfig
+            vault_config = VaultConfig(
+                addr=os.environ.get("VAULT_ADDR", "http://127.0.0.1:8200"),
+                auth_method=os.environ.get("VAULT_AUTH_METHOD", "token"),
+                token=os.environ.get("VAULT_TOKEN", ""),
+                role_id=os.environ.get("VAULT_ROLE_ID", ""),
+                secret_id=os.environ.get("VAULT_SECRET_ID", ""),
+                fallback_to_env=True,
+            )
+            vault_client = VaultClient(vault_config)
+            if vault_client.connect():
+                audit_logger.info("Connected to HashiCorp Vault for secrets management")
+            else:
+                audit_logger.warning("Failed to connect to Vault, falling back to environment variables")
+                vault_client = None
+        except ImportError:
+            audit_logger.warning("Vault client not available, using environment variables")
+        except Exception as e:
+            audit_logger.warning(f"Vault initialization failed: {e}, using environment variables")
 
     preset = os.environ.get("VELOZ_PRESET", "dev")
     market_source = os.environ.get("VELOZ_MARKET_SOURCE", "sim").strip().lower()
@@ -2838,12 +2941,21 @@ def main():
         ).strip()
         or "https://testnet.binance.vision"
     )
-    binance_api_key = os.environ.get("VELOZ_BINANCE_API_KEY", "")
-    binance_api_secret = os.environ.get("VELOZ_BINANCE_API_SECRET", "")
+
+    # Get Binance credentials from Vault or environment
+    if vault_client:
+        binance_api_key, binance_api_secret = vault_client.get_binance_credentials()
+    else:
+        binance_api_key = os.environ.get("VELOZ_BINANCE_API_KEY", "")
+        binance_api_secret = os.environ.get("VELOZ_BINANCE_API_SECRET", "")
 
     # Auth configuration
     auth_enabled = os.environ.get("VELOZ_AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
-    jwt_secret = os.environ.get("VELOZ_JWT_SECRET", "")
+    # Get JWT secret from Vault or environment
+    if vault_client:
+        jwt_secret = vault_client.get_jwt_secret()
+    else:
+        jwt_secret = os.environ.get("VELOZ_JWT_SECRET", "")
     token_expiry = int(os.environ.get("VELOZ_TOKEN_EXPIRY", "3600"))
     rate_limit_capacity = int(os.environ.get("VELOZ_RATE_LIMIT_CAPACITY", "100"))
     rate_limit_refill = float(os.environ.get("VELOZ_RATE_LIMIT_REFILL", "10.0"))
@@ -2875,6 +2987,12 @@ def main():
         account_store=account_store,
     )
 
+    # Get admin password from Vault or environment
+    if vault_client:
+        admin_password = vault_client.get_admin_password()
+    else:
+        admin_password = os.environ.get("VELOZ_ADMIN_PASSWORD", "")
+
     # Initialize auth manager
     auth_manager = AuthManager(
         jwt_secret=jwt_secret,
@@ -2882,7 +3000,23 @@ def main():
         rate_limit_capacity=rate_limit_capacity,
         rate_limit_refill=rate_limit_refill,
         auth_enabled=auth_enabled,
+        admin_password=admin_password,
     )
+
+    # Initialize security manager
+    security_manager = None
+    try:
+        from security import SecurityConfig, SecurityManager
+        security_config = SecurityConfig.from_env()
+        security_manager = SecurityManager(security_config)
+        if security_config.production_mode:
+            audit_logger.info("Security hardening enabled (production mode)")
+        else:
+            audit_logger.info("Security module loaded (development mode)")
+    except ImportError:
+        audit_logger.warning("Security module not available")
+    except Exception as e:
+        audit_logger.warning(f"Security module initialization failed: {e}")
 
     host = os.environ.get("VELOZ_HOST", "0.0.0.0")
     port = int(os.environ.get("VELOZ_PORT", "8080"))
@@ -2891,6 +3025,7 @@ def main():
     httpd.bridge = bridge
     httpd.router = router
     httpd.auth_manager = auth_manager
+    httpd.security_manager = security_manager
 
     if auth_enabled:
         audit_logger.info(f"Authentication enabled, rate limit: {rate_limit_capacity} req/min")
@@ -2901,6 +3036,9 @@ def main():
         httpd.serve_forever()
     finally:
         bridge.stop()
+        # Cleanup Vault client
+        if vault_client:
+            vault_client.disconnect()
 
 
 if __name__ == "__main__":

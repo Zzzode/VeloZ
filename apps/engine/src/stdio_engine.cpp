@@ -115,7 +115,8 @@ int StdioEngine::run(kj::MutexGuarded<bool>& stop_flag) {
               R"({"type":"order_received","command_id":)", command_count_,
               R"(,"client_order_id":")", order.request.client_order_id, R"(","symbol":")",
               order.request.symbol.value, R"(","side":")",
-              (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"), R"(","type":")",
+              (order.request.side == veloz::exec::OrderSide::Buy ? "buy" : "sell"),
+              R"(","order_type":")",
               (order.request.type == veloz::exec::OrderType::Market ? "market" : "limit"),
               R"(","quantity":)", order.request.qty, R"(,"price":)",
               maybe_or(order.request.price, 0.0), "}");

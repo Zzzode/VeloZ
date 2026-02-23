@@ -1,5 +1,6 @@
 import unittest
 import runpy
+import os
 
 
 class FakeBridge:
@@ -15,7 +16,8 @@ class FakeBridge:
 
 class TestBinanceUserStreamMapping(unittest.TestCase):
     def setUp(self):
-        self.ns = runpy.run_path("/home/zzzode/Develop/VeloZ/apps/gateway/gateway.py")
+        gateway_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gateway.py")
+        self.ns = runpy.run_path(gateway_path)
 
     def test_execution_report_maps_to_update_and_fill(self):
         OrderStore = self.ns["OrderStore"]

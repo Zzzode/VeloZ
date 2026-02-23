@@ -2,11 +2,13 @@ import hmac
 import hashlib
 import runpy
 import unittest
+import os
 
 
 class TestBinanceSigning(unittest.TestCase):
     def test_sign_matches_expected_hmac(self):
-        ns = runpy.run_path("/home/zzzode/Develop/VeloZ/apps/gateway/gateway.py")
+        gateway_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gateway.py")
+        ns = runpy.run_path(gateway_path)
         Client = ns["BinanceSpotRestClient"]
 
         client = Client("https://example.invalid", "k", "secret")
