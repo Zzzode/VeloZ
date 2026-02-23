@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useStrategies, useStrategy, useStartStrategy, useStopStrategy } from './useStrategies';
 import { mockStrategies } from '../../../test/mocks/handlers';
 

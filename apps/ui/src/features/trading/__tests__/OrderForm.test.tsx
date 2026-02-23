@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, userEvent, waitFor } from '@/test/test-utils';
+import { render, screen, userEvent } from '@/test/test-utils';
 import { OrderForm } from '../components/OrderForm';
 import { useTradingStore } from '../store';
 
