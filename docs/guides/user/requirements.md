@@ -458,7 +458,7 @@ and alignment with project standards.
 - External API compatibility (OpenSSL, yyjson, std::filesystem)
 - Standard algorithms and math functions
 
-See [KJ Migration Complete](../../project/migration/kj_migration_complete.md) for detailed documentation.
+See [KJ Migration Status](../../project/migration/kj_migration_status.md) for detailed documentation.
 
 ## 6. Market Analysis
 
