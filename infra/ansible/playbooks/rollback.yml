@@ -1,0 +1,156 @@
+---
+# VeloZ Rollback Playbook
+# Rolls back to the previous deployment
+
+- name: Rollback VeloZ Trading Engine
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    veloz_namespace: "veloz"
+    veloz_release_name: "veloz"
+    veloz_chart_path: "../../helm/veloz"
+    health_check_retries: 30
+    health_check_delay: 10
+
+  vars_files:
+    - "vars/{{ environment }}.yml"
+
+  tasks:
+    - name: Validate environment
+      ansible.builtin.assert:
+        that:
+          - environment is defined
+          - environment in ['dev', 'staging', 'production']
+        fail_msg: "Environment must be one of: dev, staging, production"
+
+    - name: Get current deployment state
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        namespace: "{{ veloz_namespace }}"
+        name: veloz-deployment-state
+      register: deployment_state
+
+    - name: Validate rollback is possible
+      ansible.builtin.assert:
+        that:
+          - deployment_state.resources | length > 0
+          - deployment_state.resources[0].data.previous_color is defined
+        fail_msg: "No previous deployment found for rollback"
+
+    - name: Set rollback colors
+      ansible.builtin.set_fact:
+        current_color: "{{ deployment_state.resources[0].data.active_color }}"
+        rollback_color: "{{ deployment_state.resources[0].data.previous_color }}"
+
+    - name: Display rollback info
+      ansible.builtin.debug:
+        msg: |
+          Environment: {{ environment }}
+          Rolling back from: {{ current_color }}
+          Rolling back to: {{ rollback_color }}
+
+    - name: Confirm rollback
+      ansible.builtin.pause:
+        prompt: "Are you sure you want to rollback from {{ current_color }} to {{ rollback_color }}? (yes/no)"
+      register: confirm
+      when: not (auto_confirm | default(false))
+
+    - name: Abort if not confirmed
+      ansible.builtin.fail:
+        msg: "Rollback aborted by user"
+      when:
+        - not (auto_confirm | default(false))
+        - confirm.user_input != "yes"
+
+    - name: Scale up previous deployment
+      kubernetes.core.helm:
+        name: "{{ veloz_release_name }}-{{ rollback_color }}"
+        chart_ref: "{{ veloz_chart_path }}"
+        release_namespace: "{{ veloz_namespace }}"
+        values_files:
+          - "{{ veloz_chart_path }}/environments/values-{{ environment }}.yml"
+        values:
+          engine:
+            replicaCount: "{{ veloz_replica_count | default(2) }}"
+        wait: true
+        wait_timeout: "600s"
+
+    - name: Wait for rollback deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ veloz_namespace }}"
+        name: "{{ veloz_release_name }}-{{ rollback_color }}"
+      register: rollback_deployment
+      until:
+        - rollback_deployment.resources | length > 0
+        - rollback_deployment.resources[0].status.readyReplicas | default(0) == rollback_deployment.resources[0].spec.replicas
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+
+    - name: Run health checks on rollback deployment
+      ansible.builtin.uri:
+        url: "http://{{ veloz_release_name }}-{{ rollback_color }}.{{ veloz_namespace }}.svc.cluster.local:8080/health"
+        method: GET
+        return_content: true
+      register: health_check
+      until: health_check.status == 200
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      delegate_to: localhost
+
+    - name: Switch traffic to rollback deployment
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ veloz_release_name }}"
+            namespace: "{{ veloz_namespace }}"
+          spec:
+            selector:
+              app.kubernetes.io/name: veloz
+              app.kubernetes.io/instance: "{{ veloz_release_name }}-{{ rollback_color }}"
+            ports:
+              - port: 8080
+                targetPort: 8080
+                protocol: TCP
+
+    - name: Update deployment state
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: veloz-deployment-state
+            namespace: "{{ veloz_namespace }}"
+          data:
+            active_color: "{{ rollback_color }}"
+            previous_color: "{{ current_color }}"
+            last_rollback: "{{ ansible_date_time.iso8601 }}"
+            rollback_reason: "{{ rollback_reason | default('Manual rollback') }}"
+
+    - name: Scale down failed deployment
+      kubernetes.core.helm:
+        name: "{{ veloz_release_name }}-{{ current_color }}"
+        chart_ref: "{{ veloz_chart_path }}"
+        release_namespace: "{{ veloz_namespace }}"
+        values_files:
+          - "{{ veloz_chart_path }}/environments/values-{{ environment }}.yml"
+        values:
+          engine:
+            replicaCount: 0
+        wait: true
+
+    - name: Rollback complete
+      ansible.builtin.debug:
+        msg: |
+          Rollback completed successfully!
+          Environment: {{ environment }}
+          Rolled back from: {{ current_color }}
+          Active deployment: {{ rollback_color }}

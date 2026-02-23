@@ -1,0 +1,304 @@
+version: '3.8'
+
+# VeloZ High Availability Configuration
+# This compose file sets up a highly available VeloZ deployment with:
+# - PostgreSQL primary/standby replication
+# - Redis Sentinel for cache HA
+# - Multiple VeloZ engine instances with leader election
+# - HAProxy for load balancing
+
+services:
+  # PostgreSQL Primary
+  postgres-primary:
+    image: postgres:15-alpine
+    container_name: veloz-postgres-primary
+    hostname: postgres-primary
+    environment:
+      POSTGRES_USER: ${VELOZ_PG_USER:-veloz}
+      POSTGRES_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+      POSTGRES_DB: ${VELOZ_PG_DATABASE:-veloz}
+      POSTGRES_REPLICATION_USER: ${VELOZ_PG_REPL_USER:-replicator}
+      POSTGRES_REPLICATION_PASSWORD: ${VELOZ_PG_REPL_PASSWORD:-replicator}
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./postgres/init-primary.sh:/docker-entrypoint-initdb.d/init-primary.sh:ro
+      - ./postgres/postgresql-primary.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/pg_hba-primary.conf:/etc/postgresql/pg_hba.conf:ro
+    command: >
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VELOZ_PG_USER:-veloz} && psql -U ${VELOZ_PG_USER:-veloz} -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # PostgreSQL Standby
+  postgres-standby:
+    image: postgres:15-alpine
+    container_name: veloz-postgres-standby
+    hostname: postgres-standby
+    environment:
+      POSTGRES_USER: ${VELOZ_PG_USER:-veloz}
+      POSTGRES_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+      POSTGRES_DB: ${VELOZ_PG_DATABASE:-veloz}
+      PGUSER: ${VELOZ_PG_REPL_USER:-replicator}
+      PGPASSWORD: ${VELOZ_PG_REPL_PASSWORD:-replicator}
+    volumes:
+      - postgres_standby_data:/var/lib/postgresql/data
+      - ./postgres/init-standby.sh:/init-standby.sh:ro
+    entrypoint: ["/bin/bash", "/init-standby.sh"]
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VELOZ_PG_USER:-veloz}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # PgBouncer for connection pooling
+  pgbouncer:
+    image: bitnami/pgbouncer:1.21.0
+    container_name: veloz-pgbouncer
+    environment:
+      PGBOUNCER_DATABASE: ${VELOZ_PG_DATABASE:-veloz}
+      PGBOUNCER_PORT: 6432
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 1000
+      PGBOUNCER_DEFAULT_POOL_SIZE: 20
+      POSTGRESQL_HOST: postgres-primary
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_USERNAME: ${VELOZ_PG_USER:-veloz}
+      POSTGRESQL_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # Redis Master
+  redis-master:
+    image: redis:7-alpine
+    container_name: veloz-redis-master
+    hostname: redis-master
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${VELOZ_REDIS_PASSWORD:-redis}
+      --masterauth ${VELOZ_REDIS_PASSWORD:-redis}
+    volumes:
+      - redis_master_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${VELOZ_REDIS_PASSWORD:-redis}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # Redis Replica
+  redis-replica:
+    image: redis:7-alpine
+    container_name: veloz-redis-replica
+    hostname: redis-replica
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${VELOZ_REDIS_PASSWORD:-redis}
+      --masterauth ${VELOZ_REDIS_PASSWORD:-redis}
+      --replicaof redis-master 6379
+    volumes:
+      - redis_replica_data:/data
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${VELOZ_REDIS_PASSWORD:-redis}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # Redis Sentinel 1
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: veloz-redis-sentinel-1
+    hostname: redis-sentinel-1
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # Redis Sentinel 2
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: veloz-redis-sentinel-2
+    hostname: redis-sentinel-2
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # Redis Sentinel 3
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: veloz-redis-sentinel-3
+    hostname: redis-sentinel-3
+    command: >
+      redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel.conf:/etc/redis/sentinel.conf:ro
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # VeloZ Engine - Primary
+  veloz-engine-1:
+    image: veloz-engine:latest
+    container_name: veloz-engine-1
+    hostname: veloz-engine-1
+    environment:
+      VELOZ_INSTANCE_ID: engine-1
+      VELOZ_PRESET: production
+      VELOZ_HOST: 0.0.0.0
+      VELOZ_PORT: 8080
+      VELOZ_HA_ENABLED: "true"
+      VELOZ_HA_ROLE: primary
+      VELOZ_PG_HOST: pgbouncer
+      VELOZ_PG_PORT: 6432
+      VELOZ_PG_USER: ${VELOZ_PG_USER:-veloz}
+      VELOZ_PG_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+      VELOZ_PG_DATABASE: ${VELOZ_PG_DATABASE:-veloz}
+      VELOZ_REDIS_SENTINEL_HOSTS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      VELOZ_REDIS_MASTER_NAME: veloz-master
+      VELOZ_REDIS_PASSWORD: ${VELOZ_REDIS_PASSWORD:-redis}
+      VELOZ_BINANCE_API_KEY: ${VELOZ_BINANCE_API_KEY:-}
+      VELOZ_BINANCE_API_SECRET: ${VELOZ_BINANCE_API_SECRET:-}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # VeloZ Engine - Standby
+  veloz-engine-2:
+    image: veloz-engine:latest
+    container_name: veloz-engine-2
+    hostname: veloz-engine-2
+    environment:
+      VELOZ_INSTANCE_ID: engine-2
+      VELOZ_PRESET: production
+      VELOZ_HOST: 0.0.0.0
+      VELOZ_PORT: 8080
+      VELOZ_HA_ENABLED: "true"
+      VELOZ_HA_ROLE: standby
+      VELOZ_PG_HOST: pgbouncer
+      VELOZ_PG_PORT: 6432
+      VELOZ_PG_USER: ${VELOZ_PG_USER:-veloz}
+      VELOZ_PG_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+      VELOZ_PG_DATABASE: ${VELOZ_PG_DATABASE:-veloz}
+      VELOZ_REDIS_SENTINEL_HOSTS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      VELOZ_REDIS_MASTER_NAME: veloz-master
+      VELOZ_REDIS_PASSWORD: ${VELOZ_REDIS_PASSWORD:-redis}
+      VELOZ_BINANCE_API_KEY: ${VELOZ_BINANCE_API_KEY:-}
+      VELOZ_BINANCE_API_SECRET: ${VELOZ_BINANCE_API_SECRET:-}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+  # HAProxy for load balancing and failover
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: veloz-haproxy
+    hostname: haproxy
+    ports:
+      - "8080:8080"
+      - "8404:8404"  # Stats page
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      veloz-engine-1:
+        condition: service_healthy
+      veloz-engine-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - veloz-ha-network
+    restart: unless-stopped
+
+networks:
+  veloz-ha-network:
+    name: veloz-ha-network
+    driver: bridge
+
+volumes:
+  postgres_primary_data:
+    driver: local
+  postgres_standby_data:
+    driver: local
+  redis_master_data:
+    driver: local
+  redis_replica_data:
+    driver: local

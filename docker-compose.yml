@@ -26,6 +26,13 @@ services:
       - VELOZ_BINANCE_API_KEY=${VELOZ_BINANCE_API_KEY:-}
       - VELOZ_BINANCE_API_SECRET=${VELOZ_BINANCE_API_SECRET:-}
       - VELOZ_BINANCE_WS_BASE_URL=${VELOZ_BINANCE_WS_BASE_URL:-wss://testnet.binance.vision/ws}
+      # Vault integration (optional - enable with --profile secrets)
+      - VELOZ_VAULT_ENABLED=${VELOZ_VAULT_ENABLED:-false}
+      - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
+      - VAULT_AUTH_METHOD=${VAULT_AUTH_METHOD:-token}
+      - VAULT_TOKEN=${VAULT_DEV_TOKEN:-veloz-dev-token}
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID:-}
+      - VAULT_SECRET_ID=${VAULT_SECRET_ID:-}
     volumes:
       - veloz_data:/var/lib/veloz
       - veloz_logs:/var/log/veloz
@@ -89,13 +96,53 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - monitoring
+
+  # ==========================================================================
+  # Alertmanager (optional - for alert routing and notifications)
+  # ==========================================================================
+  alertmanager:
+    image: prom/alertmanager:latest
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    volumes:
+      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./docker/alertmanager/templates:/etc/alertmanager/templates:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    environment:
+      # PagerDuty integration
+      - PAGERDUTY_SERVICE_KEY=${PAGERDUTY_SERVICE_KEY:-}
+      - PAGERDUTY_TRADING_KEY=${PAGERDUTY_TRADING_KEY:-}
+      - PAGERDUTY_RISK_KEY=${PAGERDUTY_RISK_KEY:-}
+      # Opsgenie integration
+      - OPSGENIE_API_KEY=${OPSGENIE_API_KEY:-}
+      # Slack integration
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      # Email settings
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -113,6 +160,7 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -130,6 +178,122 @@ services:
       - veloz-network
     profiles:
       - monitoring
+
+  # ==========================================================================
+  # Loki (optional - for log aggregation)
+  # ==========================================================================
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./docker/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - monitoring
+
+  # ==========================================================================
+  # Promtail (optional - log shipper for Loki)
+  # ==========================================================================
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./docker/promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - veloz_logs:/var/log/veloz:ro
+      - /var/log:/var/log/host:ro
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      - loki
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - monitoring
+
+  # ==========================================================================
+  # Jaeger (optional - for distributed tracing)
+  # ==========================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - monitoring
+
+  # ==========================================================================
+  # HashiCorp Vault (optional - for secrets management)
+  # ==========================================================================
+  vault:
+    image: hashicorp/vault:1.15
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_DEV_TOKEN:-veloz-dev-token}
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - VAULT_ADDR=http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault_data:/vault/data
+      - vault_logs:/vault/logs
+      - ./infra/vault/policies:/vault/policies:ro
+      - ./infra/vault/config.hcl:/vault/config/config.hcl:ro
+    command: server -dev
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - veloz-network
+    profiles:
+      - secrets
+
+  vault-init:
+    image: hashicorp/vault:1.15
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_DEV_TOKEN:-veloz-dev-token}
+      - VELOZ_BINANCE_API_KEY=${VELOZ_BINANCE_API_KEY:-}
+      - VELOZ_BINANCE_API_SECRET=${VELOZ_BINANCE_API_SECRET:-}
+      - VELOZ_JWT_SECRET=${VELOZ_JWT_SECRET:-}
+      - VELOZ_ADMIN_PASSWORD=${VELOZ_ADMIN_PASSWORD:-}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-veloz_dev_password}
+    volumes:
+      - ./infra/vault/init-secrets.sh:/init-secrets.sh:ro
+      - ./infra/vault/policies:/vault/policies:ro
+    entrypoint: ["/bin/sh", "/init-secrets.sh"]
+    networks:
+      - veloz-network
+    profiles:
+      - secrets
+    restart: "no"
 
 # ==========================================================================
 # Networks
@@ -153,4 +317,12 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  vault_data:
+    driver: local
+  vault_logs:
     driver: local

@@ -1,0 +1,57 @@
+{{- if and .Values.ha.enabled .Values.ha.leaderElection.enabled }}
+# Lease for leader election
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: {{ include "veloz.fullname" . }}-leader
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+spec:
+  # Initial lease holder will be set by the application
+  holderIdentity: ""
+  leaseDurationSeconds: {{ .Values.ha.leaderElection.leaseDuration | default 15 }}
+  acquireTime: null
+  renewTime: null
+  leaseTransitions: 0
+---
+# Role for leader election
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "veloz.fullname" . }}-leader-election
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+rules:
+  # Allow reading and updating the leader election lease
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Allow reading pods for leader identity
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Allow reading and updating configmaps (alternative leader election)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Allow creating events for leader election
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+# RoleBinding for leader election
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "veloz.fullname" . }}-leader-election
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "veloz.fullname" . }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "veloz.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

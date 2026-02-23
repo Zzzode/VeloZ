@@ -1,0 +1,111 @@
+# Chaos Mesh: Pod Kill Experiment
+# Tests system resilience when pods are unexpectedly terminated
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: veloz-pod-kill-gateway
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: pod-kill
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  duration: "30s"
+  scheduler:
+    cron: "@every 5m"  # For continuous testing, remove for one-shot
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: veloz-pod-kill-engine
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: pod-kill
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-engine
+  duration: "30s"
+---
+# Workflow: Sequential pod kills to test recovery
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: veloz-pod-kill-sequence
+  namespace: veloz
+spec:
+  entry: pod-kill-sequence
+  templates:
+    - name: pod-kill-sequence
+      templateType: Serial
+      deadline: "10m"
+      children:
+        - kill-gateway
+        - wait-recovery
+        - kill-engine
+        - wait-recovery-2
+        - verify-health
+    - name: kill-gateway
+      templateType: PodChaos
+      deadline: "1m"
+      podChaos:
+        action: pod-kill
+        mode: one
+        selector:
+          namespaces:
+            - veloz
+          labelSelectors:
+            app: veloz-gateway
+    - name: kill-engine
+      templateType: PodChaos
+      deadline: "1m"
+      podChaos:
+        action: pod-kill
+        mode: one
+        selector:
+          namespaces:
+            - veloz
+          labelSelectors:
+            app: veloz-engine
+    - name: wait-recovery
+      templateType: Suspend
+      deadline: "2m"
+      suspend:
+        duration: "30s"
+    - name: wait-recovery-2
+      templateType: Suspend
+      deadline: "2m"
+      suspend:
+        duration: "30s"
+    - name: verify-health
+      templateType: Task
+      deadline: "1m"
+      task:
+        container:
+          name: health-check
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              for i in $(seq 1 10); do
+                if curl -sf http://veloz-gateway:8080/health; then
+                  echo "Health check passed"
+                  exit 0
+                fi
+                sleep 5
+              done
+              echo "Health check failed"
+              exit 1

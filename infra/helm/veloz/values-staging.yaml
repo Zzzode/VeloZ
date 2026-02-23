@@ -1,0 +1,98 @@
+# VeloZ Staging Values
+# Use: helm install veloz ./veloz -f values-staging.yaml
+
+global:
+  environment: staging
+  imagePullSecrets:
+    - name: registry-credentials
+
+engine:
+  replicaCount: 1
+
+  image:
+    repository: veloz-engine
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "2"
+
+  env:
+    VELOZ_PRESET: "staging"
+    VELOZ_HOST: "0.0.0.0"
+    VELOZ_PORT: "8080"
+    VELOZ_MARKET_SOURCE: "binance_rest"
+    VELOZ_MARKET_SYMBOL: "BTCUSDT"
+    VELOZ_EXECUTION_MODE: "sim_engine"
+    VELOZ_BINANCE_BASE_URL: "https://testnet.binance.vision"
+    VELOZ_BINANCE_TRADE_BASE_URL: "https://testnet.binance.vision"
+
+secrets:
+  useExternal: true
+  externalProvider: "vault"
+  vault:
+    address: "https://vault.example.com:8200"
+    path: "secret/data/veloz/staging"
+    role: "veloz-staging"
+
+database:
+  external: false
+  postgresql:
+    enabled: true
+    auth:
+      database: veloz_staging
+      username: veloz
+      existingSecret: veloz-db-credentials
+
+redis:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+  hosts:
+    - host: veloz-staging.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: veloz-staging-tls
+      hosts:
+        - veloz-staging.example.com
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+  prometheusRule:
+    enabled: false
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+
+logging:
+  level: DEBUG
+  format: json

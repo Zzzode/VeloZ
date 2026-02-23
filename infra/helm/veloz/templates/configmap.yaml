@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "veloz.fullname" . }}-config
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+data:
+  VELOZ_LOG_LEVEL: {{ .Values.logging.level | quote }}
+  VELOZ_LOG_FORMAT: {{ .Values.logging.format | quote }}
+  VELOZ_ENVIRONMENT: {{ .Values.global.environment | quote }}

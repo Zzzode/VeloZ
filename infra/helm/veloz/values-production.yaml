@@ -1,0 +1,151 @@
+# VeloZ Production Values
+# Use: helm install veloz ./veloz -f values-production.yaml
+
+global:
+  environment: production
+  imagePullSecrets:
+    - name: registry-credentials
+
+engine:
+  replicaCount: 2
+
+  image:
+    repository: veloz-engine
+    tag: "1.0.0"
+    pullPolicy: Always
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "1"
+    limits:
+      memory: "2Gi"
+      cpu: "4"
+
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+
+  env:
+    VELOZ_PRESET: "production"
+    VELOZ_HOST: "0.0.0.0"
+    VELOZ_PORT: "8080"
+    VELOZ_MARKET_SOURCE: "binance_ws"
+    VELOZ_MARKET_SYMBOL: "BTCUSDT"
+    VELOZ_EXECUTION_MODE: "live"
+    VELOZ_BINANCE_BASE_URL: "https://api.binance.com"
+    VELOZ_BINANCE_TRADE_BASE_URL: "https://api.binance.com"
+
+  # Production affinity - spread across nodes
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: veloz
+            topologyKey: kubernetes.io/hostname
+
+secrets:
+  useExternal: true
+  externalProvider: "vault"
+  vault:
+    address: "https://vault.example.com:8200"
+    path: "secret/data/veloz/production"
+    role: "veloz-production"
+
+database:
+  external: false
+  postgresql:
+    enabled: true
+    auth:
+      database: veloz
+      username: veloz
+      existingSecret: veloz-db-credentials
+
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+    existingSecret: veloz-redis-credentials
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: veloz.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: veloz-tls
+      hosts:
+        - veloz.example.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+    labels:
+      release: prometheus
+  prometheusRule:
+    enabled: true
+    labels:
+      release: prometheus
+
+persistence:
+  enabled: true
+  storageClass: "fast-ssd"
+  accessModes:
+    - ReadWriteOnce
+  size: 50Gi
+
+logging:
+  level: INFO
+  format: json
+
+# High Availability - ENABLED for production
+ha:
+  enabled: true
+  replicas: 2
+  leaderElection:
+    enabled: true
+    leaseDuration: 15
+    renewDeadline: 10
+    retryPeriod: 2
+  persistence:
+    storageClass: "fast-ssd"
+    dataSize: 50Gi
+    walSize: 10Gi
+  replication:
+    mode: sync
+    port: 8081
+  failover:
+    enabled: true
+    healthCheckInterval: 5
+    failureThreshold: 3

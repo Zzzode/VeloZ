@@ -1,0 +1,200 @@
+# VeloZ SLO Recording Rules
+# Pre-computed metrics for efficient SLO dashboard queries
+
+groups:
+  # ==========================================================================
+  # Availability SLIs
+  # ==========================================================================
+  - name: veloz-availability-sli
+    interval: 30s
+    rules:
+      # Gateway availability (5m window)
+      - record: veloz:gateway:availability:ratio_rate5m
+        expr: avg_over_time(up{job="veloz-gateway"}[5m])
+
+      # Gateway availability (1h window)
+      - record: veloz:gateway:availability:ratio_rate1h
+        expr: avg_over_time(up{job="veloz-gateway"}[1h])
+
+      # Gateway availability (1d window)
+      - record: veloz:gateway:availability:ratio_rate1d
+        expr: avg_over_time(up{job="veloz-gateway"}[1d])
+
+      # Engine availability
+      - record: veloz:engine:availability:ratio_rate5m
+        expr: avg_over_time(veloz_engine_running[5m])
+
+      # WebSocket availability
+      - record: veloz:websocket:availability:ratio_rate5m
+        expr: avg_over_time(veloz_websocket_connected[5m])
+
+  # ==========================================================================
+  # Latency SLIs
+  # ==========================================================================
+  - name: veloz-latency-sli
+    interval: 30s
+    rules:
+      # Order latency percentiles
+      - record: veloz:order_latency:p50_5m
+        expr: histogram_quantile(0.50, rate(veloz_order_latency_bucket[5m]))
+
+      - record: veloz:order_latency:p90_5m
+        expr: histogram_quantile(0.90, rate(veloz_order_latency_bucket[5m]))
+
+      - record: veloz:order_latency:p99_5m
+        expr: histogram_quantile(0.99, rate(veloz_order_latency_bucket[5m]))
+
+      # API latency percentiles
+      - record: veloz:api_latency:p50_5m
+        expr: histogram_quantile(0.50, rate(veloz_http_request_duration_bucket[5m]))
+
+      - record: veloz:api_latency:p90_5m
+        expr: histogram_quantile(0.90, rate(veloz_http_request_duration_bucket[5m]))
+
+      - record: veloz:api_latency:p99_5m
+        expr: histogram_quantile(0.99, rate(veloz_http_request_duration_bucket[5m]))
+
+      # Market data processing latency
+      - record: veloz:market_processing:p99_5m
+        expr: histogram_quantile(0.99, rate(veloz_market_processing_latency_bucket[5m]))
+
+      # Exchange API latency
+      - record: veloz:exchange_api:p99_5m
+        expr: histogram_quantile(0.99, rate(veloz_exchange_api_latency_bucket[5m]))
+
+  # ==========================================================================
+  # Error Rate SLIs
+  # ==========================================================================
+  - name: veloz-error-sli
+    interval: 30s
+    rules:
+      # API error rate (5xx responses)
+      - record: veloz:api:error_rate:ratio_rate5m
+        expr: |
+          sum(rate(veloz_http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(veloz_http_requests_total[5m]))
+
+      # API success rate
+      - record: veloz:api:success_rate:ratio_rate5m
+        expr: |
+          sum(rate(veloz_http_requests_total{status=~"2.."}[5m]))
+          /
+          sum(rate(veloz_http_requests_total[5m]))
+
+      # Exchange API error rate
+      - record: veloz:exchange:error_rate:ratio_rate5m
+        expr: |
+          sum(rate(veloz_exchange_api_errors_total[5m]))
+          /
+          (sum(rate(veloz_exchange_api_latency_count[5m])) + 0.001)
+
+      # General error rate
+      - record: veloz:errors:rate_5m
+        expr: sum(rate(veloz_errors_total[5m]))
+
+  # ==========================================================================
+  # Throughput SLIs
+  # ==========================================================================
+  - name: veloz-throughput-sli
+    interval: 30s
+    rules:
+      # Order throughput
+      - record: veloz:orders:rate_5m
+        expr: sum(rate(veloz_orders_total[5m]))
+
+      # Fill throughput
+      - record: veloz:fills:rate_5m
+        expr: sum(rate(veloz_fills_total[5m]))
+
+      # Market data throughput
+      - record: veloz:market_updates:rate_5m
+        expr: sum(rate(veloz_market_updates_total[5m]))
+
+      # API request throughput
+      - record: veloz:api_requests:rate_5m
+        expr: sum(rate(veloz_http_requests_total[5m]))
+
+  # ==========================================================================
+  # Error Budget Calculations
+  # ==========================================================================
+  - name: veloz-error-budget
+    interval: 1m
+    rules:
+      # Availability error budget remaining (30d window, 99.9% SLO)
+      - record: veloz:error_budget:availability:remaining_ratio
+        expr: |
+          1 - (
+            (1 - avg_over_time(up{job="veloz-gateway"}[30d]))
+            / 0.001
+          )
+
+      # Latency error budget (% of requests meeting SLO)
+      - record: veloz:error_budget:latency:remaining_ratio
+        expr: |
+          sum(rate(veloz_order_latency_bucket{le="0.1"}[30d]))
+          /
+          sum(rate(veloz_order_latency_count[30d]))
+
+      # Error rate budget remaining
+      - record: veloz:error_budget:errors:remaining_ratio
+        expr: |
+          1 - (
+            sum(rate(veloz_http_requests_total{status=~"5.."}[30d]))
+            /
+            sum(rate(veloz_http_requests_total[30d]))
+            / 0.001
+          )
+
+      # Error budget burn rate (1h vs 30d baseline)
+      - record: veloz:error_budget:burn_rate:1h
+        expr: |
+          (1 - avg_over_time(up{job="veloz-gateway"}[1h]))
+          /
+          (1 - avg_over_time(up{job="veloz-gateway"}[30d]) + 0.0001)
+
+      # Error budget burn rate (6h vs 30d baseline)
+      - record: veloz:error_budget:burn_rate:6h
+        expr: |
+          (1 - avg_over_time(up{job="veloz-gateway"}[6h]))
+          /
+          (1 - avg_over_time(up{job="veloz-gateway"}[30d]) + 0.0001)
+
+  # ==========================================================================
+  # SLO Compliance
+  # ==========================================================================
+  - name: veloz-slo-compliance
+    interval: 1m
+    rules:
+      # Availability SLO compliance (1 = meeting SLO)
+      - record: veloz:slo:availability:compliance
+        expr: |
+          (avg_over_time(up{job="veloz-gateway"}[30d]) >= 0.999) * 1
+
+      # Order latency SLO compliance
+      - record: veloz:slo:order_latency:compliance
+        expr: |
+          (histogram_quantile(0.99, rate(veloz_order_latency_bucket[5m])) <= 0.1) * 1
+
+      # API latency SLO compliance
+      - record: veloz:slo:api_latency:compliance
+        expr: |
+          (histogram_quantile(0.99, rate(veloz_http_request_duration_bucket[5m])) <= 0.5) * 1
+
+      # Error rate SLO compliance
+      - record: veloz:slo:error_rate:compliance
+        expr: |
+          (
+            sum(rate(veloz_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(veloz_http_requests_total[5m]))
+            <= 0.001
+          ) * 1
+
+      # Overall SLO compliance score (0-4)
+      - record: veloz:slo:overall_compliance_score
+        expr: |
+          veloz:slo:availability:compliance
+          + veloz:slo:order_latency:compliance
+          + veloz:slo:api_latency:compliance
+          + veloz:slo:error_rate:compliance

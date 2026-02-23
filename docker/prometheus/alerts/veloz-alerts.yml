@@ -1,0 +1,233 @@
+# VeloZ Prometheus Alerting Rules
+# See: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+
+groups:
+  # ==========================================================================
+  # Service Health Alerts
+  # ==========================================================================
+  - name: veloz-service-health
+    rules:
+      - alert: VeloZGatewayDown
+        expr: up{job="veloz-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: gateway
+        annotations:
+          summary: "VeloZ Gateway is down"
+          description: "VeloZ Gateway has been unreachable for more than 1 minute."
+
+      - alert: VeloZEngineDown
+        expr: veloz_engine_running == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "VeloZ Engine is not running"
+          description: "The trading engine process is not running."
+
+      - alert: VeloZWebSocketDisconnected
+        expr: veloz_websocket_connected == 0
+        for: 1m
+        labels:
+          severity: warning
+          service: market-data
+        annotations:
+          summary: "WebSocket connection lost"
+          description: "Market data WebSocket has been disconnected for more than 1 minute."
+
+  # ==========================================================================
+  # Latency Alerts
+  # ==========================================================================
+  - name: veloz-latency
+    rules:
+      - alert: HighOrderLatency
+        expr: histogram_quantile(0.99, rate(veloz_order_latency_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: execution
+        annotations:
+          summary: "High order latency detected"
+          description: "Order latency p99 is above 100ms for the last 5 minutes."
+
+      - alert: CriticalOrderLatency
+        expr: histogram_quantile(0.99, rate(veloz_order_latency_bucket[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: critical
+          service: execution
+        annotations:
+          summary: "Critical order latency"
+          description: "Order latency p99 is above 500ms. Trading performance severely degraded."
+
+      - alert: HighMarketDataLag
+        expr: veloz_market_data_lag_ms > 100
+        for: 2m
+        labels:
+          severity: warning
+          service: market-data
+        annotations:
+          summary: "High market data lag"
+          description: "Market data lag is above 100ms for more than 2 minutes."
+
+      - alert: CriticalMarketDataLag
+        expr: veloz_market_data_lag_ms > 500
+        for: 1m
+        labels:
+          severity: critical
+          service: market-data
+        annotations:
+          summary: "Critical market data lag"
+          description: "Market data lag is above 500ms. Trading decisions may be based on stale data."
+
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.99, rate(veloz_http_request_duration_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+        annotations:
+          summary: "High API latency"
+          description: "HTTP API latency p99 is above 1 second."
+
+  # ==========================================================================
+  # Error Rate Alerts
+  # ==========================================================================
+  - name: veloz-errors
+    rules:
+      - alert: HighErrorRate
+        expr: rate(veloz_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+        annotations:
+          summary: "Elevated error rate"
+          description: "Error rate is above 0.1 errors/second for the last 5 minutes."
+
+      - alert: CriticalErrorRate
+        expr: rate(veloz_errors_total[5m]) > 1
+        for: 2m
+        labels:
+          severity: critical
+          service: gateway
+        annotations:
+          summary: "Critical error rate"
+          description: "Error rate is above 1 error/second. System may be unstable."
+
+      - alert: ExchangeAPIErrors
+        expr: rate(veloz_exchange_api_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: execution
+        annotations:
+          summary: "Exchange API errors detected"
+          description: "Exchange API error rate is elevated. Check exchange connectivity."
+
+      - alert: HighWebSocketReconnects
+        expr: rate(veloz_websocket_reconnects_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: market-data
+        annotations:
+          summary: "Frequent WebSocket reconnections"
+          description: "WebSocket is reconnecting frequently. Network may be unstable."
+
+  # ==========================================================================
+  # Risk Alerts
+  # ==========================================================================
+  - name: veloz-risk
+    rules:
+      - alert: HighRiskUtilization
+        expr: veloz_risk_utilization_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: risk
+        annotations:
+          summary: "High risk utilization"
+          description: "Risk limit utilization is above 80%."
+
+      - alert: CriticalRiskUtilization
+        expr: veloz_risk_utilization_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+          service: risk
+        annotations:
+          summary: "Critical risk utilization"
+          description: "Risk limit utilization is above 95%. New orders may be rejected."
+
+      - alert: RiskRejectionsSpike
+        expr: rate(veloz_risk_rejections_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: risk
+        annotations:
+          summary: "Risk rejections spike"
+          description: "Orders are being rejected by risk checks at an elevated rate."
+
+  # ==========================================================================
+  # Throughput Alerts
+  # ==========================================================================
+  - name: veloz-throughput
+    rules:
+      - alert: LowMarketDataRate
+        expr: rate(veloz_market_updates_total[5m]) < 1
+        for: 5m
+        labels:
+          severity: warning
+          service: market-data
+        annotations:
+          summary: "Low market data rate"
+          description: "Market data update rate is unusually low. Check data feed."
+
+      - alert: EventLoopBacklog
+        expr: veloz_event_loop_pending_tasks > 100
+        for: 2m
+        labels:
+          severity: warning
+          service: engine
+        annotations:
+          summary: "Event loop backlog"
+          description: "Event loop has more than 100 pending tasks. System may be overloaded."
+
+      - alert: CriticalEventLoopBacklog
+        expr: veloz_event_loop_pending_tasks > 500
+        for: 1m
+        labels:
+          severity: critical
+          service: engine
+        annotations:
+          summary: "Critical event loop backlog"
+          description: "Event loop has more than 500 pending tasks. System is severely overloaded."
+
+  # ==========================================================================
+  # Resource Alerts
+  # ==========================================================================
+  - name: veloz-resources
+    rules:
+      - alert: HighActiveOrders
+        expr: veloz_active_orders > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: oms
+        annotations:
+          summary: "High number of active orders"
+          description: "More than 1000 active orders. Consider reviewing order management."
+
+      - alert: HighSSEClients
+        expr: veloz_sse_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway
+        annotations:
+          summary: "High number of SSE clients"
+          description: "More than 100 SSE clients connected. May impact performance."

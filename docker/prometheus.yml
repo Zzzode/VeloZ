@@ -6,17 +6,17 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: 'veloz-monitor'
+    environment: 'production'
 
-# Alertmanager configuration (optional)
+# Alertmanager configuration
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: []
-          # - alertmanager:9093
+        - targets: ['alertmanager:9093']
 
 # Rule files for alerting
 rule_files:
-  # - /etc/prometheus/alerts/*.yml
+  - /etc/prometheus/alerts/*.yml
 
 # Scrape configurations
 scrape_configs:
@@ -24,25 +24,49 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'prometheus'
 
-  # VeloZ Gateway metrics
+  # VeloZ Gateway metrics (high frequency for trading)
   - job_name: 'veloz-gateway'
     static_configs:
       - targets: ['gateway:8080']
     metrics_path: /metrics
     scrape_interval: 5s
     scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'gateway'
+
+  # Loki metrics
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Jaeger metrics
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    metrics_path: /metrics
+    scrape_interval: 15s
 
   # Redis metrics (if using redis_exporter)
   - job_name: 'redis'
     static_configs:
-      - targets: ['redis:6379']
+      - targets: []
+        # - redis-exporter:9121
     scrape_interval: 10s
 
   # PostgreSQL metrics (if using postgres_exporter)
   - job_name: 'postgres'
     static_configs:
-      - targets: ['postgres:5432']
+      - targets: []
+        # - postgres-exporter:9187
     scrape_interval: 10s
 
   # Node exporter for system metrics (optional)

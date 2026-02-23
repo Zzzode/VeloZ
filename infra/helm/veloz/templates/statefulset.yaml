@@ -1,0 +1,191 @@
+{{- if .Values.ha.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "veloz.fullname" . }}
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "veloz.fullname" . }}-headless
+  replicas: {{ .Values.ha.replicas | default 2 }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "veloz.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.secrets.useExternal }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.engine.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.monitoring.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        {{- end }}
+      labels:
+        {{- include "veloz.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "veloz.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.engine.podSecurityContext | nindent 8 }}
+      # Anti-affinity to spread pods across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "veloz.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+        {{- with .Values.engine.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.engine.securityContext | nindent 12 }}
+          image: "{{ .Values.engine.image.repository }}:{{ .Values.engine.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: replication
+              containerPort: 8081
+              protocol: TCP
+          # HA-specific health probes
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: {{ .Values.engine.livenessProbe.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.engine.livenessProbe.periodSeconds | default 20 }}
+            timeoutSeconds: {{ .Values.engine.livenessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.engine.livenessProbe.failureThreshold | default 3 }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: {{ .Values.engine.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.engine.readinessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.engine.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.engine.readinessProbe.failureThreshold | default 3 }}
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+          env:
+            {{- include "veloz.envVars" . | nindent 12 }}
+            {{- include "veloz.secretEnvVars" . | nindent 12 }}
+            - name: VELOZ_DATABASE_URL
+              value: {{ include "veloz.databaseUrl" . | quote }}
+            # HA-specific environment variables
+            - name: VELOZ_HA_ENABLED
+              value: "true"
+            - name: VELOZ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VELOZ_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: VELOZ_LEADER_ELECTION_ENABLED
+              value: "true"
+            - name: VELOZ_LEADER_ELECTION_LEASE_NAME
+              value: {{ include "veloz.fullname" . }}-leader
+            - name: VELOZ_REPLICATION_PORT
+              value: "8081"
+          envFrom:
+            - configMapRef:
+                name: {{ include "veloz.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.engine.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/veloz
+            - name: wal
+              mountPath: /var/lib/veloz/wal
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "veloz.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.ha.persistence.storageClass }}
+        {{- if (eq "-" .Values.ha.persistence.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: {{ .Values.ha.persistence.storageClass | quote }}
+        {{- end }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.ha.persistence.dataSize | default "10Gi" }}
+    - metadata:
+        name: wal
+        labels:
+          {{- include "veloz.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.ha.persistence.storageClass }}
+        {{- if (eq "-" .Values.ha.persistence.storageClass) }}
+        storageClassName: ""
+        {{- else }}
+        storageClassName: {{ .Values.ha.persistence.storageClass | quote }}
+        {{- end }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.ha.persistence.walSize | default "5Gi" }}
+---
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "veloz.fullname" . }}-headless
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 8081
+      targetPort: replication
+      protocol: TCP
+      name: replication
+  selector:
+    {{- include "veloz.selectorLabels" . | nindent 4 }}
+{{- end }}

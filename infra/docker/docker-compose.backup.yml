@@ -1,0 +1,171 @@
+version: '3.8'
+
+# VeloZ Backup Services
+# This compose file provides automated backup services for VeloZ
+
+services:
+  # PostgreSQL database for VeloZ
+  postgres:
+    image: postgres:15-alpine
+    container_name: veloz-postgres
+    environment:
+      POSTGRES_USER: ${VELOZ_PG_USER:-veloz}
+      POSTGRES_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+      POSTGRES_DB: ${VELOZ_PG_DATABASE:-veloz}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - wal_archive:/var/lib/postgresql/wal_archive
+    command: >
+      postgres
+      -c archive_mode=on
+      -c archive_command='cp %p /var/lib/postgresql/wal_archive/%f'
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c wal_keep_size=1GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VELOZ_PG_USER:-veloz}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - veloz-network
+
+  # Automated WAL backup service
+  backup-wal:
+    image: alpine:3.19
+    container_name: veloz-backup-wal
+    volumes:
+      - ../../scripts/backup:/scripts:ro
+      - veloz_wal:/var/lib/veloz/wal:ro
+      - backup_data:/backup
+    environment:
+      VELOZ_WAL_DIR: /var/lib/veloz/wal
+      VELOZ_BACKUP_DIR: /backup
+      VELOZ_S3_BUCKET: ${VELOZ_S3_BUCKET:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    command: >
+      sh -c "
+        apk add --no-cache bash rsync aws-cli &&
+        while true; do
+          /scripts/backup_wal.sh || echo 'WAL backup failed';
+          sleep 300;
+        done
+      "
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - veloz-network
+
+  # Automated PostgreSQL backup service
+  backup-postgres:
+    image: postgres:15-alpine
+    container_name: veloz-backup-postgres
+    volumes:
+      - ../../scripts/backup:/scripts:ro
+      - backup_data:/backup
+    environment:
+      VELOZ_PG_HOST: postgres
+      VELOZ_PG_PORT: 5432
+      VELOZ_PG_USER: ${VELOZ_PG_USER:-veloz}
+      VELOZ_PG_PASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+      VELOZ_PG_DATABASE: ${VELOZ_PG_DATABASE:-veloz}
+      VELOZ_BACKUP_DIR: /backup
+      VELOZ_S3_BUCKET: ${VELOZ_S3_BUCKET:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      PGPASSWORD: ${VELOZ_PG_PASSWORD:-veloz}
+    command: >
+      sh -c "
+        apk add --no-cache bash aws-cli &&
+        while true; do
+          echo 'Starting PostgreSQL backup at $$(date)';
+          /scripts/backup_postgres.sh -t full || echo 'PostgreSQL backup failed';
+          sleep 86400;
+        done
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - veloz-network
+
+  # Backup verification service (runs weekly)
+  backup-verify:
+    image: alpine:3.19
+    container_name: veloz-backup-verify
+    volumes:
+      - ../../scripts/backup:/scripts:ro
+      - backup_data:/backup:ro
+      - backup_reports:/reports
+    environment:
+      VELOZ_BACKUP_DIR: /backup
+      VELOZ_S3_BUCKET: ${VELOZ_S3_BUCKET:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    command: >
+      sh -c "
+        apk add --no-cache bash aws-cli curl &&
+        while true; do
+          echo 'Starting backup verification at $$(date)';
+          /scripts/verify_backup.sh -r /reports/verify_$$(date +%Y%m%d).txt || echo 'Verification failed';
+          sleep 604800;
+        done
+      "
+    restart: unless-stopped
+    networks:
+      - veloz-network
+
+  # S3 sync service (continuous sync to S3)
+  backup-s3-sync:
+    image: amazon/aws-cli:2.15.0
+    container_name: veloz-backup-s3-sync
+    volumes:
+      - backup_data:/backup:ro
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      VELOZ_S3_BUCKET: ${VELOZ_S3_BUCKET:-}
+    entrypoint: >
+      sh -c "
+        if [ -z \"$$VELOZ_S3_BUCKET\" ]; then
+          echo 'S3 bucket not configured, exiting';
+          exit 0;
+        fi;
+        while true; do
+          echo 'Syncing backups to S3 at $$(date)';
+          aws s3 sync /backup/ $$VELOZ_S3_BUCKET/ --delete;
+          sleep 3600;
+        done
+      "
+    profiles:
+      - s3
+    restart: unless-stopped
+    networks:
+      - veloz-network
+
+networks:
+  veloz-network:
+    name: veloz-network
+    external: true
+
+volumes:
+  postgres_data:
+    driver: local
+  veloz_wal:
+    driver: local
+  wal_archive:
+    driver: local
+  backup_data:
+    driver: local
+  backup_reports:
+    driver: local

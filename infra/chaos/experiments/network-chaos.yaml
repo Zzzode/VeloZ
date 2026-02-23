@@ -1,0 +1,125 @@
+# Chaos Mesh: Network Chaos Experiments
+# Tests system behavior under network failures
+
+---
+# Network Partition: Isolate gateway from engine
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: veloz-network-partition
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: network-partition
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  direction: both
+  target:
+    selector:
+      namespaces:
+        - veloz
+      labelSelectors:
+        app: veloz-engine
+    mode: all
+  duration: "60s"
+---
+# Network Latency: Add delay to external API calls
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: veloz-network-latency
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: network-latency
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  delay:
+    latency: "500ms"
+    correlation: "50"
+    jitter: "100ms"
+  direction: to
+  externalTargets:
+    - "api.binance.com"
+    - "testnet.binance.vision"
+  duration: "120s"
+---
+# Network Loss: Packet loss simulation
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: veloz-network-loss
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: network-loss
+spec:
+  action: loss
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  loss:
+    loss: "30"
+    correlation: "50"
+  direction: both
+  duration: "60s"
+---
+# Network Bandwidth: Limit bandwidth
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: veloz-network-bandwidth
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: network-bandwidth
+spec:
+  action: bandwidth
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  bandwidth:
+    rate: "1mbps"
+    limit: 100
+    buffer: 10000
+  direction: both
+  duration: "120s"
+---
+# DNS Chaos: DNS resolution failures
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: veloz-dns-failure
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: dns-failure
+spec:
+  action: error
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  patterns:
+    - "api.binance.com"
+  duration: "30s"
