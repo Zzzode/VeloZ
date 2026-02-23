@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This document describes all configurable options for VeloZ.
+This document describes all configurable options for VeloZ v1.0.
 
 ## Environment Variables
 
@@ -35,7 +35,83 @@ VeloZ behavior can be configured via environment variables before starting the g
 
 | Variable | Default | Description |
 |-----------|---------|-------------|
-| `VELOZ_EXECUTION_MODE` | `sim_engine` | Execution mode: `sim_engine` (simulated) or `binance_testnet_spot` (Binance testnet) |
+| `VELOZ_EXECUTION_MODE` | `sim_engine` | Execution mode (see table below) |
+
+**Supported Execution Modes:**
+
+| Mode | Description |
+|------|-------------|
+| `sim_engine` | Simulated execution (no real orders) |
+| `binance_testnet_spot` | Binance Spot testnet |
+| `binance_spot` | Binance Spot production |
+| `okx_testnet` | OKX testnet |
+| `okx_spot` | OKX production |
+| `bybit_testnet` | Bybit testnet |
+| `bybit_spot` | Bybit production |
+| `coinbase_sandbox` | Coinbase sandbox |
+| `coinbase_spot` | Coinbase production |
+
+---
+
+### OKX Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_OKX_API_KEY` | (empty) | OKX API key |
+| `VELOZ_OKX_API_SECRET` | (empty) | OKX API secret |
+| `VELOZ_OKX_PASSPHRASE` | (empty) | OKX API passphrase (required) |
+| `VELOZ_OKX_BASE_URL` | `https://www.okx.com` | OKX REST API base URL |
+| `VELOZ_OKX_WS_URL` | `wss://ws.okx.com:8443/ws/v5/public` | OKX WebSocket URL |
+| `VELOZ_OKX_TRADE_URL` | `https://www.okx.com` | OKX trade API URL |
+
+**OKX Testnet URLs:**
+```bash
+export VELOZ_OKX_BASE_URL=https://www.okx.com
+export VELOZ_OKX_TRADE_URL=https://www.okx.com
+export VELOZ_OKX_WS_URL=wss://wspap.okx.com:8443/ws/v5/public?brokerId=9999
+```
+
+**Note:** OKX requires a passphrase in addition to API key and secret.
+
+---
+
+### Bybit Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_BYBIT_API_KEY` | (empty) | Bybit API key |
+| `VELOZ_BYBIT_API_SECRET` | (empty) | Bybit API secret |
+| `VELOZ_BYBIT_BASE_URL` | `https://api.bybit.com` | Bybit REST API base URL |
+| `VELOZ_BYBIT_WS_URL` | `wss://stream.bybit.com/v5/public/spot` | Bybit WebSocket URL |
+| `VELOZ_BYBIT_TRADE_URL` | `https://api.bybit.com` | Bybit trade API URL |
+
+**Bybit Testnet URLs:**
+```bash
+export VELOZ_BYBIT_BASE_URL=https://api-testnet.bybit.com
+export VELOZ_BYBIT_TRADE_URL=https://api-testnet.bybit.com
+export VELOZ_BYBIT_WS_URL=wss://stream-testnet.bybit.com/v5/public/spot
+```
+
+---
+
+### Coinbase Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_COINBASE_API_KEY` | (empty) | Coinbase API key |
+| `VELOZ_COINBASE_API_SECRET` | (empty) | Coinbase API secret |
+| `VELOZ_COINBASE_BASE_URL` | `https://api.coinbase.com` | Coinbase REST API base URL |
+| `VELOZ_COINBASE_WS_URL` | `wss://ws-feed.exchange.coinbase.com` | Coinbase WebSocket URL |
+| `VELOZ_COINBASE_TRADE_URL` | `https://api.exchange.coinbase.com` | Coinbase trade API URL |
+
+**Coinbase Sandbox URLs:**
+```bash
+export VELOZ_COINBASE_BASE_URL=https://api-public.sandbox.exchange.coinbase.com
+export VELOZ_COINBASE_TRADE_URL=https://api-public.sandbox.exchange.coinbase.com
+export VELOZ_COINBASE_WS_URL=wss://ws-feed-public.sandbox.exchange.coinbase.com
+```
+
+**Note:** Coinbase uses JWT-based authentication for some endpoints.
 
 ### Authentication Configuration
 
@@ -79,6 +155,164 @@ VeloZ behavior can be configured via environment variables before starting the g
 | `VELOZ_RECONCILIATION_INTERVAL` | `30` | Reconciliation interval in seconds |
 | `VELOZ_AUTO_CANCEL_ORPHANED` | `false` | Automatically cancel orphaned orders |
 | `VELOZ_RECONCILIATION_ENABLED` | `true` | Enable automatic reconciliation |
+
+---
+
+### WAL (Write-Ahead Log) Configuration
+
+VeloZ uses a Write-Ahead Log for durability and crash recovery.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_WAL_ENABLED` | `true` | Enable WAL for durability |
+| `VELOZ_WAL_DIR` | `/var/lib/veloz/wal` | WAL directory path |
+| `VELOZ_WAL_SYNC_MODE` | `fsync` | Sync mode: `fsync` (durable) or `async` (fast) |
+| `VELOZ_WAL_MAX_SIZE_MB` | `100` | Maximum WAL file size before rotation |
+| `VELOZ_WAL_MAX_FILES` | `10` | Maximum number of WAL files to retain |
+| `VELOZ_WAL_CHECKPOINT_INTERVAL` | `60` | Checkpoint interval in seconds |
+
+**Sync Modes:**
+
+| Mode | Durability | Performance | Use Case |
+|------|------------|-------------|----------|
+| `fsync` | High | Lower | Production (recommended) |
+| `async` | Lower | Higher | Development, backtesting |
+
+**Example:**
+```bash
+export VELOZ_WAL_ENABLED=true
+export VELOZ_WAL_DIR=/data/veloz/wal
+export VELOZ_WAL_SYNC_MODE=fsync
+export VELOZ_WAL_MAX_SIZE_MB=256
+```
+
+---
+
+### Performance Configuration
+
+Tune VeloZ for your workload and hardware.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_WORKER_THREADS` | `4` | Number of worker threads |
+| `VELOZ_EVENT_LOOP_THREADS` | `2` | Number of event loop threads |
+| `VELOZ_CONNECTION_POOL_SIZE` | `10` | HTTP connection pool size |
+| `VELOZ_REQUEST_TIMEOUT_MS` | `30000` | Request timeout in milliseconds |
+| `VELOZ_MEMORY_POOL_SIZE` | `536870912` | Memory pool size in bytes (512MB) |
+| `VELOZ_ORDER_RATE_LIMIT` | `10` | Max orders per second |
+| `VELOZ_LOG_LEVEL` | `INFO` | Log level: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` |
+
+**Performance Tuning Guidelines:**
+
+| Workload | Worker Threads | Event Loop Threads | Memory Pool |
+|----------|----------------|-------------------|-------------|
+| Light (< 10 orders/s) | 2 | 1 | 256MB |
+| Medium (10-100 orders/s) | 4 | 2 | 512MB |
+| Heavy (> 100 orders/s) | 8 | 4 | 1GB |
+
+**Example (High Performance):**
+```bash
+export VELOZ_WORKER_THREADS=8
+export VELOZ_EVENT_LOOP_THREADS=4
+export VELOZ_MEMORY_POOL_SIZE=1073741824
+export VELOZ_ORDER_RATE_LIMIT=100
+```
+
+---
+
+### Secrets Management
+
+VeloZ supports multiple methods for managing sensitive credentials.
+
+#### Environment Variables (Default)
+
+Set secrets directly as environment variables:
+
+```bash
+export VELOZ_BINANCE_API_KEY=your_api_key
+export VELOZ_BINANCE_API_SECRET=your_api_secret
+```
+
+**Security Note:** Avoid storing secrets in shell history. Use:
+```bash
+read -s VELOZ_BINANCE_API_SECRET && export VELOZ_BINANCE_API_SECRET
+```
+
+#### HashiCorp Vault Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_VAULT_ENABLED` | `false` | Enable Vault integration |
+| `VELOZ_VAULT_ADDR` | `http://127.0.0.1:8200` | Vault server address |
+| `VELOZ_VAULT_TOKEN` | (empty) | Vault authentication token |
+| `VELOZ_VAULT_PATH` | `secret/data/veloz` | Vault secrets path |
+| `VELOZ_VAULT_ROLE` | `veloz` | Vault AppRole role name |
+
+**Vault Setup:**
+```bash
+# Enable Vault
+export VELOZ_VAULT_ENABLED=true
+export VELOZ_VAULT_ADDR=https://vault.example.com:8200
+export VELOZ_VAULT_TOKEN=s.xxxxxxxxxxxxxxxx
+
+# Or use AppRole authentication
+export VELOZ_VAULT_ROLE=veloz
+export VELOZ_VAULT_SECRET_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+**Store secrets in Vault:**
+```bash
+vault kv put secret/veloz \
+  binance_api_key=your_key \
+  binance_api_secret=your_secret \
+  okx_api_key=your_key \
+  okx_api_secret=your_secret \
+  okx_passphrase=your_passphrase
+```
+
+#### Kubernetes Secrets Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VELOZ_K8S_SECRETS_ENABLED` | `false` | Enable K8s Secrets integration |
+| `VELOZ_K8S_SECRET_NAME` | `veloz-secrets` | Kubernetes Secret name |
+| `VELOZ_K8S_NAMESPACE` | `default` | Kubernetes namespace |
+
+**Kubernetes Secret Example:**
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: veloz-secrets
+  namespace: veloz
+type: Opaque
+stringData:
+  VELOZ_BINANCE_API_KEY: "your_api_key"
+  VELOZ_BINANCE_API_SECRET: "your_api_secret"
+  VELOZ_OKX_API_KEY: "your_okx_key"
+  VELOZ_OKX_API_SECRET: "your_okx_secret"
+  VELOZ_OKX_PASSPHRASE: "your_passphrase"
+```
+
+**Mount in Deployment:**
+```yaml
+spec:
+  containers:
+    - name: veloz
+      envFrom:
+        - secretRef:
+            name: veloz-secrets
+```
+
+#### Secrets Priority Order
+
+VeloZ loads secrets in this priority order (highest first):
+1. Environment variables
+2. HashiCorp Vault
+3. Kubernetes Secrets
+4. Configuration file
+
+---
 
 ## Configuration Examples
 
@@ -175,15 +409,101 @@ export VELOZ_PRESET=release
 ./scripts/run_gateway.sh
 ```
 
-## Binance Testnet Setup
+### OKX Testnet Trading
 
-To get Binance testnet API credentials:
+Trade on OKX testnet:
+
+```bash
+export VELOZ_EXECUTION_MODE=okx_testnet
+export VELOZ_OKX_API_KEY=your_okx_api_key
+export VELOZ_OKX_API_SECRET=your_okx_api_secret
+export VELOZ_OKX_PASSPHRASE=your_passphrase
+export VELOZ_OKX_TRADE_URL=https://www.okx.com
+./scripts/run_gateway.sh dev
+```
+
+### Bybit Testnet Trading
+
+Trade on Bybit testnet:
+
+```bash
+export VELOZ_EXECUTION_MODE=bybit_testnet
+export VELOZ_BYBIT_API_KEY=your_bybit_api_key
+export VELOZ_BYBIT_API_SECRET=your_bybit_api_secret
+export VELOZ_BYBIT_BASE_URL=https://api-testnet.bybit.com
+export VELOZ_BYBIT_TRADE_URL=https://api-testnet.bybit.com
+./scripts/run_gateway.sh dev
+```
+
+### Coinbase Sandbox Trading
+
+Trade on Coinbase sandbox:
+
+```bash
+export VELOZ_EXECUTION_MODE=coinbase_sandbox
+export VELOZ_COINBASE_API_KEY=your_coinbase_api_key
+export VELOZ_COINBASE_API_SECRET=your_coinbase_api_secret
+export VELOZ_COINBASE_TRADE_URL=https://api-public.sandbox.exchange.coinbase.com
+./scripts/run_gateway.sh dev
+```
+
+### Production with Vault Secrets
+
+Production setup with HashiCorp Vault:
+
+```bash
+export VELOZ_PRESET=release
+export VELOZ_EXECUTION_MODE=binance_spot
+export VELOZ_VAULT_ENABLED=true
+export VELOZ_VAULT_ADDR=https://vault.example.com:8200
+export VELOZ_VAULT_TOKEN=s.xxxxxxxxxxxxxxxx
+export VELOZ_WAL_ENABLED=true
+export VELOZ_WAL_SYNC_MODE=fsync
+./scripts/run_gateway.sh
+```
+
+### High-Performance Configuration
+
+Optimized for high-frequency trading:
+
+```bash
+export VELOZ_WORKER_THREADS=8
+export VELOZ_EVENT_LOOP_THREADS=4
+export VELOZ_MEMORY_POOL_SIZE=1073741824
+export VELOZ_ORDER_RATE_LIMIT=100
+export VELOZ_LOG_LEVEL=WARN
+export VELOZ_WAL_SYNC_MODE=async
+./scripts/run_gateway.sh release
+```
+
+## Exchange Testnet Setup
+
+### Binance Testnet
 
 1. **Sign up**: https://testnet.binance.vision/
-2. **Generate API Key**: Go to API Management → Create API
+2. **Generate API Key**: Go to API Management -> Create API
 3. **Save Keys**: Copy API Key and Secret Key securely
 
-**Important**: Never share your API Secret Key publicly.
+### OKX Testnet
+
+1. **Sign up**: https://www.okx.com/ (use demo trading)
+2. **Enable Demo Trading**: Account -> Demo Trading
+3. **Generate API Key**: API -> Create API Key
+4. **Save Keys**: Copy API Key, Secret Key, and Passphrase
+
+### Bybit Testnet
+
+1. **Sign up**: https://testnet.bybit.com/
+2. **Generate API Key**: Account -> API Management -> Create New Key
+3. **Save Keys**: Copy API Key and Secret Key
+
+### Coinbase Sandbox
+
+1. **Sign up**: https://public.sandbox.exchange.coinbase.com/
+2. **Generate API Key**: Settings -> API -> Create API Key
+3. **Save Keys**: Copy API Key and Secret Key
+
+**Important**: Never share your API Secret Keys publicly. Never commit credentials to version control.
 
 ## Configuration Validation
 
@@ -231,5 +551,7 @@ If you see market source errors:
 ## Related
 
 - [Getting Started](getting-started.md) - Quick start guide
-- [HTTP API Reference](../../api/http-api.md) - API endpoints
+- [HTTP API Reference](../../api/http_api.md) - API endpoints
+- [Monitoring Guide](monitoring.md) - Metrics and observability
+- [Binance Integration](binance.md) - Binance-specific configuration
 - [Build and Run](../build_and_run.md) - Build instructions

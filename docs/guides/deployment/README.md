@@ -6,13 +6,29 @@ This directory contains documentation for deploying VeloZ in production environm
 
 ## Documents
 
+### Architecture & Setup
+
 | Document | Description |
 |----------|-------------|
 | [Production Architecture](production_architecture.md) | System architecture and deployment topology |
 | [Monitoring](monitoring.md) | Observability, metrics, and alerting setup |
-| [Backup & Recovery](backup_recovery.md) | Disaster recovery procedures |
 | [CI/CD Pipeline](ci_cd.md) | Continuous integration and deployment |
+
+### Operations & Runbooks
+
+| Document | Description |
+|----------|-------------|
+| [Operations Runbook](operations_runbook.md) | Day-to-day operational procedures |
+| [On-Call Handbook](oncall_handbook.md) | Guide for on-call engineers |
+| [Incident Response](incident_response.md) | Incident management procedures |
 | [Troubleshooting](troubleshooting.md) | Common issues and solutions |
+
+### Disaster Recovery
+
+| Document | Description |
+|----------|-------------|
+| [Backup & Recovery](backup_recovery.md) | Backup procedures and recovery |
+| [DR Runbook](dr_runbook.md) | Disaster recovery scenarios and procedures |
 
 ## Quick Links
 

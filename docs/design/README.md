@@ -17,6 +17,9 @@ This directory contains technical design documents for VeloZ architecture and sy
 | [design_09_technology_choices.md](design_09_technology_choices.md) | Technology stack and rationale | Current |
 | [design_10_data_model_contracts.md](design_10_data_model_contracts.md) | Data models and protocol contracts | Current |
 | [design_11_ops_roadmap.md](design_11_ops_roadmap.md) | Operations and deployment roadmap | Draft |
+| [design_12_core_architecture.md](design_12_core_architecture.md) | Core architecture and KJ patterns | Current |
+| [design_13_observability.md](design_13_observability.md) | Observability architecture (metrics, traces, logs) | Draft |
+| [design_14_high_availability.md](design_14_high_availability.md) | High availability and failover architecture | Draft |
 
 ## Related
 

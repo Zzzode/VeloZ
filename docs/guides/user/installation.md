@@ -29,7 +29,7 @@ ctest --preset dev -j$(sysctl -n hw.ncpu) && ./scripts/run_gateway.sh dev
 
 ## System Requirements
 
-### Minimum Requirements
+### Development Requirements
 
 | Component | Requirement |
 |-----------|-------------|
@@ -37,6 +37,22 @@ ctest --preset dev -j$(sysctl -n hw.ncpu) && ./scripts/run_gateway.sh dev
 | CPU | x86_64 or ARM64 |
 | RAM | 4 GB minimum, 8 GB recommended |
 | Disk | 2 GB for build, 500 MB for runtime |
+
+### Production Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| OS | Ubuntu 22.04 LTS | Ubuntu 22.04 LTS |
+| CPU | 4 cores | 8+ cores |
+| RAM | 8 GB | 16+ GB |
+| Disk | 50 GB SSD | 200+ GB NVMe |
+| Network | 100 Mbps | 1 Gbps |
+
+**Additional production components:**
+- Redis 7+ (caching, rate limiting)
+- PostgreSQL 15+ (order persistence)
+- Prometheus + Grafana (monitoring)
+- HashiCorp Vault (secrets management)
 
 ### Software Dependencies
 
@@ -108,6 +124,97 @@ cd VeloZ
 cmake --preset dev
 cmake --build --preset dev -j
 ```
+
+## Docker Installation
+
+For quick deployment or production environments, use Docker Compose.
+
+### Prerequisites
+
+- Docker 20.10+
+- Docker Compose 2.0+
+
+```bash
+# Verify Docker installation
+docker --version
+docker compose version
+```
+
+### Quick Start (Gateway Only)
+
+```bash
+# Clone repository
+git clone https://github.com/your-org/VeloZ.git
+cd VeloZ
+
+# Start gateway in simulation mode
+docker compose up -d gateway
+
+# Verify it's running
+curl http://localhost:8080/health
+```
+
+### Full Stack (Production)
+
+Start all services including monitoring and secrets management:
+
+```bash
+# Start with monitoring stack (Prometheus, Grafana, Loki, Jaeger)
+docker compose --profile monitoring up -d
+
+# Start with secrets management (Vault)
+docker compose --profile secrets up -d
+
+# Start everything
+docker compose --profile full --profile monitoring --profile secrets up -d
+```
+
+### Service Profiles
+
+| Profile | Services | Use Case |
+|---------|----------|----------|
+| (default) | gateway | Development, testing |
+| `full` | gateway, redis, postgres | Production with persistence |
+| `monitoring` | prometheus, grafana, loki, alertmanager, jaeger | Observability |
+| `secrets` | vault, vault-init | Secrets management |
+
+### Access Services
+
+| Service | URL | Default Credentials |
+|---------|-----|---------------------|
+| Gateway | http://localhost:8080 | - |
+| Grafana | http://localhost:3000 | admin / admin |
+| Prometheus | http://localhost:9090 | - |
+| Jaeger | http://localhost:16686 | - |
+| Vault | http://localhost:8200 | Token: veloz-dev-token |
+
+### Configuration
+
+Create a `.env` file for custom configuration:
+
+```bash
+# .env
+VELOZ_PORT=8080
+VELOZ_MARKET_SOURCE=binance_rest
+VELOZ_BINANCE_API_KEY=your_api_key
+VELOZ_BINANCE_API_SECRET=your_api_secret
+GRAFANA_PASSWORD=secure_password
+POSTGRES_PASSWORD=secure_password
+```
+
+### Stop Services
+
+```bash
+# Stop all services
+docker compose --profile full --profile monitoring --profile secrets down
+
+# Stop and remove volumes (WARNING: deletes data)
+docker compose --profile full --profile monitoring --profile secrets down -v
+```
+
+For detailed Docker configuration, see the [docker-compose.yml](../../../docker-compose.yml) file.
+
+---
 
 ## KJ Library Dependencies
 
@@ -645,7 +752,19 @@ After installation, verify everything works:
 
 ## Next Steps
 
-- [Getting Started Guide](getting-started.md) - Quick start tutorial
-- [Configuration Guide](configuration.md) - Detailed configuration options
-- [Production Deployment](../deployment/production_architecture.md) - Deploy to production
+### Getting Started
+- [Quick Start Guide](quick-start.md) - Get running in 5 minutes
+- [Your First Trade Tutorial](../../tutorials/first-trade.md) - Place your first order
+
+### Configuration
+- [Configuration Guide](configuration.md) - Environment variables and settings
+- [Binance Integration](binance.md) - Connect to Binance exchange
+
+### Production
+- [Best Practices](best-practices.md) - Security, trading, and deployment recommendations
+- [Monitoring Guide](monitoring.md) - Set up observability stack
+- [Troubleshooting](troubleshooting.md) - Common issues and solutions
+
+### Development
 - [Development Guide](development.md) - Contributing to VeloZ
+- [API Documentation](../../api/README.md) - Complete API reference

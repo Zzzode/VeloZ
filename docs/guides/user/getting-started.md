@@ -1,6 +1,20 @@
 # Getting Started
 
-Welcome to VeloZ! This guide will help you get up and running quickly with the complete quantitative trading framework.
+Welcome to VeloZ v1.0! This guide will help you get up and running quickly with the production-ready quantitative trading framework.
+
+## What's New in v1.0
+
+VeloZ v1.0 is production-ready with these key features:
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-Exchange Trading** | Binance (production), OKX, Bybit, Coinbase (beta) |
+| **Smart Order Routing** | Fee-aware routing with latency tracking |
+| **Execution Algorithms** | TWAP, VWAP, Iceberg, POV with order splitting |
+| **Advanced Risk Management** | VaR (Historical, Parametric, Monte Carlo), stress testing |
+| **Enterprise Security** | JWT + API keys, RBAC, Vault integration, audit logging |
+| **Complete Observability** | Prometheus, Grafana, Jaeger, Loki, 25+ alert rules |
+| **Production Infrastructure** | Kubernetes, Helm, Terraform, blue-green deployment |
 
 ## Quick Start
 
@@ -59,7 +73,7 @@ No manual dependency installation is required.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/veloz.git
+git clone https://github.com/veloz-trading/veloz.git
 cd veloz
 ```
 
@@ -79,7 +93,7 @@ cmake --build --preset dev-all -j$(nproc)
 # Run all tests
 ctest --preset dev -j$(nproc)
 
-# Expected output: 16 tests passed
+# Expected output: 615+ tests passed (100%)
 ```
 
 ### 4. Start the Gateway
@@ -126,12 +140,12 @@ VeloZ consists of several components that work together:
 
 | Module | Description | Key Features |
 |--------|-------------|--------------|
-| `core` | Infrastructure | Logger, config, time, event loop |
+| `core` | Infrastructure | Logger, config, time, event loop, metrics |
 | `common` | Shared types | Venues, symbols, enums |
 | `market` | Market data | Order book, kline aggregator, quality analyzer |
-| `exec` | Execution | Exchange adapters (Binance, OKX, Bybit, Coinbase), reconciliation |
-| `oms` | Order management | Order store, position tracking |
-| `risk` | Risk management | Metrics, dynamic thresholds, rule engine |
+| `exec` | Execution | Multi-exchange adapters, smart order routing, execution algorithms (TWAP, VWAP, Iceberg, POV), reconciliation |
+| `oms` | Order management | Order store, position tracking, FIFO/weighted average cost basis |
+| `risk` | Risk management | VaR (Historical, Parametric, Monte Carlo), stress testing, circuit breakers, dynamic thresholds |
 | `strategy` | Trading strategies | Trend following, mean reversion, momentum, grid |
 | `backtest` | Backtesting | Engine, data sources, optimizer |
 
@@ -174,7 +188,42 @@ export VELOZ_BINANCE_API_SECRET=your_testnet_api_secret
 ./scripts/run_gateway.sh dev
 ```
 
-### D. Run a Backtest
+### D. Multi-Exchange Trading with Smart Routing
+
+Route orders across multiple exchanges for best execution:
+
+```bash
+# Configure multiple exchanges
+export VELOZ_EXECUTION_MODE=multi_exchange
+export VELOZ_EXCHANGES=binance,okx,bybit
+
+# Configure each exchange (testnet)
+export VELOZ_BINANCE_API_KEY=your_binance_key
+export VELOZ_BINANCE_API_SECRET=your_binance_secret
+export VELOZ_OKX_API_KEY=your_okx_key
+export VELOZ_OKX_API_SECRET=your_okx_secret
+export VELOZ_OKX_PASSPHRASE=your_okx_passphrase
+
+./scripts/run_gateway.sh dev
+```
+
+Place orders with smart routing:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/order \
+  -H "Content-Type: application/json" \
+  -d '{
+    "side": "BUY",
+    "symbol": "BTCUSDT",
+    "qty": 1.0,
+    "routing": "smart",
+    "routing_strategy": "best_price"
+  }'
+```
+
+See [Trading Guide](trading-guide.md#multi-exchange-trading) for details.
+
+### E. Run a Backtest
 
 Test a strategy against historical data:
 
@@ -315,6 +364,34 @@ curl http://127.0.0.1:8080/api/backtest/results
 3. **View risk metrics** in real-time
 4. **Set alerts** for drawdown, exposure limits
 
+```bash
+# Get VaR metrics
+curl http://127.0.0.1:8080/api/risk/var
+
+# Get stress test results
+curl http://127.0.0.1:8080/api/risk/stress-test
+
+# Check circuit breaker status
+curl http://127.0.0.1:8080/api/risk/circuit-breaker
+```
+
+### Workflow 5: Production Monitoring
+
+1. **Set up Prometheus** to scrape `/metrics` endpoint
+2. **Import Grafana dashboards** from `deploy/grafana/`
+3. **Configure alerts** in Alertmanager
+4. **View distributed traces** in Jaeger
+
+```bash
+# Check metrics endpoint
+curl http://127.0.0.1:8080/metrics
+
+# View audit logs
+curl http://127.0.0.1:8080/api/audit/logs?limit=100
+```
+
+See [Monitoring Guide](monitoring.md) for complete setup instructions.
+
 ---
 
 ## Using the Web UI
@@ -394,6 +471,30 @@ curl -X POST http://127.0.0.1:8080/api/cancel \
 ```bash
 # Get account info
 curl http://127.0.0.1:8080/api/account
+```
+
+### Risk Management
+
+```bash
+# Get risk metrics
+curl http://127.0.0.1:8080/api/risk/metrics
+
+# Get VaR calculation
+curl http://127.0.0.1:8080/api/risk/var
+
+# Get position limits
+curl http://127.0.0.1:8080/api/risk/limits
+```
+
+### Monitoring
+
+```bash
+# Prometheus metrics
+curl http://127.0.0.1:8080/metrics
+
+# Audit logs (requires auth)
+curl http://127.0.0.1:8080/api/audit/logs \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ### Backtest
@@ -515,12 +616,24 @@ See [Configuration Guide](configuration.md#audit-logging-configuration) for deta
 
 ## Next Steps
 
-- **[User Guide](README.md)** - Complete user documentation
+### User Guides
+
+- **[User Guide](README.md)** - Complete user documentation index
 - **[Configuration Guide](configuration.md)** - All configuration options
-- **[Backtest User Guide](backtest.md)** - Detailed backtesting documentation
-- **[Binance Integration](binance.md)** - Binance-specific setup
-- **[Build and Run](../build_and_run.md)** - Detailed build instructions
+- **[Trading Guide](trading-guide.md)** - Order management, positions, execution algorithms
+- **[API Usage Guide](api-usage-guide.md)** - Practical API examples with Python client
+- **[Best Practices](best-practices.md)** - Security, trading, and operational best practices
+
+### Tutorials
+
+- **[Your First Trade](../../tutorials/first-trade.md)** - Step-by-step trading tutorial
+- **[Production Deployment](../../tutorials/production-deployment.md)** - Deploy to production
+
+### Reference Documentation
+
 - **[HTTP API Reference](../../api/http_api.md)** - Complete API documentation
+- **[Build and Run](../build_and_run.md)** - Detailed build instructions
+- **[Monitoring Guide](monitoring.md)** - Prometheus, Grafana, alerting setup
 
 ---
 
