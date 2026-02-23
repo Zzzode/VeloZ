@@ -80,21 +80,21 @@ describe('exportCsv utilities', () => {
     mockRemoveChild = vi.fn();
     mockClick = vi.fn();
 
-    URL.createObjectURL = mockCreateObjectURL;
-    URL.revokeObjectURL = mockRevokeObjectURL;
+    URL.createObjectURL = mockCreateObjectURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = mockRevokeObjectURL as unknown as typeof URL.revokeObjectURL;
 
     const originalCreateElement = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
       const element = originalCreateElement(tagName);
       if (tagName === 'a') {
         createdLink = element as HTMLAnchorElement;
-        element.click = mockClick;
+        element.click = mockClick as unknown as typeof element.click;
       }
       return element;
     });
 
-    vi.spyOn(document.body, 'appendChild').mockImplementation(mockAppendChild);
-    vi.spyOn(document.body, 'removeChild').mockImplementation(mockRemoveChild);
+    vi.spyOn(document.body, 'appendChild').mockImplementation(mockAppendChild as unknown as typeof document.body.appendChild);
+    vi.spyOn(document.body, 'removeChild').mockImplementation(mockRemoveChild as unknown as typeof document.body.removeChild);
   });
 
   afterEach(() => {
