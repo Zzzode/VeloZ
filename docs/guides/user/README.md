@@ -8,6 +8,7 @@ Complete documentation for VeloZ users, from installation to advanced trading wo
 - [Quick Start Guide](getting-started.md) - Get up and running in 5 minutes
 - [Installation Guide](installation.md) - Detailed installation instructions
 - [Configuration Guide](configuration.md) - Environment variables and settings
+- [UI Setup and Run Guide](../ui_setup_and_run.md) - Complete UI setup instructions
 
 ### Core Features
 - [Authentication & Security](#authentication--security) - JWT tokens, API keys, permissions

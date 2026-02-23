@@ -153,9 +153,11 @@ ctest --preset dev -R "strategy"  # Run strategy-related tests
 ctest --preset dev -R "integration" # Run integration tests
 ```
 
-### 3.2 UI Tests (Vitest)
+### 3.2 UI Tests (Vitest + Playwright)
 
-The UI module uses Vitest for JavaScript testing with 200+ tests covering all UI components.
+The UI module is a React 19.2 + TypeScript 5.9 application with comprehensive test coverage:
+- **551 unit and integration tests** (Vitest)
+- **33 E2E tests** (Playwright)
 
 #### Setup (First Time)
 
@@ -164,7 +166,7 @@ cd apps/ui
 npm install
 ```
 
-#### Run UI Tests
+#### Run Unit Tests
 
 ```bash
 cd apps/ui
@@ -173,22 +175,36 @@ cd apps/ui
 npm test
 
 # Run tests in watch mode (for development)
-npm run test:watch
+npm test -- --watch
 
 # Run tests with coverage report
 npm run test:coverage
 ```
 
-#### UI Test Modules
+#### Run E2E Tests
 
-| Test File | Tests | Description |
-|-----------|-------|-------------|
-| js/utils.test.js | 36 | Utility functions |
-| js/orderbook.test.js | 32 | Order book display |
-| js/positions.test.js | 45 | Position and PnL display |
-| js/strategies.test.js | 37 | Strategy configuration |
-| js/backtest.test.js | 50 | Backtest visualization |
-| **Total** | **200** | |
+```bash
+cd apps/ui
+
+# Install Playwright browsers (first time only)
+npx playwright install
+
+# Run E2E tests
+npm run test:e2e
+
+# Run E2E tests in UI mode (interactive)
+npm run test:e2e:ui
+```
+
+#### Test Coverage
+
+| Test Type | Count | Pass Rate |
+|-----------|-------|-----------|
+| Unit/Integration Tests | 551 | 100% |
+| E2E Tests | 33 | 100% |
+| **Total** | **584** | **100%** |
+
+For detailed UI setup and testing instructions, see [UI Setup and Run Guide](./ui_setup_and_run.md).
 
 ## 4. Run Engine
 
@@ -236,16 +252,22 @@ Service mode endpoints:
 The gateway uses Python stdlib to start an HTTP service and bridges to the engine via stdio:
 
 ```bash
+# Terminal 1: Start gateway
 ./scripts/run_gateway.sh dev
 ```
 
 Default listen address: `http://127.0.0.1:8080/`
 
-If you open `apps/ui/index.html` directly via `file://`, set `API Base` at the top of the page to `http://127.0.0.1:8080`, or set it via URL params:
+```bash
+# Terminal 2: Start UI development server
+cd apps/ui
+npm install  # First time only
+npm run dev
+```
 
-```
-.../index.html?api=http://127.0.0.1:8080
-```
+The UI will be available at `http://localhost:5173/` and will connect to the gateway at `http://127.0.0.1:8080/`.
+
+For detailed UI setup instructions, see [UI Setup and Run Guide](./ui_setup_and_run.md).
 
 ### 4.5 Gateway API Endpoints
 

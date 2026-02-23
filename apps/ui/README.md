@@ -1,73 +1,163 @@
-# React + TypeScript + Vite
+# VeloZ UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React-based trading interface for VeloZ quantitative trading framework.
 
-Currently, two official plugins are available:
+## Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+# Install dependencies
+npm install
 
-## React Compiler
+# Start development server
+npm run dev
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Open browser to http://localhost:5173/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Prerequisites
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- Node.js >= 18.0.0
+- npm >= 9.0.0
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Technology Stack
+
+- **React 19.2** - UI framework with concurrent features
+- **TypeScript 5.9** - Type-safe development
+- **Vite 7.3** - Fast build tool with HMR
+- **Tailwind CSS 4.2** - Utility-first styling
+- **Zustand** - Lightweight state management
+- **TanStack Query** - Server state management
+- **Vitest** - Unit testing
+- **Playwright** - E2E testing
+
+## Available Scripts
+
+```bash
+npm run dev          # Start development server (port 5173)
+npm run build        # Build for production
+npm run preview      # Preview production build
+npm test             # Run unit tests
+npm run test:e2e     # Run E2E tests
+npm run lint         # Lint code
 ```
+
+## Project Structure
+
+```
+apps/ui/
+├── src/
+│   ├── features/          # Feature modules
+│   │   ├── auth/          # Authentication & login
+│   │   ├── dashboard/     # Real-time dashboard
+│   │   ├── trading/       # Order placement & management
+│   │   ├── strategies/    # Strategy configuration
+│   │   ├── backtest/      # Backtesting interface
+│   │   └── market/        # Market data & charts
+│   ├── shared/            # Shared code
+│   │   ├── api/           # API client, SSE, WebSocket
+│   │   ├── components/    # Reusable UI components
+│   │   ├── hooks/         # Custom React hooks
+│   │   └── utils/         # Utility functions
+│   └── styles/            # Global styles & theme
+├── tests/                 # E2E tests
+└── public/                # Static assets
+```
+
+## Features
+
+### 6 Feature Modules
+
+1. **Authentication** - JWT-based login/logout
+2. **Dashboard** - Real-time overview with SSE updates
+3. **Trading** - Order placement, active orders, history
+4. **Strategies** - Strategy list, create, edit, delete
+5. **Backtest** - Backtest runner and results visualization
+6. **Market** - Market data, order book, price charts
+
+### Communication Channels
+
+- **REST API** - Standard HTTP JSON endpoints
+- **Server-Sent Events (SSE)** - Real-time dashboard updates
+- **WebSocket** - Market data streaming
+
+## Development
+
+### Start Full Stack
+
+**Terminal 1: Gateway**
+```bash
+# From project root
+./scripts/run_gateway.sh dev
+```
+
+**Terminal 2: UI**
+```bash
+cd apps/ui
+npm run dev
+```
+
+### Configure API Endpoint
+
+Create `.env.local`:
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8080
+```
+
+### Default Credentials
+
+```
+Username: admin
+Password: password
+```
+
+## Testing
+
+### Unit Tests (551 tests)
+
+```bash
+npm test                    # Run all tests
+npm test -- --watch         # Watch mode
+npm run test:coverage       # With coverage report
+```
+
+### E2E Tests (33 tests)
+
+```bash
+npx playwright install      # First time only
+npm run test:e2e            # Run E2E tests
+npm run test:e2e:ui         # Interactive mode
+```
+
+## Production Build
+
+```bash
+# Build
+npm run build
+
+# Preview
+npm run preview
+
+# Output: dist/ directory
+```
+
+Build metrics:
+- Build time: ~4 seconds
+- Bundle size: 360 KB (98 KB gzipped)
+- TypeScript errors: 0
+
+## Documentation
+
+For complete setup and deployment instructions, see:
+- [UI Setup and Run Guide](../../docs/guides/ui_setup_and_run.md)
+- [UI Architecture](../../docs/design/ui-react-architecture.md)
+- [API Documentation](../../docs/api/http_api.md)
+
+## Browser Support
+
+- Chrome/Edge >= 90
+- Firefox >= 88
+- Safari >= 14
+
+## License
+
+See [LICENSE](../../LICENSE) in project root.
