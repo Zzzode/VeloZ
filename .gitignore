@@ -52,6 +52,14 @@ tests/*/results/
 *_test_report.json
 *_load_test*.json
 
+## Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage_html/
+.coverage
+
 ## Temporary files
 CHANGELOG.md
 
