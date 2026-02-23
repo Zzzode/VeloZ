@@ -1,6 +1,33 @@
 # VeloZ v1.0
 
-A production-ready quantitative trading framework for cryptocurrency markets, built with C++23, Python, and React.
+<div align="center">
+
+[![CI](https://github.com/Zzzode/VeloZ/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzzode/VeloZ/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Zzzode/VeloZ/branch/master/graph/badge.svg)](https://codecov.io/gh/Zzzode/VeloZ)
+[![C++](https://img.shields.io/badge/C%2B%2B-23-blue.svg?style=flat&logo=c%2B%2B)](https://en.cppreference.com/w/cpp/23)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg?style=flat&logo=python)](https://www.python.org/)
+[![CMake](https://img.shields.io/badge/CMake-3.24+-064F8C.svg?style=flat&logo=cmake)](https://cmake.org/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg?style=flat)](LICENSE)
+
+[![Version](https://img.shields.io/badge/Version-1.0-brightgreen.svg?style=flat)](https://github.com/Zzzode/VeloZ/releases)
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg?style=flat)](https://github.com/Zzzode/VeloZ)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg?style=flat)](https://github.com/Zzzode/VeloZ)
+[![Compiler](https://img.shields.io/badge/Compiler-GCC%2013%2B%20%7C%20Clang%2016%2B-orange.svg?style=flat)](https://github.com/Zzzode/VeloZ)
+
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-326CE5.svg?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C.svg?style=flat&logo=prometheus&logoColor=white)](https://prometheus.io/)
+[![WebSocket](https://img.shields.io/badge/WebSocket-Real--time-010101.svg?style=flat)](https://github.com/Zzzode/VeloZ)
+
+</div>
+
+<div align="center">
+
+**A production-ready quantitative trading framework for cryptocurrency markets**
+
+*Built with C++23, Python, and React*
+
+</div>
 
 ## Overview
 
