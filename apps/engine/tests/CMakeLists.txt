@@ -40,3 +40,17 @@ target_link_libraries(test_http_service
 add_test(NAME test_command_parser COMMAND test_command_parser)
 add_test(NAME test_stdio_engine COMMAND test_stdio_engine)
 add_test(NAME test_http_service COMMAND test_http_service)
+
+# State persistence tests
+add_executable(test_state_persistence
+    test_state_persistence.cpp
+)
+
+target_link_libraries(test_state_persistence
+    PRIVATE
+    veloz_engine_lib
+    kj-test
+    kj-async
+)
+
+add_test(NAME test_state_persistence COMMAND test_state_persistence)

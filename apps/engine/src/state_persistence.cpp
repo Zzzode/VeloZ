@@ -4,12 +4,12 @@
 #include "veloz/core/time.h"
 #include "veloz/strategy/strategy.h"
 
+#include <algorithm>
+#include <charconv>
+#include <cstring>
+#include <format>
 #include <kj/debug.h>
 #include <kj/string.h>
-
-// std::filesystem for directory operations (KJ lacks filesystem API)
-#include <algorithm>
-#include <fstream>
 
 namespace veloz::engine {
 
@@ -21,37 +21,10 @@ constexpr std::uint32_t kCurrentVersion = 1;
 // Snapshot file extension
 constexpr const char* kSnapshotExtension = ".snapshot.json";
 
-// Helper function to load snapshot metadata without full deserialization
-kj::Maybe<StateSnapshotMeta> load_snapshot_meta_from_path(const std::filesystem::path& path) {
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    return kj::none;
-  }
-
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  // std::string for file I/O
-  std::string content(size, '\0');
-  file.read(content.data(), size);
-  file.close();
-
-  try {
-    auto doc = veloz::core::JsonDocument::parse(content.c_str());
-    auto root = doc.root();
-    StateSnapshotMeta meta;
-    meta.version = static_cast<std::uint32_t>(root["version"].get_uint(1));
-    meta.timestamp_ns = root["timestamp_ns"].get_int(0);
-    meta.sequence_num = root["sequence_num"].get_uint(0);
-    return meta;
-  } catch (...) {
-    return kj::none;
-  }
-}
-
 } // namespace
 
-StatePersistence::StatePersistence(StatePersistenceConfig config) : config_(kj::mv(config)) {}
+StatePersistence::StatePersistence(StatePersistenceConfig config)
+    : config_(kj::mv(config)), fs_(kj::newDiskFilesystem()) {}
 
 StatePersistence::~StatePersistence() {
   stop_periodic_snapshots();
@@ -60,9 +33,9 @@ StatePersistence::~StatePersistence() {
 bool StatePersistence::initialize() {
   try {
     // Create snapshot directory if it doesn't exist
-    if (!std::filesystem::exists(config_.snapshot_dir)) {
-      std::filesystem::create_directories(config_.snapshot_dir);
-    }
+    // Using openSubdir with CREATE | CREATE_PARENT acts like mkdir -p
+    fs_->getCurrent().openSubdir(config_.snapshot_dir,
+                                 kj::WriteMode::CREATE | kj::WriteMode::CREATE_PARENT);
 
     // Load the latest sequence number from existing snapshots
     auto files = get_snapshot_files();
@@ -70,15 +43,18 @@ bool StatePersistence::initialize() {
       // Parse sequence numbers from filenames and find the max
       std::uint64_t max_seq = 0;
       for (const auto& path : files) {
-        auto filename = path.filename().string();
+        // basename() returns Path, need to get string from it
+        // kj::Path isn't directly convertible to string for manipulation easily
+        kj::StringPtr filename = path.basename()[0];
+
         // Format: snapshot_NNNNNNNNNN.snapshot.json
-        if (filename.starts_with("snapshot_") && filename.ends_with(kSnapshotExtension)) {
-          auto seq_str = filename.substr(9, filename.length() - 9 - strlen(kSnapshotExtension));
-          try {
-            auto seq = std::stoull(seq_str);
+        if (filename.startsWith("snapshot_") && filename.endsWith(kSnapshotExtension)) {
+          // "snapshot_" is 9 chars
+          auto seq_str = filename.slice(9, filename.size() - std::strlen(kSnapshotExtension));
+          std::uint64_t seq = 0;
+          auto res = std::from_chars(seq_str.begin(), seq_str.end(), seq);
+          if (res.ec == std::errc{}) {
             max_seq = std::max(max_seq, seq);
-          } catch (...) {
-            // Ignore invalid filenames
           }
         }
       }
@@ -86,8 +62,8 @@ bool StatePersistence::initialize() {
     }
 
     return true;
-  } catch (const std::exception& e) {
-    KJ_LOG(ERROR, "Failed to initialize state persistence", kj::str(e.what()).cStr());
+  } catch (const kj::Exception& e) {
+    KJ_LOG(ERROR, "Failed to initialize state persistence", e);
     return false;
   }
 }
@@ -113,9 +89,6 @@ StateSnapshot StatePersistence::create_snapshot(const EngineState& state) const 
   // Copy price
   snapshot.price = state.price();
 
-  // Note: pending_orders and venue_counter are private in EngineState
-  // They would need accessor methods to be included in snapshot
-
   return snapshot;
 }
 
@@ -124,9 +97,6 @@ bool StatePersistence::save_snapshot(const StateSnapshot& snapshot) {
     // Serialize to JSON
     kj::String json = serialize_snapshot(snapshot);
 
-    // Compute checksum
-    kj::String checksum = compute_checksum(json);
-
     // Update sequence number
     *sequence_num_.lockExclusive() = snapshot.meta.sequence_num;
 
@@ -134,22 +104,14 @@ bool StatePersistence::save_snapshot(const StateSnapshot& snapshot) {
     auto path = get_snapshot_path(snapshot.meta.sequence_num);
 
     // Write to file
-    std::ofstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-      KJ_LOG(ERROR, "Failed to open snapshot file for writing",
-             kj::str(path.string().c_str()).cStr());
-      return false;
-    }
-
-    file.write(json.cStr(), json.size());
-    file.close();
+    fs_->getCurrent().openFile(path, kj::WriteMode::CREATE | kj::WriteMode::MODIFY)->writeAll(json);
 
     // Cleanup old snapshots
     const_cast<StatePersistence*>(this)->cleanup_old_snapshots();
 
     return true;
-  } catch (const std::exception& e) {
-    KJ_LOG(ERROR, "Failed to save snapshot", kj::str(e.what()).cStr());
+  } catch (const kj::Exception& e) {
+    KJ_LOG(ERROR, "Failed to save snapshot", e);
     return false;
   }
 }
@@ -160,57 +122,37 @@ kj::Maybe<StateSnapshot> StatePersistence::load_latest_snapshot() const {
     return kj::none;
   }
 
-  // Files are sorted by modification time, get the latest
+  // Files are sorted by modification time (or name), get the latest
   auto& latest_path = files[files.size() - 1];
 
-  // Read file content
-  std::ifstream file(latest_path, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    KJ_LOG(ERROR, "Failed to open snapshot file for reading",
-           kj::str(latest_path.string().c_str()).cStr());
+  try {
+    auto content = fs_->getCurrent().openFile(latest_path)->readAllText();
+    return deserialize_snapshot(content);
+  } catch (const kj::Exception& e) {
+    KJ_LOG(ERROR, "Failed to read snapshot file", latest_path.toString(), e);
     return kj::none;
   }
-
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  // std::string for file I/O (std::ifstream requires it)
-  std::string content(size, '\0');
-  file.read(content.data(), size);
-  file.close();
-
-  return deserialize_snapshot(content.c_str());
 }
 
 kj::Maybe<StateSnapshot> StatePersistence::load_snapshot(std::uint64_t sequence_num) const {
   auto path = get_snapshot_path(sequence_num);
-  if (!std::filesystem::exists(path)) {
+
+  try {
+    // Check existence by trying to open
+    if (!fs_->getCurrent().exists(path)) {
+      return kj::none;
+    }
+
+    auto content = fs_->getCurrent().openFile(path)->readAllText();
+    return deserialize_snapshot(content);
+  } catch (...) {
     return kj::none;
   }
-
-  // Read file content
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    return kj::none;
-  }
-
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  // std::string for file I/O (std::ifstream requires it)
-  std::string content(size, '\0');
-  file.read(content.data(), size);
-  file.close();
-
-  return deserialize_snapshot(content.c_str());
 }
 
 bool StatePersistence::restore_state(const StateSnapshot& snapshot, EngineState& state) const {
   // Restore price
   state.set_price(snapshot.price);
-
-  // Note: Restoring balances and pending orders would require additional
-  // accessor methods in EngineState that don't currently exist
 
   return true;
 }
@@ -221,14 +163,13 @@ void StatePersistence::cleanup_old_snapshots() {
     return;
   }
 
-  // Remove oldest snapshots (files are sorted by modification time)
+  // Remove oldest snapshots
   size_t to_remove = files.size() - config_.max_snapshots;
   for (size_t i = 0; i < to_remove; ++i) {
     try {
-      std::filesystem::remove(files[i]);
-    } catch (const std::exception& e) {
-      KJ_LOG(WARNING, "Failed to remove old snapshot", kj::str(files[i].string().c_str()).cStr(),
-             kj::str(e.what()).cStr());
+      fs_->getCurrent().remove(files[i]);
+    } catch (const kj::Exception& e) {
+      KJ_LOG(WARNING, "Failed to remove old snapshot", files[i].toString(), e);
     }
   }
 }
@@ -238,9 +179,18 @@ kj::Vector<StateSnapshotMeta> StatePersistence::list_snapshots() const {
 
   auto files = get_snapshot_files();
   for (const auto& path : files) {
-    auto maybeMeta = load_snapshot_meta_from_path(path);
-    KJ_IF_SOME(meta, maybeMeta) {
+    try {
+      auto content = fs_->getCurrent().openFile(path)->readAllText();
+      auto doc = veloz::core::JsonDocument::parse(content);
+      auto root = doc.root();
+
+      StateSnapshotMeta meta;
+      meta.version = static_cast<std::uint32_t>(root["version"].get_uint(1));
+      meta.timestamp_ns = root["timestamp_ns"].get_int(0);
+      meta.sequence_num = root["sequence_num"].get_uint(0);
       result.add(kj::mv(meta));
+    } catch (...) {
+      // Ignore invalid files
     }
   }
 
@@ -342,37 +292,39 @@ kj::Maybe<StateSnapshot> StatePersistence::deserialize_snapshot(kj::StringPtr js
   }
 }
 
-std::filesystem::path StatePersistence::get_snapshot_path(std::uint64_t sequence_num) const {
-  // std::format for width specifiers (kj::str lacks support)
+kj::Path StatePersistence::get_snapshot_path(std::uint64_t sequence_num) const {
+  // std::format for width specifiers
   auto filename = std::format("snapshot_{:010d}{}", sequence_num, kSnapshotExtension);
-  return config_.snapshot_dir / filename;
+  return config_.snapshot_dir.append(filename.c_str());
 }
 
-kj::Vector<std::filesystem::path> StatePersistence::get_snapshot_files() const {
-  kj::Vector<std::filesystem::path> files;
+kj::Vector<kj::Path> StatePersistence::get_snapshot_files() const {
+  kj::Vector<kj::Path> files;
 
-  if (!std::filesystem::exists(config_.snapshot_dir)) {
-    return files;
-  }
+  try {
+    if (!fs_->getCurrent().exists(config_.snapshot_dir)) {
+      return files;
+    }
 
-  for (const auto& entry : std::filesystem::directory_iterator(config_.snapshot_dir)) {
-    if (entry.is_regular_file()) {
-      auto filename = entry.path().filename().string();
-      if (filename.ends_with(kSnapshotExtension)) {
-        files.add(entry.path());
+    auto dir = fs_->getCurrent().openSubdir(config_.snapshot_dir);
+    auto names = dir->listNames();
+
+    for (auto& name : names) {
+      if (name.endsWith(kSnapshotExtension)) {
+        files.add(config_.snapshot_dir.append(name));
       }
     }
-  }
 
-  // Sort by filename (which includes sequence number)
-  // Using std::sort because kj::Vector doesn't have a sort method
-  std::sort(files.begin(), files.end());
+    // Sort by filename (which includes sequence number)
+    std::sort(files.begin(), files.end());
+  } catch (const kj::Exception& e) {
+    KJ_LOG(WARNING, "Failed to list snapshot files", e);
+  }
 
   return files;
 }
 
 kj::String StatePersistence::compute_checksum(kj::StringPtr data) const {
-  // Simple checksum for now - could use SHA-256 in production
   std::uint64_t hash = 0;
   for (char c : data) {
     hash = hash * 31 + static_cast<std::uint64_t>(c);
@@ -390,33 +342,25 @@ bool StatePersistence::verify_checksum(kj::StringPtr data, kj::StringPtr expecte
 bool StatePersistence::save_strategy_state(kj::StringPtr strategy_id,
                                            const strategy::StrategyState& state) {
   try {
-    // Build filename using KJ string concatenation
     auto filename = kj::str("strategy_", strategy_id, ".json");
-    auto strategy_file = config_.snapshot_dir / std::filesystem::path(filename.cStr());
+    auto strategy_path = config_.snapshot_dir.append(filename);
 
-    // Serialize strategy state to JSON
     kj::String json =
         kj::str(R"({"strategy_id":")", state.strategy_id, R"(","strategy_name":")",
-                state.strategy_name, R"(","is_running":)", state.is_running ? "true" : "false",
+                state.strategy_name, R"(,"is_running":)", state.is_running ? "true" : "false",
                 R"(,"pnl":)", state.pnl, R"(,"total_pnl":)", state.total_pnl, R"(,"max_drawdown":)",
                 state.max_drawdown, R"(,"trade_count":)", state.trade_count, R"(,"win_count":)",
                 state.win_count, R"(,"lose_count":)", state.lose_count, R"(,"win_rate":)",
                 state.win_rate, R"(,"profit_factor":)", state.profit_factor, R"(})");
 
-    std::ofstream file(strategy_file, std::ios::binary);
-    if (!file.is_open()) {
-      KJ_LOG(ERROR, "Failed to open strategy state file for writing",
-             kj::str(strategy_file.string().c_str()).cStr());
-      return false;
-    }
+    fs_->getCurrent()
+        .openFile(strategy_path, kj::WriteMode::CREATE | kj::WriteMode::MODIFY)
+        ->writeAll(json);
 
-    file.write(json.cStr(), json.size());
-    file.close();
-
-    KJ_LOG(INFO, "Saved strategy state", strategy_id.cStr());
+    KJ_LOG(INFO, "Saved strategy state", strategy_id);
     return true;
-  } catch (const std::exception& e) {
-    KJ_LOG(ERROR, "Failed to save strategy state", kj::str(e.what()).cStr());
+  } catch (const kj::Exception& e) {
+    KJ_LOG(ERROR, "Failed to save strategy state", e);
     return false;
   }
 }
@@ -424,27 +368,15 @@ bool StatePersistence::save_strategy_state(kj::StringPtr strategy_id,
 kj::Maybe<strategy::StrategyState>
 StatePersistence::load_strategy_state(kj::StringPtr strategy_id) const {
   try {
-    // Build filename using KJ string concatenation
     auto filename = kj::str("strategy_", strategy_id, ".json");
-    auto strategy_file = config_.snapshot_dir / std::filesystem::path(filename.cStr());
+    auto strategy_path = config_.snapshot_dir.append(filename);
 
-    if (!std::filesystem::exists(strategy_file)) {
+    if (!fs_->getCurrent().exists(strategy_path)) {
       return kj::none;
     }
 
-    std::ifstream file(strategy_file, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-      return kj::none;
-    }
-
-    auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::string content(size, '\0');
-    file.read(content.data(), size);
-    file.close();
-
-    auto doc = veloz::core::JsonDocument::parse(content.c_str());
+    auto content = fs_->getCurrent().openFile(strategy_path)->readAllText();
+    auto doc = veloz::core::JsonDocument::parse(content);
     auto root = doc.root();
 
     strategy::StrategyState state;
@@ -460,9 +392,7 @@ StatePersistence::load_strategy_state(kj::StringPtr strategy_id) const {
     state.win_rate = root["win_rate"].get_double(0.0);
     state.profit_factor = root["profit_factor"].get_double(0.0);
 
-    // Return strategy state (implicitly converts to kj::Maybe<StrategyState>)
-    strategy::StrategyState result = kj::mv(state);
-    return result;
+    return state;
   } catch (...) {
     return kj::none;
   }
@@ -470,19 +400,17 @@ StatePersistence::load_strategy_state(kj::StringPtr strategy_id) const {
 
 bool StatePersistence::remove_strategy_state(kj::StringPtr strategy_id) {
   try {
-    // Build filename using KJ string concatenation
     auto filename = kj::str("strategy_", strategy_id, ".json");
-    auto strategy_file = config_.snapshot_dir / std::filesystem::path(filename.cStr());
+    auto strategy_path = config_.snapshot_dir.append(filename);
 
-    if (!std::filesystem::exists(strategy_file)) {
-      return false;
+    if (fs_->getCurrent().exists(strategy_path)) {
+      fs_->getCurrent().remove(strategy_path);
+      KJ_LOG(INFO, "Removed strategy state", strategy_id);
+      return true;
     }
-
-    std::filesystem::remove(strategy_file);
-    KJ_LOG(INFO, "Removed strategy state", strategy_id.cStr());
-    return true;
-  } catch (const std::exception& e) {
-    KJ_LOG(ERROR, "Failed to remove strategy state", kj::str(e.what()).cStr());
+    return false;
+  } catch (const kj::Exception& e) {
+    KJ_LOG(ERROR, "Failed to remove strategy state", e);
     return false;
   }
 }
@@ -490,23 +418,26 @@ bool StatePersistence::remove_strategy_state(kj::StringPtr strategy_id) {
 kj::Vector<kj::String> StatePersistence::list_strategy_states() const {
   kj::Vector<kj::String> result;
 
-  if (!std::filesystem::exists(config_.snapshot_dir)) {
-    return result;
-  }
+  try {
+    if (!fs_->getCurrent().exists(config_.snapshot_dir)) {
+      return result;
+    }
 
-  const std::string prefix = "strategy_";
-  const std::string suffix = ".json";
+    auto dir = fs_->getCurrent().openSubdir(config_.snapshot_dir);
+    auto names = dir->listNames();
 
-  for (const auto& entry : std::filesystem::directory_iterator(config_.snapshot_dir)) {
-    if (entry.is_regular_file()) {
-      auto filename = entry.path().filename().string();
-      if (filename.starts_with(prefix) && filename.ends_with(suffix)) {
+    const kj::StringPtr prefix = "strategy_";
+    const kj::StringPtr suffix = ".json";
+
+    for (auto& name : names) {
+      if (name.startsWith(prefix) && name.endsWith(suffix)) {
         // Extract strategy_id from filename: strategy_<id>.json
-        auto strategy_id =
-            filename.substr(prefix.length(), filename.length() - prefix.length() - suffix.length());
-        result.add(kj::heapString(strategy_id.c_str()));
+        auto strategy_id = name.slice(prefix.size(), name.size() - suffix.size());
+        result.add(kj::heapString(strategy_id));
       }
     }
+  } catch (const kj::Exception& e) {
+    KJ_LOG(WARNING, "Failed to list strategy states", e);
   }
 
   return result;

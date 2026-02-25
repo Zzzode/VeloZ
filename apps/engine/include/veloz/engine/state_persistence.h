@@ -7,9 +7,7 @@
 #include <kj/filesystem.h>
 #include <kj/mutex.h>
 #include <kj/string.h>
-
-// std::filesystem for path operations (KJ lacks filesystem API)
-#include <filesystem>
+#include <kj/vector.h>
 
 namespace veloz::engine {
 
@@ -63,10 +61,10 @@ struct StateSnapshot {
  * @brief Configuration for state persistence
  */
 struct StatePersistenceConfig {
-  std::filesystem::path snapshot_dir{"./snapshots"}; ///< Directory for snapshots
-  std::int64_t snapshot_interval_ms{60000};          ///< Snapshot interval (default: 1 minute)
-  std::uint32_t max_snapshots{10};                   ///< Maximum snapshots to keep
-  bool enable_compression{false};                    ///< Enable snapshot compression
+  kj::Path snapshot_dir{"snapshots"};       ///< Directory for snapshots
+  std::int64_t snapshot_interval_ms{60000}; ///< Snapshot interval (default: 1 minute)
+  std::uint32_t max_snapshots{10};          ///< Maximum snapshots to keep
+  bool enable_compression{false};           ///< Enable snapshot compression
 };
 
 /**
@@ -191,14 +189,15 @@ private:
   StatePersistenceConfig config_;
   kj::MutexGuarded<std::uint64_t> sequence_num_{0};
   kj::MutexGuarded<bool> running_{false};
+  kj::Own<kj::Filesystem> fs_;
 
   // Serialization helpers
   kj::String serialize_snapshot(const StateSnapshot& snapshot) const;
   kj::Maybe<StateSnapshot> deserialize_snapshot(kj::StringPtr json) const;
 
   // File helpers
-  std::filesystem::path get_snapshot_path(std::uint64_t sequence_num) const;
-  kj::Vector<std::filesystem::path> get_snapshot_files() const;
+  kj::Path get_snapshot_path(std::uint64_t sequence_num) const;
+  kj::Vector<kj::Path> get_snapshot_files() const;
 
   // Checksum helpers
   kj::String compute_checksum(kj::StringPtr data) const;
