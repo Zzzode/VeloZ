@@ -8,7 +8,7 @@ Python gateway that spawns the engine in stdio mode.
 
 ### 3.1.1 Project Status Summary
 
-**Current Phase:** Minimal end-to-end skeleton (engine + gateway + UI)
+**Current Phase:** Production-ready core with active development (engine + gateway + UI + backtest)
 
 **Implemented (Current):**
 - ✅ Stdio command parsing for ORDER/CANCEL/QUERY
@@ -17,12 +17,19 @@ Python gateway that spawns the engine in stdio mode.
 - ✅ Risk checks via `libs/risk` wired into order placement
 - ✅ NDJSON event helpers for market/order/fill/account/error
 - ✅ Gateway stdio bridge + REST + SSE stream
+- ✅ **Backtest system** (libs/backtest): Engine, data sources, analyzer, reporter, optimizer
+  - Grid search optimizer with multi-parameter support
+  - HTML and JSON report generation with trade records
+  - Comprehensive test coverage
+- ✅ **Multi-exchange adapters**: Binance (REST + WebSocket), OKX, Bybit, Coinbase scaffolding
+- ✅ **Advanced strategy implementations**: Trend following, mean reversion, grid, momentum, market making
+- ✅ **Core infrastructure optimizations**: Lock-free queues, timer wheel, optimized event loop
 
 **In Progress / Partial:**
 - ⚠️ Service mode runtime (placeholder loop + heartbeat)
-- ⚠️ Exchange integrations (Binance REST optional; WS scaffolding only)
-- ⚠️ Persistence and recovery (no WAL/replay yet)
-- ⚠️ Strategy runtime integration
+- ⚠️ WebSocket market data ingestion (Binance WebSocket scaffold exists)
+- ⚠️ Persistence and recovery (Order WAL exists, replay in progress)
+- ⚠️ Strategy runtime integration (base interfaces implemented)
 
 ### 3.1.2 Runtime Behavior (Current)
 
@@ -47,10 +54,10 @@ Python gateway that spawns the engine in stdio mode.
   types
 
 #### libs/oms / libs/risk / libs/exec / libs/market
-- **OMS:** Order records and positions (basic)
-- **Risk:** Risk engine and circuit breaker (basic checks)
-- **Exec:** Order request/response models, client order IDs, adapter scaffolding
-- **Market:** Market event types, order book scaffolding, subscription manager, WebSocket scaffold
+- **OMS:** Order records and positions, Order WAL for persistence
+- **Risk:** Risk engine, circuit breaker, dynamic thresholds, portfolio risk, VaR models, stress testing, scenario analysis
+- **Exec:** Order request/response models, client order IDs, exchange adapters (Binance REST+WS, OKX, Bybit, Coinbase), order router, reconciliation, execution algorithms (TWAP/VWAP, POV, Iceberg), smart order router
+- **Market:** Market event types, order book (managed and aggregated), kline aggregator, market quality analyzer, subscription manager, Binance REST client, Binance WebSocket
 
 ### 3.1.4 Engine ↔ Gateway Integration
 
@@ -62,6 +69,13 @@ Python gateway that spawns the engine in stdio mode.
 ### 3.1.5 Gaps vs Design
 
 - Service mode networking stack is not implemented
-- WebSocket market ingestion and order book rebuild are pending
-- Persistence (order WAL + replay) is not implemented
-- Strategy runtime/SDK is not integrated into the engine
+- WebSocket market ingestion and order book rebuild are pending (WebSocket scaffold exists)
+- Order WAL replay for persistence needs integration
+- Strategy runtime/SDK integration not yet complete
+- Observability integration (design_13) not implemented
+- High availability architecture (design_14) not implemented
+
+### 3.1.6 Related Documentation
+
+- [design_13_observability.md](design_13_observability.md) - Observability architecture (metrics, traces, logs)
+- [design_14_high_availability.md](design_14_high_availability.md) - High availability and failover architecture

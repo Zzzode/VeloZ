@@ -8,10 +8,10 @@ This directory contains technical design documents for VeloZ architecture and sy
 |----------|-------------|--------|
 | [design_01_overview.md](design_01_overview.md) | System overview and high-level architecture | Draft |
 | [design_02_engine_status.md](design_02_engine_status.md) | Engine current implementation status | Current |
-| [design_03_market_data.md](design_03_market_data.md) | Market data subsystem design | Planned |
-| [design_04_execution_oms.md](design_04_execution_oms.md) | Execution and order management system design | Planned |
+| [design_03_market_data.md](design_03_market_data.md) | Market data subsystem design | Current |
+| [design_04_execution_oms.md](design_04_execution_oms.md) | Execution and order management system design | Current |
 | [design_05_strategy_runtime.md](design_05_strategy_runtime.md) | Strategy runtime environment design | Planned |
-| [design_06_analytics_backtest.md](design_06_analytics_backtest.md) | Analytics and backtest system design | Planned |
+| [design_06_analytics_backtest.md](design_06_analytics_backtest.md) | Analytics and backtest system design | Current |
 | [design_07_ai_bridge.md](design_07_ai_bridge.md) | AI/ML integration design | Planned |
 | [design_08_trading_ui.md](design_08_trading_ui.md) | Trading UI and dashboard design | Planned |
 | [design_09_technology_choices.md](design_09_technology_choices.md) | Technology stack and rationale | Current |

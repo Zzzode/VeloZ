@@ -43,3 +43,19 @@ Strategies only:
 - Strategy lifecycle is driven solely by event callbacks and timers
 - Isolation: each strategy has its own risk budget and position view
 - Deterministic replay: same event stream produces same strategy behavior
+
+### 3.3.5 Advanced Strategy Components (Implemented)
+
+#### Strategy Portfolio Manager (`libs/strategy/advanced_strategies.h`)
+Multi-strategy composition and portfolio management:
+- Run multiple strategies simultaneously with isolated state
+- Aggregate portfolio-level risk across strategies
+- Coordinate capital allocation between strategies
+- Cross-strategy signal aggregation and conflict resolution
+- Unified position view across all managed strategies
+
+**Key Features**:
+- Strategy instance lifecycle management
+- Per-strategy risk budget enforcement
+- Portfolio-level P&L aggregation
+- Multi-strategy rebalancing coordination

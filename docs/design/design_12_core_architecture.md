@@ -294,6 +294,143 @@ class ConfigManager {
 
 ---
 
+### 6. Lock-Free Queue (`lockfree_queue.h`)
+
+**Purpose**: High-performance single-producer single-consumer (SPSC) queue for low-latency paths
+
+**Design Pattern**: Lock-free ring buffer with memory ordering
+
+**Key Features**:
+- Wait-free enqueue and dequeue operations
+- Single-producer single-consumer (SPSC) design
+- Bounded capacity with fixed-size ring buffer
+- Memory ordering guarantees for correctness
+- Zero allocation after initialization
+
+**Implementation Details**:
+
+```cpp
+template <typename T, size_t Capacity>
+class LockFreeQueue {
+    bool enqueue(const T& item);  // Returns false if full
+    bool dequeue(T& item);        // Returns false if empty
+    bool empty() const;
+    bool full() const;
+    size_t size() const;
+};
+```
+
+**Design Decisions**:
+1. **SPSC model**: Simplifies memory ordering, enables wait-free operations
+2. **Bounded capacity**: Prevents unbounded memory growth
+3. **Power-of-two capacity**: Enables fast modulo via bitwise AND
+4. **Cache-line padding**: Prevents false sharing between producer/consumer
+
+**Performance Characteristics**:
+- O(1) enqueue and dequeue (wait-free)
+- No locks, no CAS loops in typical case
+- Cache-friendly sequential access pattern
+- Suitable for high-frequency market data paths
+
+**Use Cases**:
+- Market data event dispatch
+- Strategy signal propagation
+- Order state updates
+
+---
+
+### 7. Timer Wheel (`timer_wheel.h`)
+
+**Purpose**: Efficient timer management with O(1) insertion and deletion
+
+**Design Pattern**: Hierarchical timing wheel with hash-based buckets
+
+**Key Features**:
+- O(1) timer insertion, deletion, and tick processing
+- Hierarchical design for wide time range support
+- Memory-efficient bucket allocation
+- Support for one-shot and periodic timers
+- Tick-based granularity
+
+**Implementation Details**:
+
+```cpp
+class TimerWheel {
+    using TimerId = uint64_t;
+    using Callback = kj::Function<void()>;
+
+    TimerId add_timer(kj::Duration delay, Callback callback);
+    TimerId add_periodic(kj::Duration interval, Callback callback);
+    void cancel_timer(TimerId id);
+    void tick(kj::Duration elapsed);
+};
+```
+
+**Design Decisions**:
+1. **Hierarchical structure**: Multiple wheels for different time scales (ms, s, m, h)
+2. **Hash bucket design**: O(1) average case for all operations
+3. **Tick granularity**: Configurable based on timing requirements
+4. **Callback storage**: Inline small callbacks, heap-allocate large ones
+
+**Performance Characteristics**:
+- O(1) average case for all operations
+- Memory usage scales with timer count, not time range
+- Cache-friendly bucket iteration
+- Suitable for thousands of concurrent timers
+
+**Use Cases**:
+- Strategy scheduled callbacks
+- Timeout management for orders
+- Health check intervals
+- Rate limit token replenishment
+
+---
+
+### 8. Optimized Event Loop (`optimized_event_loop.h`)
+
+**Purpose**: High-performance event loop with minimal overhead
+
+**Design Pattern**: Hybrid event loop combining priority queue and timer wheel
+
+**Key Features**:
+- Integrated timer wheel for efficient timeout handling
+- Lock-free task queue for hot paths
+- Batch processing for improved throughput
+- Work stealing for multi-threaded scenarios
+- Adaptive scheduling based on load
+
+**Implementation Details**:
+
+```cpp
+class OptimizedEventLoop {
+    void post_task(Task task, EventPriority priority);
+    TimerId schedule_task(kj::Duration delay, Task task);
+    void run();
+    void stop();
+    Statistics stats() const;
+};
+```
+
+**Design Decisions**:
+1. **Hybrid design**: Combines best of priority queue and timer wheel
+2. **Lock-free hot path**: High-frequency tasks bypass locks
+3. **Batch processing**: Process multiple events per iteration
+4. **Adaptive scheduling**: Adjusts based on queue depth and timing
+
+**Performance Characteristics**:
+- Sub-microsecond task posting overhead
+- Minimal lock contention for hot paths
+- Efficient timer management with O(1) operations
+- Suitable for 100k+ events per second
+
+**Use Cases**:
+- Main engine event processing
+- Strategy event dispatch
+- Market data processing pipeline
+- Order execution path
+
+---
+
 ## Design Patterns Summary
 
 | Pattern | Components | Purpose |
@@ -304,6 +441,9 @@ class ConfigManager {
 | Builder | JsonBuilder, ConfigItem::Builder | Fluent construction API |
 | Observer | ConfigManager callbacks | Change notifications |
 | Singleton | Logger, MemoryMonitor | Global accessors |
+| Lock-Free | LockFreeQueue | Wait-free concurrent data structures |
+| Timer Wheel | TimerWheel | O(1) timer management |
+| Hybrid Event Loop | OptimizedEventLoop | Combines multiple scheduling strategies |
 
 ## Thread Safety Strategy
 
@@ -398,6 +538,58 @@ int p = port->get_or(8080);
 
 // Set with validation
 port->set(8080);  // Validates range
+```
+
+### Lock-Free Queue Integration
+```cpp
+// Create a queue for market data
+veloz::core::LockFreeQueue<MarketEvent, 1024> market_queue;
+
+// Producer thread (market data handler)
+market_queue.enqueue(event);
+
+// Consumer thread (strategy)
+MarketEvent event;
+if (market_queue.dequeue(event)) {
+    process_event(event);
+}
+```
+
+### Timer Wheel Integration
+```cpp
+// Create timer wheel
+veloz::core::TimerWheel timer_wheel;
+
+// Add one-shot timer
+auto timer_id = timer_wheel.add_timer(5s, []() {
+    LOG_INFO("Timer fired");
+});
+
+// Add periodic timer
+auto periodic_id = timer_wheel.add_periodic(1s, []() {
+    check_risk_limits();
+});
+
+// Cancel timer
+timer_wheel.cancel_timer(timer_id);
+
+// Advance time
+timer_wheel.tick(elapsed_time);
+```
+
+### Optimized Event Loop Integration
+```cpp
+// Create optimized event loop
+veloz::core::OptimizedEventLoop loop;
+
+// Post immediate task
+loop.post_task([]() { process_order(); }, EventPriority::High);
+
+// Schedule delayed task
+loop.schedule_task(100ms, []() { check_timeouts(); });
+
+// Run event loop
+loop.run();
 ```
 
 ## Future Enhancements

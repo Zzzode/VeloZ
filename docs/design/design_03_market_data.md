@@ -54,3 +54,25 @@ Use a unified internal event model to avoid direct dependency on exchange fields
 - Data normalization: enforce symbol mapping, precision, and contract multiplier before publish
 - OrderBook design: price-level map + TopN cache, with immutable snapshots for readers
 - Metrics: per-venue latency (recv→publish), drop rates, reconnect counters
+
+### 3.1.5 Advanced Components (Implemented)
+
+#### Kline Aggregator (`libs/market/kline_aggregator.h`)
+Aggregates tick-by-tick data into K-line candles of multiple timeframes:
+- Supports multiple timeframes: 1m, 5m, 15m, 1h, 4h, 1d
+- Sliding window aggregation for real-time updates
+- Volume-weighted average price (VWAP) calculation
+- OHLCV (Open, High, Low, Close, Volume) data structure
+
+#### Market Quality Analyzer (`libs/market/market_quality.h`)
+Analyzes market conditions for strategy decision-making:
+- Anomaly detection: unusual spread, depth drops, price spikes
+- Liquidity metrics: order book depth, bid-ask imbalance
+- Volatility analysis: realized volatility, ATR calculation
+- Quality score: composite metric combining spread, depth, and volatility
+
+#### Managed Order Book (`libs/market/managed_order_book.h`)
+- Thread-safe order book management
+- TopN caching for fast depth queries
+- Subscription-based updates for strategy subscriptions
+- Snapshot and delta support
