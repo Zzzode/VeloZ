@@ -191,33 +191,75 @@ Commands are sent as plain text, one command per line.
 
 ### ORDER Command
 
-Place a new limit order.
+Place a new order.
 
 **Format**:
 ```
-ORDER <side> <symbol> <qty> <price> <client_order_id>
+ORDER <side> <symbol> <qty> <price> <client_order_id> [type] [tif]
 ```
 
 **Parameters**:
 | Parameter | Type | Required | Description |
 |-----------|-------|-----------|-------------|
-| `side` | string | Yes | Order side: `BUY` or `SELL` (case-insensitive) |
+| `side` | string | Yes | Order side: `BUY` or `SELL` (case-insensitive, aliases: `B`, `S`) |
 | `symbol` | string | Yes | Trading symbol, e.g., `BTCUSDT` |
 | `qty` | number | Yes | Order quantity (must be > 0) |
-| `price` | number | Yes | Limit price (must be > 0) |
+| `price` | number | Yes | Limit price (must be > 0 for limit orders; 0 for market orders) |
 | `client_order_id` | string | Yes | Client-defined order ID |
+| `type` | string | No | Order type: `LIMIT` or `MARKET` (aliases: `L`, `M`). Default: `LIMIT` |
+| `tif` | string | No | Time-in-force: `GTC`, `IOC`, `FOK`, `GTX` (aliases: `G`, `I`, `F`, `G`). Default: `GTC` |
 
-**Example**:
+**Examples**:
 ```
 ORDER BUY BTCUSDT 0.001 50000.0 web-1234567890
 ORDER sell ethusdt 0.1 3200.0 my-order-1
+ORDER BUY BTCUSDT 0.001 50000.0 my-market-order market
+ORDER SELL BTCUSDT 0.001 0 my-market-order market ioc
 ```
 
 **Validation**:
-- Side must be `BUY`, `SELL`, `Buy`, or `Sell`
+- Side must be `BUY`, `SELL`, `Buy`, `Sell`, `B`, or `S`
 - Quantity must be positive
-- Price must be positive
+- Price must be positive for limit orders; can be 0 for market orders
 - Client order ID must not be empty
+- Type must be `LIMIT`, `MARKET`, `L`, or `M` (if provided)
+- TIF must be `GTC`, `IOC`, `FOK`, `GTX`, `G`, `I`, `F`, or `G` (if provided)
+
+**Time-in-Force Values**:
+| TIF | Description |
+|-----|-------------|
+| `GTC` (Good-Til-Canceled) | Order remains active until filled or canceled |
+| `IOC` (Immediate-Or-Cancel) | Fill immediately, cancel remaining |
+| `FOK` (Fill-Or-Kill) | Fill entirely or cancel |
+| `GTX` (Good-Til-Crossing) | Maker only; no immediate fill |
+
+### BUY Command (Shorthand)
+
+Place a buy order without the ORDER keyword.
+
+**Format**:
+```
+BUY <symbol> <qty> <price> <client_order_id> [type] [tif]
+```
+
+**Example**:
+```
+BUY BTCUSDT 0.001 50000.0 buy-order-1 limit gtc
+```
+
+### SELL Command (Shorthand)
+
+Place a sell order without the ORDER keyword.
+
+**Format**:
+```
+SELL <symbol> <qty> <price> <client_order_id> [type] [tif]
+```
+
+**Example**:
+```
+SELL BTCUSDT 0.001 50000.0 sell-order-1
+```
 
 ### CANCEL Command
 
@@ -241,6 +283,112 @@ CANCEL my-order-1
 
 **Validation**:
 - Client order ID must not be empty
+
+### QUERY Command
+
+Query engine for information.
+
+**Format**:
+```
+QUERY <type> [params]
+```
+
+**Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|-------|-----------|-------------|
+| `type` | string | Yes | Query type |
+| `params` | string | No | Additional parameters (space-separated) |
+
+**Example**:
+```
+QUERY status
+QUERY strategies
+```
+
+### STRATEGY Command
+
+Manage trading strategies.
+
+**Formats**:
+```
+STRATEGY LOAD <type> <name> [params...]
+STRATEGY START <strategy_id>
+STRATEGY STOP <strategy_id>
+STRATEGY PAUSE <strategy_id>
+STRATEGY RESUME <strategy_id>
+STRATEGY UNLOAD <strategy_id>
+STRATEGY LIST
+STRATEGY STATUS [strategy_id]
+STRATEGY PARAMS <strategy_id> <key>=<value>...
+STRATEGY METRICS [strategy_id]
+```
+
+**Parameters**:
+| Subcommand | Parameters | Description |
+|------------|-------------|-------------|
+| `LOAD` | `type`, `name`, `params...` | Load a strategy |
+| `START` | `strategy_id` | Start a strategy |
+| `STOP` | `strategy_id` | Stop a strategy |
+| `PAUSE` | `strategy_id` | Pause a strategy |
+| `RESUME` | `strategy_id` | Resume a paused strategy |
+| `UNLOAD` | `strategy_id` | Unload a strategy |
+| `LIST` | none | List all strategies |
+| `STATUS` | `[strategy_id]` | Get strategy status |
+| `PARAMS` | `strategy_id`, `key>=<value>...` | Update strategy parameters |
+| `METRICS` | `[strategy_id]` | Get strategy metrics |
+
+**Examples**:
+```
+STRATEGY LOAD TrendFollowing ma_cross_1 fast_period=10 slow_period=20
+STRATEGY START ma_cross_1
+STRATEGY STOP ma_cross_1
+STRATEGY LIST
+STRATEGY STATUS ma_cross_1
+STRATEGY METRICS
+```
+
+### SUBSCRIBE Command
+
+Subscribe to market data events.
+
+**Format**:
+```
+SUBSCRIBE <venue> <symbol> <event_type>
+```
+
+**Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|-------|-----------|-------------|
+| `venue` | string | Yes | Exchange venue: `binance`, `okx`, `bybit` |
+| `symbol` | string | Yes | Trading symbol |
+| `event_type` | string | Yes | Event type: `trade`, `booktop`, `bookdelta`, `kline` |
+
+**Example**:
+```
+SUBSCRIBE binance BTCUSDT trade
+SUBSCRIBE binance BTCUSDT booktop
+```
+
+### UNSUBSCRIBE Command
+
+Unsubscribe from market data events.
+
+**Format**:
+```
+UNSUBSCRIBE <venue> <symbol> <event_type>
+```
+
+**Parameters**:
+| Parameter | Type | Required | Description |
+|-----------|-------|-----------|-------------|
+| `venue` | string | Yes | Exchange venue |
+| `symbol` | string | Yes | Trading symbol |
+| `event_type` | string | Yes | Event type to unsubscribe |
+
+**Example**:
+```
+UNSUBSCRIBE binance BTCUSDT trade
+```
 
 ## Event Format
 
@@ -469,6 +617,301 @@ Emitted when subscription state changes.
 | `status` | string | Status: `"subscribed"`, `"unsubscribed"`, `"error"` |
 | `ts_ns` | int64 | Timestamp in nanoseconds |
 
+### Order Received Event
+
+Emitted when an ORDER command is received.
+
+**Format**:
+```json
+{"type":"order_received","command_id":1,"client_order_id":"web-1234567890","symbol":"BTCUSDT","side":"buy","order_type":"limit","quantity":0.001,"price":50000.0}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"order_received"` |
+| `command_id` | int | Command sequence number |
+| `client_order_id` | string | Client order ID |
+| `symbol` | string | Trading symbol |
+| `side` | string | Order side: `"buy"` or `"sell"` |
+| `order_type` | string | Order type: `"limit"` or `"market"` |
+| `quantity` | number | Order quantity |
+| `price` | number | Order price |
+
+### Cancel Received Event
+
+Emitted when a CANCEL command is received.
+
+**Format**:
+```json
+{"type":"cancel_received","command_id":2,"client_order_id":"web-1234567890"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"cancel_received"` |
+| `command_id` | int | Command sequence number |
+| `client_order_id` | string | Client order ID to cancel |
+
+### Query Received Event
+
+Emitted when a QUERY command is received.
+
+**Format**:
+```json
+{"type":"query_received","command_id":3,"query_type":"status","params":""}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"query_received"` |
+| `command_id` | int | Command sequence number |
+| `query_type` | string | Query type |
+| `params` | string | Query parameters |
+
+### Strategy Command Received Event
+
+Emitted when a STRATEGY command is received.
+
+**Format**:
+```json
+{"type":"strategy_command_received","command_id":4,"subcommand":1}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_command_received"` |
+| `command_id` | int | Command sequence number |
+| `subcommand` | int | Strategy subcommand ID |
+
+### Strategy Loaded Event
+
+Emitted when a strategy is loaded.
+
+**Format**:
+```json
+{"type":"strategy_loaded","strategy_id":"ma_cross_1","name":"MA Crossover","strategy_type":"TrendFollowing"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_loaded"` |
+| `strategy_id` | string | Strategy ID |
+| `name` | string | Strategy name |
+| `strategy_type` | string | Strategy type |
+
+### Strategy Started Event
+
+Emitted when a strategy starts execution.
+
+**Format**:
+```json
+{"type":"strategy_started","strategy_id":"ma_cross_1"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_started"` |
+| `strategy_id` | string | Strategy ID |
+
+### Strategy Stopped Event
+
+Emitted when a strategy stops.
+
+**Format**:
+```json
+{"type":"strategy_stopped","strategy_id":"ma_cross_1"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_stopped"` |
+| `strategy_id` | string | Strategy ID |
+
+### Strategy Paused Event
+
+Emitted when a strategy is paused.
+
+**Format**:
+```json
+{"type":"strategy_paused","strategy_id":"ma_cross_1"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_paused"` |
+| `strategy_id` | string | Strategy ID |
+
+### Strategy Resumed Event
+
+Emitted when a paused strategy is resumed.
+
+**Format**:
+```json
+{"type":"strategy_resumed","strategy_id":"ma_cross_1"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_resumed"` |
+| `strategy_id` | string | Strategy ID |
+
+### Strategy Unloaded Event
+
+Emitted when a strategy is unloaded.
+
+**Format**:
+```json
+{"type":"strategy_unloaded","strategy_id":"ma_cross_1"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_unloaded"` |
+| `strategy_id` | string | Strategy ID |
+
+### Strategy List Event
+
+Emitted when listing all strategies.
+
+**Format**:
+```json
+{"type":"strategy_list","count":3,"strategies":["ma_cross_1","rsi_1","grid_1"]}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_list"` |
+| `count` | int | Number of strategies |
+| `strategies` | array | Array of strategy IDs |
+
+### Strategy Status Event
+
+Emitted when querying a specific strategy's status.
+
+**Format**:
+```json
+{"type":"strategy_status","strategy_id":"ma_cross_1","name":"MA Crossover","is_running":true,"pnl":1250.50,"trade_count":42,"win_rate":0.667}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_status"` |
+| `strategy_id` | string | Strategy ID |
+| `name` | string | Strategy name |
+| `is_running` | boolean | Whether strategy is running |
+| `pnl` | number | Profit/loss |
+| `trade_count` | int | Number of trades |
+| `win_rate` | number | Win rate (0.0-1.0) |
+
+### Strategy Status All Event
+
+Emitted when querying all strategies' status.
+
+**Format**:
+```json
+{"type":"strategy_status_all","count":3,"strategies":[{"strategy_id":"ma_cross_1","name":"MA Crossover","is_running":true,"pnl":1250.50,"trade_count":42,"win_rate":0.667}]}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_status_all"` |
+| `count` | int | Number of strategies |
+| `strategies` | array | Array of strategy status objects |
+
+### Strategy Params Updated Event
+
+Emitted when strategy parameters are updated.
+
+**Format**:
+```json
+{"type":"strategy_params_updated","strategy_id":"ma_cross_1","param_count":2}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_params_updated"` |
+| `strategy_id` | string | Strategy ID |
+| `param_count` | int | Number of parameters updated |
+
+### Strategy Metrics Event
+
+Emitted when querying strategy metrics.
+
+**Format**:
+```json
+{"type":"strategy_metrics","strategy_id":"ma_cross_1","events_processed":1000,"signals_generated":50,"avg_execution_time_us":125.5,"signals_per_second":0.5,"errors":0}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_metrics"` |
+| `strategy_id` | string | Strategy ID |
+| `events_processed` | int | Number of events processed |
+| `signals_generated` | int | Number of signals generated |
+| `avg_execution_time_us` | number | Average execution time in microseconds |
+| `signals_per_second` | number | Signals per second |
+| `errors` | int | Error count |
+
+### Strategy Metrics Summary Event
+
+Emitted when querying aggregated strategy metrics.
+
+**Format**:
+```json
+{"type":"strategy_metrics_summary","summary":"Total strategies: 3, Running: 2, Total trades: 150"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"strategy_metrics_summary"` |
+| `summary` | string | Summary text |
+
+### Engine Started Event
+
+Emitted when the engine starts.
+
+**Format**:
+```json
+{"type":"engine_started","version":"1.0.0"}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"engine_started"` |
+| `version` | string | Engine version |
+
+### Engine Stopped Event
+
+Emitted when the engine shuts down.
+
+**Format**:
+```json
+{"type":"engine_stopped","commands_processed":1000}
+```
+
+**Fields**:
+| Field | Type | Description |
+|--------|-------|-------------|
+| `type` | string | Event type: `"engine_stopped"` |
+| `commands_processed` | int | Number of commands processed |
+
 ## Order States
 
 | State | Description |
@@ -547,12 +990,30 @@ The engine maintains order state internally. Sending the same command multiple t
 | `book_top` | Best bid/ask update | Market data |
 | `book_delta` | Order book level changes | Market data |
 | `kline` | Candlestick/OHLCV data | Market data |
+| `order_received` | ORDER command received | Order management |
+| `cancel_received` | CANCEL command received | Order management |
+| `query_received` | QUERY command received | System |
+| `strategy_command_received` | STRATEGY command received | Strategy management |
 | `order_update` | Order status change | Order management |
 | `fill` | Trade execution fill | Order management |
 | `order_state` | Order state snapshot | Order management |
+| `strategy_loaded` | Strategy loaded | Strategy management |
+| `strategy_started` | Strategy started | Strategy management |
+| `strategy_stopped` | Strategy stopped | Strategy management |
+| `strategy_paused` | Strategy paused | Strategy management |
+| `strategy_resumed` | Strategy resumed | Strategy management |
+| `strategy_unloaded` | Strategy unloaded | Strategy management |
+| `strategy_list` | List of strategies | Strategy management |
+| `strategy_status` | Single strategy status | Strategy management |
+| `strategy_status_all` | All strategies status | Strategy management |
+| `strategy_params_updated` | Strategy parameters updated | Strategy management |
+| `strategy_metrics` | Strategy metrics | Strategy management |
+| `strategy_metrics_summary` | Strategy metrics summary | Strategy management |
 | `account` | Account balance update | Account management |
 | `subscription_status` | Subscription state change | System |
 | `error` | Error notification | System |
+| `engine_started` | Engine startup | System |
+| `engine_stopped` | Engine shutdown | System |
 
 ## Configuration API Format
 

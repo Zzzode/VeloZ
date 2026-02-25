@@ -257,6 +257,259 @@ Revoke an API key. Requires admin permission.
 - Revoked keys are immediately invalidated
 - Audit logs record all key revocations
 
+### POST /api/auth/roles
+
+Update a user's roles. Requires admin permission.
+
+**Request Body (JSON):**
+```json
+{
+  "user_id": "trader1",
+  "roles": ["viewer", "trader"]
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `user_id` | string | Yes | User ID to update |
+| `roles` | array | Yes | List of roles to assign |
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "user_id": "trader1",
+  "roles": ["viewer", "trader"]
+}
+```
+
+**Error Response (403):**
+```json
+{
+  "error": "forbidden",
+  "message": "admin permission required"
+}
+```
+
+### DELETE /api/auth/roles
+
+Remove a user's roles. Requires admin permission.
+
+**Query Parameters:**
+- `user_id` (required) - The user ID
+- `roles` (optional) - Specific roles to remove (comma-separated). If not provided, all roles are removed.
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "user_id": "trader1",
+  "removed_roles": ["viewer", "trader"]
+}
+```
+
+---
+
+## Exchange Keys Management
+
+Manage exchange API keys for connecting to trading venues.
+
+### GET /api/exchange-keys
+
+List all configured exchange API keys.
+
+**Response:**
+```json
+{
+  "keys": [
+    {
+      "exchange": "binance",
+      "name": "my-binance-key",
+      "created_at": 1704067200,
+      "has_secret": true,
+      "permissions": ["spot", "futures"]
+    }
+  ]
+}
+```
+
+### POST /api/exchange-keys
+
+Add or update an exchange API key.
+
+**Request Body (JSON):**
+```json
+{
+  "exchange": "binance",
+  "api_key": "your_api_key",
+  "api_secret": "your_api_secret",
+  "name": "my-binance-key",
+  "permissions": ["spot", "futures"]
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `exchange` | string | Yes | Exchange name: `binance`, `okx`, `bybit` |
+| `api_key` | string | Yes | API key from the exchange |
+| `api_secret` | string | Yes | API secret from the exchange |
+| `name` | string | No | Human-readable name |
+| `permissions` | array | No | Trading permissions |
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "exchange": "binance",
+  "name": "my-binance-key"
+}
+```
+
+### DELETE /api/exchange-keys
+
+Delete an exchange API key.
+
+**Query Parameters:**
+- `exchange` (required) - The exchange name
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "exchange": "binance"
+}
+```
+
+### POST /api/exchange-keys/test
+
+Test exchange API key connectivity.
+
+**Request Body (JSON):**
+```json
+{
+  "exchange": "binance"
+}
+```
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "exchange": "binance",
+  "status": "connected",
+  "server_time": 1704067200000
+}
+```
+
+**Error Response:**
+```json
+{
+  "ok": false,
+  "exchange": "binance",
+  "error": "invalid_api_key"
+}
+```
+
+---
+
+## Settings Management
+
+Manage gateway settings and configuration.
+
+### GET /api/settings
+
+Get current gateway settings.
+
+**Response:**
+```json
+{
+  "settings": {
+    "market_source": "sim",
+    "market_symbol": "BTCUSDT",
+    "execution_mode": "sim_engine",
+    "auth_enabled": false,
+    "audit_enabled": true
+  }
+}
+```
+
+### POST /api/settings
+
+Update gateway settings.
+
+**Request Body (JSON):**
+```json
+{
+  "market_source": "binance_rest",
+  "market_symbol": "ETHUSDT",
+  "execution_mode": "binance_testnet_spot"
+}
+```
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "settings": {
+    "market_source": "binance_rest",
+    "market_symbol": "ETHUSDT",
+    "execution_mode": "binance_testnet_spot"
+  }
+}
+```
+
+### GET /api/settings/export
+
+Export current settings as a downloadable JSON file.
+
+**Response:**
+```json
+{
+  "version": "1.0",
+  "exported_at": 1704067200,
+  "settings": {
+    "market_source": "sim",
+    "market_symbol": "BTCUSDT",
+    "execution_mode": "sim_engine"
+  },
+  "exchange_keys": [
+    {
+      "exchange": "binance",
+      "name": "my-binance-key"
+    }
+  ]
+}
+```
+
+### POST /api/settings/import
+
+Import settings from a JSON file.
+
+**Request Body (JSON):**
+```json
+{
+  "version": "1.0",
+  "settings": {
+    "market_source": "sim",
+    "market_symbol": "BTCUSDT"
+  },
+  "import_exchange_keys": false
+}
+```
+
+**Success Response:**
+```json
+{
+  "ok": true,
+  "imported": {
+    "settings": true,
+    "exchange_keys": false
+  }
+}
+```
+
 ---
 
 ## Permission-Based Access Control
@@ -265,13 +518,30 @@ When authentication is enabled, all endpoints (except public ones) require prope
 
 ### Permission Model
 
-VeloZ uses a role-based permission system with three permission levels:
+VeloZ uses a role-based permission system with granular permissions.
 
 | Permission | Access Level | Description |
 |------------|--------------|-------------|
-| `read` | Read-only | Access to all GET endpoints (market data, orders, positions, config) |
-| `write` | Read + Write | Access to POST endpoints (place orders, cancel orders) |
-| `admin` | Full access | All read/write access plus user/key management |
+| `read:market` | Read-only | Access to market data endpoints |
+| `read:orders` | Read-only | Access to order endpoints |
+| `read:account` | Read-only | Access to account endpoints |
+| `read:config` | Read-only | Access to configuration endpoints |
+| `write:orders` | Write | Access to place orders |
+| `write:cancel` | Write | Access to cancel orders |
+| `admin:keys` | Admin | API key management |
+| `admin:users` | Admin | User and role management |
+| `admin:config` | Admin | System configuration |
+
+**Built-in Roles:**
+- **viewer**: read:market, read:config
+- **trader**: read:market, read:orders, read:account, read:config, write:orders, write:cancel
+- **admin**: All permissions
+
+**Legacy Permissions:**
+For backward compatibility, the following legacy permissions are expanded:
+- `read` → read:market, read:orders, read:account, read:config
+- `write` → write:orders, write:cancel
+- `admin` → admin:keys, admin:users, admin:config
 
 ### Permission Enforcement
 
@@ -286,19 +556,30 @@ VeloZ uses a role-based permission system with three permission levels:
 - `GET /api/orders_state`
 - `GET /api/order_state`
 - `GET /api/account`
-- `GET /api/positions`
-- `GET /api/positions/{symbol}`
 - `GET /api/execution/ping`
 - `GET /api/auth/keys` (users see only their own keys)
+- `GET /api/settings`
+- `GET /api/settings/export`
+- `GET /api/exchange-keys`
 
 **Write Permission Required:**
 - `POST /api/order`
 - `POST /api/cancel`
+- `POST /api/settings`
 
 **Admin Permission Required:**
 - `POST /api/auth/keys` (create API keys)
 - `DELETE /api/auth/keys` (revoke API keys)
-- `GET /api/auth/keys` (view all keys, not just own)
+- `GET /api/auth/keys` (view all keys)
+- `POST /api/auth/roles` (update user roles)
+- `DELETE /api/auth/roles` (delete user roles)
+- `GET /api/audit/logs`
+- `GET /api/audit/stats`
+- `POST /api/audit/archive`
+- `POST /api/settings/import`
+- `POST /api/exchange-keys`
+- `DELETE /api/exchange-keys`
+- `POST /api/exchange-keys/test`
 
 ### Permission Checking
 
@@ -729,72 +1010,6 @@ Get the account balance state.
 
 ---
 
-## Positions
-
-### GET /api/positions
-
-Get all current positions.
-
-**Response:**
-```json
-{
-  "positions": [
-    {
-      "symbol": "BTCUSDT",
-      "venue": "binance",
-      "side": "LONG",
-      "qty": 0.5,
-      "avg_entry_price": 49500.0,
-      "current_price": 50000.0,
-      "unrealized_pnl": 250.0,
-      "realized_pnl": 1200.0,
-      "last_update_ts_ns": 1704067200000000000
-    }
-  ]
-}
-```
-
-**Fields:**
-| Field | Type | Description |
-|-------|------|-------------|
-| `symbol` | string | Trading symbol |
-| `venue` | string | Exchange venue |
-| `side` | string | Position side: `"LONG"` or `"SHORT"` |
-| `qty` | number | Position quantity |
-| `avg_entry_price` | number | Average entry price |
-| `current_price` | number | Current market price |
-| `unrealized_pnl` | number | Unrealized profit/loss |
-| `realized_pnl` | number | Realized profit/loss |
-| `last_update_ts_ns` | int64 | Last update timestamp |
-
-### GET /api/positions/{symbol}
-
-Get position for a specific symbol.
-
-**Response:**
-```json
-{
-  "symbol": "BTCUSDT",
-  "venue": "binance",
-  "side": "LONG",
-  "qty": 0.5,
-  "avg_entry_price": 49500.0,
-  "current_price": 50000.0,
-  "unrealized_pnl": 250.0,
-  "realized_pnl": 1200.0,
-  "last_update_ts_ns": 1704067200000000000
-}
-```
-
-**Error Response (404):**
-```json
-{
-  "error": "Position not found"
-}
-```
-
----
-
 ## Execution
 
 ### GET /api/execution/ping
@@ -878,112 +1093,6 @@ Subscribe to real-time event stream via Server-Sent Events.
 **Keep-Alive:** The server sends a `: keep-alive` message every 10 seconds if no events occur.
 
 **Reconnection:** Use the `last_id` query parameter to resume from the last received event.
-
----
-
-## WebSocket Endpoints
-
-### GET /ws/market
-
-WebSocket endpoint for real-time market data streaming.
-
-**Connection:**
-```javascript
-const ws = new WebSocket('ws://127.0.0.1:8080/ws/market');
-```
-
-**Subscribe to symbols:**
-```json
-{
-  "action": "subscribe",
-  "symbols": ["BTCUSDT", "ETHUSDT"],
-  "channels": ["trade", "book_top", "kline"]
-}
-```
-
-**Unsubscribe:**
-```json
-{
-  "action": "unsubscribe",
-  "symbols": ["BTCUSDT"],
-  "channels": ["trade"]
-}
-```
-
-**Incoming Messages:**
-
-Trade data:
-```json
-{
-  "type": "trade",
-  "symbol": "BTCUSDT",
-  "price": 50000.0,
-  "qty": 0.5,
-  "is_buyer_maker": true,
-  "ts_ns": 1704067200000000000
-}
-```
-
-Book top data:
-```json
-{
-  "type": "book_top",
-  "symbol": "BTCUSDT",
-  "bid_price": 49999.0,
-  "bid_qty": 1.5,
-  "ask_price": 50001.0,
-  "ask_qty": 2.0,
-  "ts_ns": 1704067200000000000
-}
-```
-
-### GET /ws/orders
-
-WebSocket endpoint for real-time order updates.
-
-**Connection:**
-```javascript
-const ws = new WebSocket('ws://127.0.0.1:8080/ws/orders');
-```
-
-**Incoming Messages:**
-
-Order update:
-```json
-{
-  "type": "order_update",
-  "client_order_id": "web-1234567890",
-  "status": "FILLED",
-  "symbol": "BTCUSDT",
-  "side": "BUY",
-  "qty": 0.001,
-  "price": 50000.0,
-  "ts_ns": 1704067200000000000
-}
-```
-
-Fill notification:
-```json
-{
-  "type": "fill",
-  "client_order_id": "web-1234567890",
-  "symbol": "BTCUSDT",
-  "qty": 0.001,
-  "price": 50000.0,
-  "ts_ns": 1704067200000000000
-}
-```
-
-### WebSocket vs SSE
-
-| Feature | WebSocket | SSE |
-|---------|-----------|-----|
-| Direction | Bidirectional | Server to client only |
-| Protocol | ws:// / wss:// | HTTP |
-| Reconnection | Manual | Automatic (EventSource) |
-| Use case | Interactive subscriptions | Simple event streaming |
-
-**Recommendation:** Use SSE (`/api/stream`) for simple event consumption. Use WebSocket for interactive market data subscriptions with dynamic symbol management.
 
 ---
 

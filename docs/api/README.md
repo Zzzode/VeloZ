@@ -18,10 +18,11 @@ The gateway supports comprehensive authentication and authorization:
 
 ### JWT Authentication
 
-1. **Access Tokens** - Short-lived (15 minutes)
+1. **Access Tokens** - Short-lived (1 hour by default)
    - Obtained via `POST /api/auth/login`
    - Used for API requests via `Authorization: Bearer <token>`
-   - Automatically expire after 15 minutes
+   - Automatically expire after configured duration (default: 3600 seconds / 1 hour)
+   - Expiry configurable via `VELOZ_TOKEN_EXPIRY` environment variable
 
 2. **Refresh Tokens** - Long-lived (7 days)
    - Obtained alongside access tokens
