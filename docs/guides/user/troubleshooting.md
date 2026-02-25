@@ -90,7 +90,7 @@ ImportError: No module named 'aiohttp'
 **Solution:**
 ```bash
 # Install Python dependencies
-pip install aiohttp
+pip install -r apps/gateway/requirements.txt
 ```
 
 ### Engine crashes on startup

@@ -3442,6 +3442,7 @@ def main():
     else:
         audit_logger.info("Authentication disabled (set VELOZ_AUTH_ENABLED=true to enable)")
 
+    audit_logger.info(f"Gateway listening on http://{host}:{port}")
     try:
         httpd.serve_forever()
     finally:

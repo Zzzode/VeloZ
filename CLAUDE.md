@@ -109,6 +109,7 @@ Run engine via script (builds first; runs a short `timeout 3s` smoke test):
 Run gateway + UI (builds first; starts `apps/gateway/gateway.py`):
 
 ```bash
+pip3 install -r apps/gateway/requirements.txt
 ./scripts/run_gateway.sh dev
 ```
 

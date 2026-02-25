@@ -22,6 +22,7 @@ The fastest way to try VeloZ is to use the gateway script which builds everythin
 
 ```bash
 # Run the gateway (builds UI, builds engine, and starts server)
+pip3 install -r apps/gateway/requirements.txt
 ./scripts/run_gateway.sh dev
 ```
 
@@ -48,6 +49,7 @@ npm run build
 cd ../..
 
 # 3. Start the gateway
+pip3 install -r apps/gateway/requirements.txt
 python3 apps/gateway/gateway.py
 ```
 
@@ -77,7 +79,11 @@ VeloZ automatically fetches these dependencies via CMake FetchContent:
 - **yyjson** - High-performance JSON parser
 - **OpenSSL** - TLS support for WebSocket connections
 
-No manual dependency installation is required.
+No manual C++ dependency installation is required. However, Python dependencies must be installed:
+
+```bash
+pip3 install -r apps/gateway/requirements.txt
+```
 
 ### Optional Dependencies
 

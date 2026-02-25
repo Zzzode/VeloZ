@@ -120,6 +120,9 @@ cd ../..
 #### 3. Run Gateway + UI
 
 ```bash
+# Install Python dependencies
+pip3 install -r apps/gateway/requirements.txt
+
 # Starts the gateway which spawns the engine and serves the UI
 ./scripts/run_gateway.sh dev
 ```

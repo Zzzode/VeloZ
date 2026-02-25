@@ -6,16 +6,18 @@ This guide covers installing VeloZ for development and production environments.
 
 **Ubuntu/Debian (One-liner):**
 ```bash
-sudo apt update && sudo apt install -y cmake ninja-build build-essential clang-16 libssl-dev python3 git && \
+sudo apt update && sudo apt install -y cmake ninja-build build-essential clang-16 libssl-dev python3 python3-pip git && \
 git clone https://github.com/Zzzode/VeloZ.git && cd VeloZ && \
+pip3 install -r apps/gateway/requirements.txt && \
 cmake --preset dev && cmake --build --preset dev-all -j$(nproc) && \
 ctest --preset dev -j$(nproc) && ./scripts/run_gateway.sh dev
 ```
 
 **macOS (One-liner):**
 ```bash
-xcode-select --install && brew install cmake ninja openssl@3 && \
+xcode-select --install && brew install cmake ninja openssl@3 python3 && \
 git clone https://github.com/Zzzode/VeloZ.git && cd VeloZ && \
+pip3 install -r apps/gateway/requirements.txt && \
 cmake --preset dev && cmake --build --preset dev-all -j$(sysctl -n hw.ncpu) && \
 ctest --preset dev -j$(sysctl -n hw.ncpu) && ./scripts/run_gateway.sh dev
 ```
@@ -85,6 +87,9 @@ sudo apt install -y \
 git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
+# Install Python dependencies
+pip3 install -r apps/gateway/requirements.txt
+
 # Build
 cmake --preset dev
 cmake --build --preset dev -j$(nproc)
@@ -100,11 +105,14 @@ cmake --build --preset dev -j$(nproc)
 xcode-select --install
 
 # Install Homebrew dependencies
-brew install cmake ninja openssl@3
+brew install cmake ninja openssl@3 python3
 
 # Clone and build
 git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
+
+# Install Python dependencies
+pip3 install -r apps/gateway/requirements.txt
 
 cmake --preset dev
 cmake --build --preset dev -j$(sysctl -n hw.ncpu)
@@ -115,10 +123,14 @@ cmake --build --preset dev -j$(sysctl -n hw.ncpu)
 ```powershell
 # Install Visual Studio 2022 with C++ workload
 # Install CMake from https://cmake.org/download/
+# Install Python 3.10+ from https://www.python.org/downloads/
 
 # Clone repository
 git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
+
+# Install Python dependencies
+pip install -r apps/gateway/requirements.txt
 
 # Build with MSVC
 cmake --preset dev

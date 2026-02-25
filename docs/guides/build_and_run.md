@@ -262,6 +262,7 @@ The gateway uses Python stdlib to start an HTTP service and bridges to the engin
 
 ```bash
 # Terminal 1: Start gateway
+pip3 install -r apps/gateway/requirements.txt
 ./scripts/run_gateway.sh dev
 ```
 

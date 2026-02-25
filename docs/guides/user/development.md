@@ -72,6 +72,9 @@ sudo dnf install -y clang
 git clone https://github.com/Zzzode/VeloZ.git
 cd VeloZ
 
+# Install Python dependencies
+pip3 install -r apps/gateway/requirements.txt
+
 # Configure (uses CMake presets)
 cmake --preset dev
 
