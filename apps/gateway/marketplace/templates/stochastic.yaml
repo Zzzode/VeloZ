@@ -1,0 +1,171 @@
+# Stochastic Oscillator Strategy Template
+# Version: 1.0.0
+
+id: stochastic
+name: Stochastic Oscillator
+version: "1.0.0"
+category: mean_reversion
+strategy_type: stochastic
+difficulty: intermediate
+risk_level: medium
+
+description:
+  short: Trade overbought and oversold conditions using the Stochastic Oscillator indicator.
+  long: |
+    The Stochastic Oscillator strategy uses the relationship between a closing price
+    and its price range over a given period to identify potential reversal points.
+    The indicator consists of two lines: %K (fast) and %D (slow signal line).
+
+    When both lines are below 20 and %K crosses above %D, it generates a buy signal.
+    When both lines are above 80 and %K crosses below %D, it generates a sell signal.
+  how_it_works: |
+    1. Calculate %K = (Current Close - Lowest Low) / (Highest High - Lowest Low) * 100
+    2. Calculate %D = SMA of %K over signal period
+    3. When %K crosses above %D in oversold zone (< 20), buy
+    4. When %K crosses below %D in overbought zone (> 80), sell
+    5. Exit when opposite signal occurs or at target/stop
+  when_to_use:
+    - Ranging markets
+    - When looking for reversal signals
+    - Combined with trend filters
+    - In markets with clear support/resistance
+  when_not_to_use:
+    - Strong trending markets
+    - During breakouts
+    - When volatility is extremely high
+
+parameters:
+  - name: k_period
+    display_name: "%K Period"
+    type: integer
+    description: "Lookback period for %K calculation."
+    default: 14
+    min: 5
+    max: 50
+    step: 1
+
+  - name: d_period
+    display_name: "%D Period"
+    type: integer
+    description: "Smoothing period for %D (signal line)."
+    default: 3
+    min: 1
+    max: 10
+    step: 1
+
+  - name: overbought_level
+    display_name: Overbought Level
+    type: integer
+    description: Level above which asset is considered overbought.
+    default: 80
+    min: 70
+    max: 95
+    step: 5
+
+  - name: oversold_level
+    display_name: Oversold Level
+    type: integer
+    description: Level below which asset is considered oversold.
+    default: 20
+    min: 5
+    max: 30
+    step: 5
+
+  - name: position_size
+    display_name: Position Size
+    type: float
+    description: Size of each position as a fraction of capital.
+    default: 0.1
+    min: 0.01
+    max: 0.5
+    step: 0.01
+
+  - name: use_smoothing
+    display_name: Use Slow Stochastic
+    type: boolean
+    description: Apply additional smoothing to %K (slow stochastic).
+    default: true
+    advanced: true
+
+  - name: smoothing_period
+    display_name: Smoothing Period
+    type: integer
+    description: Additional smoothing period for slow stochastic.
+    default: 3
+    min: 1
+    max: 10
+    step: 1
+    depends_on:
+      parameter: use_smoothing
+      condition: equals
+      value: true
+    advanced: true
+
+  - name: stop_loss_pct
+    display_name: Stop Loss
+    type: percentage
+    description: Stop loss percentage from entry.
+    default: 3.0
+    min: 0
+    max: 20.0
+    step: 0.5
+    unit: "%"
+
+presets:
+  conservative:
+    name: Conservative
+    description: Extreme levels for stronger signals.
+    values:
+      k_period: 14
+      d_period: 3
+      overbought_level: 85
+      oversold_level: 15
+      position_size: 0.05
+      stop_loss_pct: 2.0
+
+  moderate:
+    name: Moderate
+    description: Standard stochastic parameters.
+    values:
+      k_period: 14
+      d_period: 3
+      overbought_level: 80
+      oversold_level: 20
+      position_size: 0.1
+      stop_loss_pct: 3.0
+
+  aggressive:
+    name: Aggressive
+    description: Wider bands for more signals.
+    values:
+      k_period: 10
+      d_period: 3
+      overbought_level: 75
+      oversold_level: 25
+      position_size: 0.15
+      stop_loss_pct: 5.0
+
+risks:
+  - "Can remain overbought/oversold for extended periods in trends"
+  - "False signals in choppy markets"
+  - "Crossover signals can lag price action"
+  - "Multiple losing trades possible in strong trends"
+
+supported_symbols: []
+supported_exchanges:
+  - binance
+  - okx
+  - bybit
+
+min_capital: 300
+
+tags:
+  - stochastic
+  - oscillator
+  - mean-reversion
+  - intermediate
+  - technical-analysis
+
+author: VeloZ Team
+created_at: "2026-02-25"
+updated_at: "2026-02-25"

@@ -43,7 +43,7 @@ VeloZ v1.0 has achieved full production readiness with a score of 100/100. All c
 
 **Distance to Production: 0** - The system can be deployed immediately.
 
-See full analysis in RELEASE_NOTES.md and CHANGELOG.md.
+See full analysis in [RELEASE_NOTES.md](../../RELEASE_NOTES.md) and [CHANGELOG.md](../../../CHANGELOG.md).
 
 ---
 

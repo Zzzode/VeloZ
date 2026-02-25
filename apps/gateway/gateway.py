@@ -43,6 +43,11 @@ from metrics import (
     metrics_available,
 )
 
+# Import configuration modules
+from keychain import get_keychain_manager, KeychainManager
+from config_manager import get_config_manager, ConfigManager
+from exchange_tester import get_exchange_tester, test_exchange_connection
+
 # Configure audit logger
 audit_logger = logging.getLogger("veloz.audit")
 audit_logger.setLevel(logging.INFO)
@@ -2154,6 +2159,16 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/audit/stats":
             self._handle_get_audit_stats()
             return
+        # Configuration endpoints
+        if parsed.path == "/api/exchange-keys":
+            self._handle_list_exchange_keys()
+            return
+        if parsed.path == "/api/settings":
+            self._handle_get_settings()
+            return
+        if parsed.path == "/api/settings/export":
+            self._handle_export_settings()
+            return
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
@@ -2192,6 +2207,19 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/config":
             self._handle_update_config()
+            return
+        # Configuration endpoints
+        if parsed.path == "/api/exchange-keys":
+            self._handle_create_exchange_key()
+            return
+        if parsed.path == "/api/exchange-keys/test":
+            self._handle_test_exchange_connection()
+            return
+        if parsed.path == "/api/settings":
+            self._handle_update_settings()
+            return
+        if parsed.path == "/api/settings/import":
+            self._handle_import_settings()
             return
         if parsed.path != "/api/order":
             self.send_error(404)
@@ -2459,6 +2487,10 @@ class Handler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/auth/roles":
             self._handle_remove_role()
+            return
+
+        if parsed.path == "/api/exchange-keys":
+            self._handle_delete_exchange_key()
             return
 
         self.send_error(404)
@@ -2860,6 +2892,330 @@ class Handler(SimpleHTTPRequestHandler):
                 "error": "config_save_failed",
                 "message": str(e),
             })
+
+    # =========================================================================
+    # Exchange Key Management Endpoints (GUI Configuration)
+    # =========================================================================
+
+    def _handle_list_exchange_keys(self):
+        """Handle listing exchange API keys."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        try:
+            keychain = get_keychain_manager()
+            keys = keychain.list_api_keys()
+            self._audit_log("list_exchange_keys")
+            self._send_json(200, {"keys": keys})
+        except Exception as e:
+            self._send_json(500, {"error": "keychain_error", "message": str(e)})
+
+    def _handle_create_exchange_key(self):
+        """Handle creating a new exchange API key."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        # Validate required fields
+        exchange = str(data.get("exchange", "")).strip().lower()
+        api_key = str(data.get("apiKey", "")).strip()
+        api_secret = str(data.get("apiSecret", "")).strip()
+        name = str(data.get("name", "Default")).strip()
+        testnet = data.get("testnet", True)
+        passphrase = data.get("passphrase")  # Required for OKX
+
+        if not exchange or not api_key or not api_secret:
+            self._send_json(400, {
+                "error": "bad_params",
+                "message": "exchange, apiKey, and apiSecret are required",
+            })
+            return
+
+        # Validate exchange
+        valid_exchanges = ["binance", "binance_futures", "okx", "bybit", "coinbase"]
+        if exchange not in valid_exchanges:
+            self._send_json(400, {
+                "error": "bad_params",
+                "message": f"Invalid exchange. Valid options: {valid_exchanges}",
+            })
+            return
+
+        # OKX requires passphrase
+        if exchange == "okx" and not passphrase:
+            self._send_json(400, {
+                "error": "bad_params",
+                "message": "passphrase is required for OKX",
+            })
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        try:
+            keychain = get_keychain_manager()
+            key_id = keychain.store_api_key(
+                exchange=exchange,
+                api_key=api_key,
+                api_secret=api_secret,
+                name=name,
+                passphrase=passphrase,
+                testnet=testnet,
+            )
+
+            if not key_id:
+                self._send_json(500, {"error": "keychain_error", "message": "Failed to store key"})
+                return
+
+            self._audit_log("create_exchange_key", {"key_id": key_id, "exchange": exchange})
+            self._send_json(201, {
+                "ok": True,
+                "keyId": key_id,
+                "message": "API key stored securely",
+            })
+        except Exception as e:
+            self._send_json(500, {"error": "keychain_error", "message": str(e)})
+
+    def _handle_delete_exchange_key(self):
+        """Handle deleting an exchange API key."""
+        qs = parse_qs(urlparse(self.path).query or "")
+        key_id = (qs.get("key_id") or qs.get("keyId") or [""])[0].strip()
+
+        if not key_id:
+            self._send_json(400, {"error": "bad_params", "message": "key_id is required"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        try:
+            keychain = get_keychain_manager()
+            success = keychain.delete_api_key(key_id)
+
+            if not success:
+                self._send_json(404, {"error": "not_found"})
+                return
+
+            self._audit_log("delete_exchange_key", {"key_id": key_id})
+            self._send_json(200, {"ok": True, "keyId": key_id})
+        except Exception as e:
+            self._send_json(500, {"error": "keychain_error", "message": str(e)})
+
+    def _handle_test_exchange_connection(self):
+        """Handle testing an exchange connection."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        # Can test by key_id (stored key) or by providing credentials directly
+        key_id = str(data.get("keyId", "")).strip()
+        exchange = str(data.get("exchange", "")).strip().lower()
+        api_key = str(data.get("apiKey", "")).strip()
+        api_secret = str(data.get("apiSecret", "")).strip()
+        testnet = data.get("testnet", True)
+        passphrase = data.get("passphrase")
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # If key_id provided, look up the stored key
+        if key_id:
+            try:
+                keychain = get_keychain_manager()
+                stored_key = keychain.get_api_key(key_id)
+                if not stored_key:
+                    self._send_json(404, {"error": "not_found", "message": "Key not found"})
+                    return
+                exchange = stored_key.exchange
+                api_key = stored_key.api_key
+                api_secret = stored_key.api_secret
+                testnet = stored_key.testnet
+                passphrase = stored_key.passphrase
+            except Exception as e:
+                self._send_json(500, {"error": "keychain_error", "message": str(e)})
+                return
+        elif not exchange or not api_key or not api_secret:
+            self._send_json(400, {
+                "error": "bad_params",
+                "message": "Either keyId or (exchange, apiKey, apiSecret) required",
+            })
+            return
+
+        # Run the connection test
+        import asyncio
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                test_exchange_connection(
+                    exchange=exchange,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    testnet=testnet,
+                    passphrase=passphrase,
+                )
+            )
+            loop.close()
+
+            self._audit_log("test_exchange_connection", {
+                "exchange": exchange,
+                "success": result.success,
+            })
+            self._send_json(200, result.to_dict())
+        except Exception as e:
+            self._send_json(500, {"error": "test_failed", "message": str(e)})
+
+    # =========================================================================
+    # Settings Management Endpoints (GUI Configuration)
+    # =========================================================================
+
+    def _handle_get_settings(self):
+        """Handle getting application settings."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        try:
+            config_mgr = get_config_manager()
+            settings = config_mgr.load()
+            self._send_json(200, settings)
+        except Exception as e:
+            self._send_json(500, {"error": "config_error", "message": str(e)})
+
+    def _handle_update_settings(self):
+        """Handle updating application settings."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        try:
+            config_mgr = get_config_manager()
+
+            # If updating a specific section
+            section = str(data.get("section", "")).strip()
+            if section and "data" in data:
+                settings = config_mgr.update(section, data["data"])
+            else:
+                # Full config update
+                config_mgr.save(data)
+                settings = config_mgr.load()
+
+            self._audit_log("update_settings", {"sections": list(data.keys())})
+            self._send_json(200, {
+                "ok": True,
+                "settings": settings,
+            })
+        except ValueError as e:
+            self._send_json(400, {"error": "validation_error", "message": str(e)})
+        except Exception as e:
+            self._send_json(500, {"error": "config_error", "message": str(e)})
+
+    def _handle_export_settings(self):
+        """Handle exporting settings as JSON."""
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        qs = parse_qs(urlparse(self.path).query or "")
+        include_sensitive = (qs.get("include_sensitive") or ["false"])[0].lower() == "true"
+
+        try:
+            config_mgr = get_config_manager()
+            export_data = config_mgr.export_config(include_sensitive=include_sensitive)
+
+            self._audit_log("export_settings", {"include_sensitive": include_sensitive})
+
+            # Return as downloadable JSON
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Disposition", "attachment; filename=veloz_config.json")
+            self.send_header("Content-Length", str(len(export_data)))
+            self.end_headers()
+            self.wfile.write(export_data.encode("utf-8"))
+        except Exception as e:
+            self._send_json(500, {"error": "export_error", "message": str(e)})
+
+    def _handle_import_settings(self):
+        """Handle importing settings from JSON."""
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            self._send_json(400, {"error": "bad_json"})
+            return
+
+        auth_info = getattr(self, "_auth_info", None)
+        if not auth_info:
+            self._send_json(401, {"error": "authentication_required"})
+            return
+
+        # Check for admin permission for import
+        user_permissions = auth_info.get("permissions", [])
+        if "admin" not in user_permissions:
+            self._send_json(403, {"error": "forbidden", "message": "admin permission required"})
+            return
+
+        config_json = data.get("config")
+        if not config_json:
+            self._send_json(400, {"error": "bad_params", "message": "config field required"})
+            return
+
+        try:
+            config_mgr = get_config_manager()
+
+            # If config is a string, parse it
+            if isinstance(config_json, str):
+                success = config_mgr.import_config(config_json)
+            else:
+                # If it's already a dict, save directly
+                config_mgr.save(config_json)
+                success = True
+
+            if not success:
+                self._send_json(400, {"error": "import_error", "message": "Invalid configuration format"})
+                return
+
+            self._audit_log("import_settings")
+            self._send_json(200, {
+                "ok": True,
+                "message": "Configuration imported successfully",
+                "settings": config_mgr.load(),
+            })
+        except ValueError as e:
+            self._send_json(400, {"error": "validation_error", "message": str(e)})
+        except Exception as e:
+            self._send_json(500, {"error": "import_error", "message": str(e)})
 
     def _handle_sse(self, parsed):
         qs = parse_qs(parsed.query or "")

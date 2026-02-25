@@ -1,0 +1,208 @@
+# Scalping Strategy Template
+# Version: 1.0.0
+
+id: scalping
+name: Scalping
+version: "1.0.0"
+category: high_frequency
+strategy_type: scalping
+difficulty: advanced
+risk_level: high
+
+description:
+  short: Capture small price movements with frequent trades and tight risk management.
+  long: |
+    Scalping is a high-frequency trading strategy that aims to profit from small
+    price movements by making many trades throughout the day. Each trade targets
+    a small profit, but the cumulative effect of many successful trades can be
+    significant.
+
+    This strategy requires excellent execution, low latency, and tight spreads.
+    It's best suited for liquid markets with high trading volume. Risk management
+    is critical as losses can accumulate quickly.
+  how_it_works: |
+    1. Monitor order book for imbalances and momentum
+    2. Enter positions when detecting short-term momentum
+    3. Target small profits (0.1-0.3% per trade)
+    4. Use tight stop losses to limit downside
+    5. Exit quickly - hold positions for seconds to minutes
+    6. Manage position sizing to control risk
+  when_to_use:
+    - High liquidity markets
+    - During active trading sessions
+    - When spreads are tight
+    - In volatile but not chaotic conditions
+  when_not_to_use:
+    - Low liquidity conditions
+    - Wide spreads
+    - During major news events
+    - When fees are high relative to target profit
+
+parameters:
+  - name: profit_target_pct
+    display_name: Profit Target
+    type: percentage
+    description: Target profit percentage per trade.
+    default: 0.2
+    min: 0.05
+    max: 1.0
+    step: 0.05
+    unit: "%"
+
+  - name: stop_loss_pct
+    display_name: Stop Loss
+    type: percentage
+    description: Stop loss percentage per trade.
+    default: 0.15
+    min: 0.05
+    max: 0.5
+    step: 0.05
+    unit: "%"
+
+  - name: position_size
+    display_name: Position Size
+    type: float
+    description: Size of each position as a fraction of capital.
+    default: 0.2
+    min: 0.05
+    max: 0.5
+    step: 0.05
+
+  - name: max_positions
+    display_name: Maximum Positions
+    type: integer
+    description: Maximum concurrent positions.
+    default: 1
+    min: 1
+    max: 5
+    step: 1
+
+  - name: max_trades_per_hour
+    display_name: Max Trades per Hour
+    type: integer
+    description: Maximum number of trades per hour to limit overtrading.
+    default: 20
+    min: 5
+    max: 100
+    step: 5
+
+  - name: min_spread_pct
+    display_name: Minimum Spread
+    type: percentage
+    description: Minimum spread to enter trade (avoid wide spreads).
+    default: 0.05
+    min: 0.01
+    max: 0.2
+    step: 0.01
+    unit: "%"
+    advanced: true
+
+  - name: momentum_period
+    display_name: Momentum Period
+    type: integer
+    description: Number of ticks/candles to measure momentum.
+    default: 5
+    min: 3
+    max: 20
+    step: 1
+    advanced: true
+
+  - name: momentum_threshold
+    display_name: Momentum Threshold
+    type: percentage
+    description: Minimum momentum to trigger entry.
+    default: 0.1
+    min: 0.05
+    max: 0.5
+    step: 0.05
+    unit: "%"
+    advanced: true
+
+  - name: use_order_book
+    display_name: Use Order Book
+    type: boolean
+    description: Use order book imbalance for entry signals.
+    default: true
+    advanced: true
+
+  - name: imbalance_threshold
+    display_name: Imbalance Threshold
+    type: float
+    description: Order book imbalance ratio to trigger entry (e.g., 1.5 = 50% more bids than asks).
+    default: 1.5
+    min: 1.1
+    max: 3.0
+    step: 0.1
+    depends_on:
+      parameter: use_order_book
+      condition: equals
+      value: true
+    advanced: true
+
+  - name: cooldown_seconds
+    display_name: Cooldown Period
+    type: integer
+    description: Seconds to wait after a losing trade before next entry.
+    default: 30
+    min: 0
+    max: 300
+    step: 10
+    advanced: true
+
+presets:
+  conservative:
+    name: Conservative
+    description: Larger targets with tighter risk management.
+    values:
+      profit_target_pct: 0.3
+      stop_loss_pct: 0.15
+      position_size: 0.1
+      max_trades_per_hour: 10
+      cooldown_seconds: 60
+
+  moderate:
+    name: Moderate
+    description: Balanced scalping parameters.
+    values:
+      profit_target_pct: 0.2
+      stop_loss_pct: 0.15
+      position_size: 0.2
+      max_trades_per_hour: 20
+      cooldown_seconds: 30
+
+  aggressive:
+    name: Aggressive
+    description: Smaller targets with higher frequency.
+    values:
+      profit_target_pct: 0.1
+      stop_loss_pct: 0.1
+      position_size: 0.3
+      max_trades_per_hour: 50
+      cooldown_seconds: 10
+
+risks:
+  - "High trading fees can eliminate profits"
+  - "Requires constant monitoring and fast execution"
+  - "Small losses can accumulate quickly"
+  - "Slippage can turn winning trades into losers"
+  - "Emotional stress from rapid decision-making"
+  - "Technology failures can be costly"
+
+supported_symbols: []
+supported_exchanges:
+  - binance
+  - okx
+  - bybit
+
+min_capital: 1000
+
+tags:
+  - scalping
+  - high-frequency
+  - short-term
+  - advanced
+  - active-trading
+
+author: VeloZ Team
+created_at: "2026-02-25"
+updated_at: "2026-02-25"

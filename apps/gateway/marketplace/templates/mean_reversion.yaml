@@ -1,0 +1,180 @@
+# Mean Reversion Strategy Template
+# Version: 1.0.0
+
+id: mean-reversion
+name: Mean Reversion
+version: "1.0.0"
+category: mean_reversion
+strategy_type: mean_reversion
+difficulty: intermediate
+risk_level: medium
+
+description:
+  short: Buy when price deviates below the mean and sell when it returns, profiting from price normalization.
+  long: |
+    Mean Reversion is based on the statistical concept that prices tend to return to
+    their average over time. When price deviates significantly from its historical
+    mean (measured in standard deviations), the strategy takes a position expecting
+    price to revert back.
+
+    This strategy works well in ranging markets where prices oscillate around a
+    central value. It requires careful parameter tuning to balance between catching
+    genuine reversions and avoiding false signals.
+  how_it_works: |
+    1. Calculate the moving average (mean) over a lookback period
+    2. Calculate the standard deviation of prices
+    3. When price falls below mean by entry_threshold standard deviations, buy
+    4. When price rises above mean by entry_threshold standard deviations, sell short
+    5. Exit when price returns to within exit_threshold of the mean
+    6. Use stop-loss to limit losses if price continues moving away from mean
+  when_to_use:
+    - Ranging or mean-reverting markets
+    - Assets with historical tendency to revert to mean
+    - When volatility is elevated but not trending
+    - After sharp price movements that seem overdone
+  when_not_to_use:
+    - Strong trending markets
+    - During fundamental shifts in asset value
+    - Low liquidity conditions
+    - When volatility is extremely high (potential regime change)
+
+parameters:
+  - name: lookback_period
+    display_name: Lookback Period
+    type: integer
+    description: Number of periods to calculate the moving average and standard deviation.
+    default: 20
+    min: 5
+    max: 200
+    step: 1
+
+  - name: entry_threshold
+    display_name: Entry Threshold (Std Dev)
+    type: float
+    description: Number of standard deviations from mean to trigger entry. Higher = fewer but stronger signals.
+    default: 2.0
+    min: 0.5
+    max: 5.0
+    step: 0.1
+
+  - name: exit_threshold
+    display_name: Exit Threshold (Std Dev)
+    type: float
+    description: Number of standard deviations from mean to trigger exit. Should be less than entry threshold.
+    default: 0.5
+    min: 0.0
+    max: 3.0
+    step: 0.1
+    validation:
+      type: less_than
+      reference: entry_threshold
+      message: Exit threshold must be less than entry threshold
+
+  - name: position_size
+    display_name: Position Size
+    type: float
+    description: Size of each position as a fraction of capital (0.1 = 10%).
+    default: 0.1
+    min: 0.01
+    max: 1.0
+    step: 0.01
+
+  - name: max_positions
+    display_name: Maximum Positions
+    type: integer
+    description: Maximum number of concurrent positions.
+    default: 3
+    min: 1
+    max: 10
+    step: 1
+
+  - name: stop_loss_std
+    display_name: Stop Loss (Std Dev)
+    type: float
+    description: Exit position if price moves this many additional standard deviations against you.
+    default: 3.0
+    min: 1.0
+    max: 10.0
+    step: 0.5
+    advanced: true
+
+  - name: use_bollinger
+    display_name: Use Bollinger Bands
+    type: boolean
+    description: Use Bollinger Bands visualization for entry/exit levels.
+    default: true
+    advanced: true
+
+  - name: ma_type
+    display_name: Moving Average Type
+    type: enum
+    description: Type of moving average to use for mean calculation.
+    default: sma
+    enum_values:
+      - value: sma
+        label: Simple Moving Average
+        description: Equal weight to all periods
+      - value: ema
+        label: Exponential Moving Average
+        description: More weight to recent prices
+    advanced: true
+
+presets:
+  conservative:
+    name: Conservative
+    description: Higher entry threshold for stronger signals, smaller positions.
+    values:
+      lookback_period: 30
+      entry_threshold: 2.5
+      exit_threshold: 0.3
+      position_size: 0.05
+      max_positions: 2
+      stop_loss_std: 4.0
+
+  moderate:
+    name: Moderate
+    description: Balanced parameters for typical market conditions.
+    values:
+      lookback_period: 20
+      entry_threshold: 2.0
+      exit_threshold: 0.5
+      position_size: 0.1
+      max_positions: 3
+      stop_loss_std: 3.0
+
+  aggressive:
+    name: Aggressive
+    description: Lower threshold for more frequent trades, larger positions.
+    values:
+      lookback_period: 14
+      entry_threshold: 1.5
+      exit_threshold: 0.5
+      position_size: 0.15
+      max_positions: 5
+      stop_loss_std: 2.5
+
+risks:
+  - "Price may not revert to mean (regime change or trend continuation)"
+  - "Multiple losing trades possible in trending markets"
+  - "Stop-loss may be hit frequently in high volatility"
+  - "Mean itself shifts over time, requiring parameter adjustment"
+  - "Correlation breakdown during market stress"
+
+supported_symbols: []
+supported_exchanges:
+  - binance
+  - okx
+  - bybit
+
+min_capital: 500
+
+tags:
+  - mean-reversion
+  - statistical
+  - bollinger
+  - intermediate
+  - active-trading
+
+author: VeloZ Team
+created_at: "2026-02-25"
+updated_at: "2026-02-25"

@@ -7,9 +7,12 @@ import { ProtectedRoute, Login } from '@/features/auth';
 const Dashboard = lazy(() => import('@/features/dashboard'));
 const Trading = lazy(() => import('@/features/trading'));
 const Market = lazy(() => import('@/features/market'));
+const Charting = lazy(() => import('@/features/charting'));
 const Strategies = lazy(() => import('@/features/strategies'));
+const Marketplace = lazy(() => import('@/features/marketplace'));
 const Backtest = lazy(() => import('@/features/backtest'));
 const Settings = lazy(() => import('@/features/settings'));
+const SecurityEducation = lazy(() => import('@/features/security-education'));
 
 const router = createBrowserRouter([
   {
@@ -53,6 +56,14 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: 'charts',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Charting />
+          </Suspense>
+        ),
+      },
+      {
         path: 'strategies',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
@@ -69,6 +80,30 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: 'marketplace',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Marketplace />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'marketplace/:id',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Marketplace />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'marketplace/:id/configure',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <Marketplace />
+          </Suspense>
+        ),
+      },
+      {
         path: 'backtest',
         element: (
           <Suspense fallback={<LoadingSpinner />}>
@@ -81,6 +116,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<LoadingSpinner />}>
             <Settings />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'security',
+        element: (
+          <Suspense fallback={<LoadingSpinner />}>
+            <SecurityEducation />
           </Suspense>
         ),
       },

@@ -1,0 +1,522 @@
+# VeloZ Release Build Workflow
+# Builds cross-platform installers and publishes releases
+
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+      prerelease:
+        description: 'Mark as prerelease'
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Build C++ engine for all platforms
+  build-engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: macos-13
+            platform: darwin
+            arch: x64
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+          - os: windows-latest
+            platform: win32
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+    name: Build Engine (${{ matrix.platform }}-${{ matrix.arch }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libssl-dev
+
+      - name: Install Dependencies (macOS)
+        if: matrix.platform == 'darwin'
+        run: |
+          brew install cmake ninja openssl@3
+
+      - name: Install Dependencies (Windows)
+        if: matrix.platform == 'win32'
+        run: |
+          choco install cmake ninja openssl
+
+      - name: Configure CMake
+        run: cmake --preset release
+
+      - name: Build Engine
+        run: cmake --build --preset release-engine -j
+
+      - name: Upload Engine Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            build/release/apps/engine/veloz_engine*
+            build/release/apps/engine/*.dll
+            build/release/apps/engine/*.dylib
+            build/release/apps/engine/*.so
+          retention-days: 1
+
+  # Build Python gateway bundle
+  build-gateway:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-13
+            platform: darwin-x64
+          - os: macos-14
+            platform: darwin-arm64
+          - os: windows-latest
+            platform: win32
+
+    runs-on: ${{ matrix.os }}
+    name: Build Gateway (${{ matrix.platform }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Create Embedded Python Bundle
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+          # Create standalone Python bundle with gateway
+          cd apps/gateway
+          pip install -r requirements.txt 2>/dev/null || true
+
+          # Bundle gateway with dependencies
+          pyinstaller --onedir --name gateway \
+            --add-data "rbac.py:." \
+            --add-data "audit.py:." \
+            --hidden-import=ssl \
+            --hidden-import=hashlib \
+            gateway.py
+
+      - name: Upload Gateway Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-${{ matrix.platform }}
+          path: apps/gateway/dist/gateway
+          retention-days: 1
+
+  # Build UI
+  build-ui:
+    runs-on: ubuntu-latest
+    name: Build UI
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/ui/package-lock.json
+
+      - name: Install Dependencies
+        working-directory: apps/ui
+        run: npm ci
+
+      - name: Build UI
+        working-directory: apps/ui
+        run: npm run build
+
+      - name: Upload UI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: apps/ui/dist
+          retention-days: 1
+
+  # Build Windows Installer
+  build-windows-installer:
+    needs: [build-engine, build-gateway, build-ui]
+    runs-on: windows-latest
+    name: Build Windows Installer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Engine
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-win32-x64
+          path: apps/installer/resources/engine
+
+      - name: Download Gateway
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-win32
+          path: apps/installer/resources/gateway
+
+      - name: Download UI
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: apps/installer/resources/ui
+
+      - name: Install Dependencies
+        working-directory: apps/installer
+        run: npm ci
+
+      - name: Build Installer
+        working-directory: apps/installer
+        env:
+          WINDOWS_CERT_FILE: ${{ secrets.WINDOWS_CERT_FILE }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: npm run make:win
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            apps/installer/out/make/squirrel.windows/x64/*.exe
+            apps/installer/out/make/squirrel.windows/x64/*.nupkg
+            apps/installer/out/make/squirrel.windows/x64/RELEASES
+          retention-days: 7
+
+  # Build macOS Installer (Intel)
+  build-macos-intel-installer:
+    needs: [build-engine, build-gateway, build-ui]
+    runs-on: macos-13
+    name: Build macOS Installer (Intel)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Engine
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-darwin-x64
+          path: apps/installer/resources/engine
+
+      - name: Download Gateway
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-darwin-x64
+          path: apps/installer/resources/gateway
+
+      - name: Download UI
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: apps/installer/resources/ui
+
+      - name: Install Dependencies
+        working-directory: apps/installer
+        run: npm ci
+
+      - name: Import Certificates
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Import certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          rm certificate.p12
+
+      - name: Build and Sign Installer
+        working-directory: apps/installer
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+        run: npm run make -- --platform darwin --arch x64
+
+      - name: Upload macOS Intel Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-installer
+          path: |
+            apps/installer/out/make/*.dmg
+            apps/installer/out/make/zip/darwin/x64/*.zip
+          retention-days: 7
+
+  # Build macOS Installer (Apple Silicon)
+  build-macos-arm-installer:
+    needs: [build-engine, build-gateway, build-ui]
+    runs-on: macos-14
+    name: Build macOS Installer (Apple Silicon)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Engine
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-darwin-arm64
+          path: apps/installer/resources/engine
+
+      - name: Download Gateway
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-darwin-arm64
+          path: apps/installer/resources/gateway
+
+      - name: Download UI
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: apps/installer/resources/ui
+
+      - name: Install Dependencies
+        working-directory: apps/installer
+        run: npm ci
+
+      - name: Import Certificates
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          rm certificate.p12
+
+      - name: Build and Sign Installer
+        working-directory: apps/installer
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_IDENTITY: ${{ secrets.APPLE_IDENTITY }}
+        run: npm run make -- --platform darwin --arch arm64
+
+      - name: Upload macOS ARM Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-installer
+          path: |
+            apps/installer/out/make/*.dmg
+            apps/installer/out/make/zip/darwin/arm64/*.zip
+          retention-days: 7
+
+  # Build Linux Installers
+  build-linux-installer:
+    needs: [build-engine, build-gateway, build-ui]
+    runs-on: ubuntu-latest
+    name: Build Linux Installers
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg fakeroot rpm
+
+      - name: Download Engine
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-linux-x64
+          path: apps/installer/resources/engine
+
+      - name: Download Gateway
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-linux
+          path: apps/installer/resources/gateway
+
+      - name: Download UI
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: apps/installer/resources/ui
+
+      - name: Make Engine Executable
+        run: chmod +x apps/installer/resources/engine/veloz_engine
+
+      - name: Install Dependencies
+        working-directory: apps/installer
+        run: npm ci
+
+      - name: Build Installers
+        working-directory: apps/installer
+        run: npm run make:linux
+
+      - name: Upload Linux Installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-installers
+          path: |
+            apps/installer/out/make/deb/x64/*.deb
+            apps/installer/out/make/rpm/x64/*.rpm
+          retention-days: 7
+
+  # Create GitHub Release
+  create-release:
+    needs:
+      - build-windows-installer
+      - build-macos-intel-installer
+      - build-macos-arm-installer
+      - build-linux-installer
+    runs-on: ubuntu-latest
+    name: Create Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Release Files
+        run: |
+          mkdir -p release
+
+          # Windows
+          cp artifacts/windows-installer/*.exe release/ 2>/dev/null || true
+
+          # macOS
+          cp artifacts/macos-intel-installer/*.dmg release/ 2>/dev/null || true
+          cp artifacts/macos-arm-installer/*.dmg release/ 2>/dev/null || true
+          cp artifacts/macos-intel-installer/*.zip release/ 2>/dev/null || true
+          cp artifacts/macos-arm-installer/*.zip release/ 2>/dev/null || true
+
+          # Linux
+          cp artifacts/linux-installers/*.deb release/ 2>/dev/null || true
+          cp artifacts/linux-installers/*.rpm release/ 2>/dev/null || true
+
+          # Generate checksums
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Generate Update Manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > release/update-manifest.json << EOF
+          {
+            "version": "$VERSION",
+            "releaseDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "releaseNotes": "See GitHub release for details",
+            "mandatory": false,
+            "platforms": {
+              "win32-x64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/VeloZ-$VERSION-Setup.exe"
+              },
+              "darwin-x64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/VeloZ-$VERSION-x64.dmg"
+              },
+              "darwin-arm64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/VeloZ-$VERSION-arm64.dmg"
+              },
+              "linux-x64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/veloz_${VERSION}_amd64.deb"
+              }
+            },
+            "channels": {
+              "stable": true,
+              "beta": false,
+              "nightly": false
+            }
+          }
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: VeloZ ${{ github.ref_name }}
+          draft: true
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          generate_release_notes: true
+          files: |
+            release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Notify on completion
+  notify:
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: always()
+    name: Notify
+
+    steps:
+      - name: Send Notification
+        run: |
+          if [ "${{ needs.create-release.result }}" == "success" ]; then
+            echo "Release build completed successfully!"
+          else
+            echo "Release build failed!"
+            exit 1
+          fi

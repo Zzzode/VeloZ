@@ -71,7 +71,7 @@ Welcome to VeloZ documentation. This directory contains all documentation for th
 ## Quick Navigation
 
 **Getting Started:**
-- [Release Notes](../RELEASE_NOTES.md) - v1.0 release notes and features
+- [Release Notes](RELEASE_NOTES.md) - v1.0 release notes and features
 - [Changelog](../CHANGELOG.md) - Version history and changes
 - [Getting Started](guides/user/getting-started.md) - Quick start guide
 - [Installation](guides/user/installation.md) - Installation instructions

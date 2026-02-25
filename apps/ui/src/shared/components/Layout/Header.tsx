@@ -2,6 +2,8 @@ import { Menu, Bell, User, LogOut } from 'lucide-react';
 import { Menu as HeadlessMenu, MenuButton, MenuItems, MenuItem, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
+import { TradingModeBadge } from '@/features/security-education/components/TradingModeBadge';
+import { useSecurityEducationStore } from '@/features/security-education/store';
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -9,6 +11,8 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
+  const { tradingMode } = useSecurityEducationStore();
+
   return (
     <header className="h-14 bg-background border-b border-border px-4 flex items-center justify-between sticky top-0 z-40">
       {/* Left side */}
@@ -29,6 +33,11 @@ export function Header({ onMenuClick, showMenuButton = true }: HeaderProps) {
 
       {/* Right side */}
       <div className="flex items-center gap-2">
+        {/* Trading Mode Badge */}
+        <Link to="/security">
+          <TradingModeBadge mode={tradingMode} size="sm" />
+        </Link>
+
         {/* Notifications */}
         <button
           type="button"

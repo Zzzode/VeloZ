@@ -1,0 +1,66 @@
+{
+  "_version": "1.0.0",
+  "_description": "VeloZ Default Configuration",
+
+  "general": {
+    "theme": "system",
+    "language": "en",
+    "autoStart": false,
+    "minimizeToTray": true,
+    "checkUpdates": true,
+    "updateChannel": "stable"
+  },
+
+  "trading": {
+    "defaultExchange": null,
+    "confirmOrders": true,
+    "soundAlerts": true,
+    "desktopNotifications": true
+  },
+
+  "risk": {
+    "enabled": true,
+    "dailyLossLimit": 0.05,
+    "positionSizeLimit": 0.1,
+    "maxOpenOrders": 10,
+    "maxOpenPositions": 5,
+    "stopLossRequired": true
+  },
+
+  "charting": {
+    "defaultTimeframe": "1h",
+    "candleStyle": "candle",
+    "showVolume": true,
+    "showGrid": true,
+    "indicators": []
+  },
+
+  "exchanges": [],
+
+  "strategies": {
+    "autoStart": false,
+    "logLevel": "info",
+    "backupOnChange": true
+  },
+
+  "logging": {
+    "level": "info",
+    "maxFiles": 10,
+    "maxSize": "10MB",
+    "console": true,
+    "file": true
+  },
+
+  "network": {
+    "proxy": null,
+    "timeout": 30000,
+    "retryAttempts": 3,
+    "retryDelay": 1000
+  },
+
+  "security": {
+    "encryptApiKeys": true,
+    "sessionTimeout": 3600,
+    "requirePassword": false
+  }
+}

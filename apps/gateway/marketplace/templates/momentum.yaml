@@ -1,0 +1,213 @@
+# Momentum Strategy Template
+# Version: 1.0.0
+
+id: momentum
+name: Momentum Trading
+version: "1.0.0"
+category: momentum
+strategy_type: momentum
+difficulty: intermediate
+risk_level: high
+
+description:
+  short: Follow strong price trends by buying assets showing upward momentum and selling those showing downward momentum.
+  long: |
+    Momentum trading is based on the principle that assets that have been rising tend
+    to continue rising, and those falling tend to continue falling. The strategy
+    identifies assets with strong recent performance and takes positions in the
+    direction of the trend.
+
+    This strategy uses rate of change (ROC) and relative strength indicators to
+    measure momentum. It works best in trending markets and can capture significant
+    moves, but requires careful risk management to avoid whipsaws.
+  how_it_works: |
+    1. Calculate momentum using Rate of Change (ROC) over the lookback period
+    2. When momentum exceeds the entry threshold, enter a long position
+    3. When momentum falls below negative entry threshold, enter a short position
+    4. Exit when momentum weakens below the exit threshold
+    5. Use trailing stops to protect profits during strong trends
+    6. Apply position sizing based on momentum strength
+  when_to_use:
+    - Strong trending markets
+    - After breakouts from consolidation
+    - When volatility is increasing
+    - During market momentum phases
+  when_not_to_use:
+    - Ranging or choppy markets
+    - During consolidation periods
+    - When trends are exhausted
+    - High-frequency reversals
+
+parameters:
+  - name: lookback_period
+    display_name: Lookback Period
+    type: integer
+    description: Number of periods to calculate momentum (Rate of Change).
+    default: 14
+    min: 5
+    max: 100
+    step: 1
+
+  - name: entry_threshold
+    display_name: Entry Threshold (%)
+    type: percentage
+    description: Minimum momentum percentage to trigger entry.
+    default: 5.0
+    min: 1.0
+    max: 50.0
+    step: 0.5
+    unit: "%"
+
+  - name: exit_threshold
+    display_name: Exit Threshold (%)
+    type: percentage
+    description: Momentum level to trigger exit. Should be less than entry threshold.
+    default: 2.0
+    min: 0.0
+    max: 25.0
+    step: 0.5
+    unit: "%"
+    validation:
+      type: less_than
+      reference: entry_threshold
+      message: Exit threshold must be less than entry threshold
+
+  - name: position_size
+    display_name: Position Size
+    type: float
+    description: Size of each position as a fraction of capital.
+    default: 0.1
+    min: 0.01
+    max: 0.5
+    step: 0.01
+
+  - name: use_rsi_filter
+    display_name: Use RSI Filter
+    type: boolean
+    description: Filter entries using RSI to avoid overbought/oversold conditions.
+    default: true
+
+  - name: rsi_period
+    display_name: RSI Period
+    type: integer
+    description: Period for RSI calculation.
+    default: 14
+    min: 5
+    max: 50
+    step: 1
+    depends_on:
+      parameter: use_rsi_filter
+      condition: equals
+      value: true
+
+  - name: rsi_overbought
+    display_name: RSI Overbought Level
+    type: integer
+    description: RSI level above which to avoid new long entries.
+    default: 70
+    min: 50
+    max: 90
+    step: 5
+    depends_on:
+      parameter: use_rsi_filter
+      condition: equals
+      value: true
+    advanced: true
+
+  - name: rsi_oversold
+    display_name: RSI Oversold Level
+    type: integer
+    description: RSI level below which to avoid new short entries.
+    default: 30
+    min: 10
+    max: 50
+    step: 5
+    depends_on:
+      parameter: use_rsi_filter
+      condition: equals
+      value: true
+    advanced: true
+
+  - name: trailing_stop_pct
+    display_name: Trailing Stop
+    type: percentage
+    description: Trailing stop percentage to protect profits. Set to 0 to disable.
+    default: 5.0
+    min: 0
+    max: 20.0
+    step: 0.5
+    unit: "%"
+
+  - name: stop_loss_pct
+    display_name: Stop Loss
+    type: percentage
+    description: Fixed stop loss percentage. Set to 0 to disable.
+    default: 3.0
+    min: 0
+    max: 20.0
+    step: 0.5
+    unit: "%"
+
+presets:
+  conservative:
+    name: Conservative
+    description: Higher thresholds for stronger momentum signals, tighter risk management.
+    values:
+      lookback_period: 20
+      entry_threshold: 8.0
+      exit_threshold: 3.0
+      position_size: 0.05
+      use_rsi_filter: true
+      trailing_stop_pct: 3.0
+      stop_loss_pct: 2.0
+
+  moderate:
+    name: Moderate
+    description: Balanced parameters for typical trending conditions.
+    values:
+      lookback_period: 14
+      entry_threshold: 5.0
+      exit_threshold: 2.0
+      position_size: 0.1
+      use_rsi_filter: true
+      trailing_stop_pct: 5.0
+      stop_loss_pct: 3.0
+
+  aggressive:
+    name: Aggressive
+    description: Lower thresholds for more frequent trades, larger positions.
+    values:
+      lookback_period: 10
+      entry_threshold: 3.0
+      exit_threshold: 1.0
+      position_size: 0.15
+      use_rsi_filter: false
+      trailing_stop_pct: 7.0
+      stop_loss_pct: 5.0
+
+risks:
+  - "Whipsaws in choppy markets can cause multiple small losses"
+  - "Late entries may catch the end of a trend"
+  - "Sudden reversals can cause significant losses"
+  - "High trading frequency increases fee costs"
+  - "Momentum can reverse quickly during news events"
+
+supported_symbols: []
+supported_exchanges:
+  - binance
+  - okx
+  - bybit
+
+min_capital: 500
+
+tags:
+  - momentum
+  - trend-following
+  - roc
+  - rsi
+  - intermediate
+  - active-trading
+
+author: VeloZ Team
+created_at: "2026-02-25"
+updated_at: "2026-02-25"

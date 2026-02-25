@@ -3,9 +3,12 @@ import {
   LayoutDashboard,
   TrendingUp,
   LineChart,
+  CandlestickChart,
   Layers,
+  Store,
   FlaskConical,
   Settings,
+  Shield,
   X,
 } from 'lucide-react';
 
@@ -18,8 +21,11 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/trading', label: 'Trading', icon: TrendingUp },
   { to: '/market', label: 'Market', icon: LineChart },
+  { to: '/charts', label: 'Charts', icon: CandlestickChart },
   { to: '/strategies', label: 'Strategies', icon: Layers },
+  { to: '/marketplace', label: 'Marketplace', icon: Store },
   { to: '/backtest', label: 'Backtest', icon: FlaskConical },
+  { to: '/security', label: 'Security', icon: Shield },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 

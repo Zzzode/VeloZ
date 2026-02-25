@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Resources (built/copied during build)
+resources/engine/*
+resources/gateway/*
+resources/ui/*
+!resources/config/
+
+# Keep placeholder files
+!resources/**/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Certificates (never commit)
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp

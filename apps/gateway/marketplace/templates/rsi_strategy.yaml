@@ -1,0 +1,184 @@
+# RSI (Relative Strength Index) Strategy Template
+# Version: 1.0.0
+
+id: rsi-strategy
+name: RSI Oversold/Overbought
+version: "1.0.0"
+category: mean_reversion
+strategy_type: rsi
+difficulty: beginner
+risk_level: medium
+
+description:
+  short: Buy when RSI indicates oversold conditions and sell when overbought, capturing mean reversion moves.
+  long: |
+    The RSI (Relative Strength Index) strategy uses the popular momentum oscillator
+    to identify overbought and oversold conditions. When RSI falls below the oversold
+    level (typically 30), it signals a potential buying opportunity. When RSI rises
+    above the overbought level (typically 70), it signals a potential selling opportunity.
+
+    This is a classic mean reversion strategy that works well in ranging markets
+    where prices oscillate between support and resistance levels.
+  how_it_works: |
+    1. Calculate RSI over the specified period
+    2. When RSI falls below oversold level, enter a long position
+    3. When RSI rises above overbought level, enter a short position (or exit long)
+    4. Exit when RSI returns to neutral zone (around 50)
+    5. Use stop-loss to limit losses if price continues against position
+  when_to_use:
+    - Ranging markets with clear support/resistance
+    - When price is oscillating without strong trend
+    - After sharp price movements that seem overdone
+    - In markets with mean-reverting characteristics
+  when_not_to_use:
+    - Strong trending markets
+    - During breakouts
+    - When fundamentals are changing
+    - In highly volatile conditions
+
+parameters:
+  - name: rsi_period
+    display_name: RSI Period
+    type: integer
+    description: Number of periods for RSI calculation. Standard is 14.
+    default: 14
+    min: 5
+    max: 50
+    step: 1
+
+  - name: overbought_level
+    display_name: Overbought Level
+    type: integer
+    description: RSI level above which asset is considered overbought.
+    default: 70
+    min: 60
+    max: 90
+    step: 5
+
+  - name: oversold_level
+    display_name: Oversold Level
+    type: integer
+    description: RSI level below which asset is considered oversold.
+    default: 30
+    min: 10
+    max: 40
+    step: 5
+    validation:
+      type: less_than
+      reference: overbought_level
+      message: Oversold level must be less than overbought level
+
+  - name: exit_level
+    display_name: Exit Level
+    type: integer
+    description: RSI level to exit positions (neutral zone).
+    default: 50
+    min: 40
+    max: 60
+    step: 5
+
+  - name: position_size
+    display_name: Position Size
+    type: float
+    description: Size of each position as a fraction of capital.
+    default: 0.1
+    min: 0.01
+    max: 0.5
+    step: 0.01
+
+  - name: use_divergence
+    display_name: Use RSI Divergence
+    type: boolean
+    description: Also look for RSI divergence signals (price makes new high/low but RSI doesn't).
+    default: false
+    advanced: true
+
+  - name: confirmation_bars
+    display_name: Confirmation Bars
+    type: integer
+    description: Number of bars RSI must stay in zone before entry.
+    default: 1
+    min: 1
+    max: 5
+    step: 1
+    advanced: true
+
+  - name: stop_loss_pct
+    display_name: Stop Loss
+    type: percentage
+    description: Stop loss percentage from entry price.
+    default: 3.0
+    min: 0
+    max: 20.0
+    step: 0.5
+    unit: "%"
+
+  - name: take_profit_pct
+    display_name: Take Profit
+    type: percentage
+    description: Take profit percentage from entry price. Set to 0 to use RSI exit only.
+    default: 0
+    min: 0
+    max: 50.0
+    step: 1.0
+    unit: "%"
+
+presets:
+  conservative:
+    name: Conservative
+    description: Extreme RSI levels for stronger signals, smaller positions.
+    values:
+      rsi_period: 14
+      overbought_level: 80
+      oversold_level: 20
+      position_size: 0.05
+      confirmation_bars: 2
+      stop_loss_pct: 2.0
+
+  moderate:
+    name: Moderate
+    description: Standard RSI parameters for typical market conditions.
+    values:
+      rsi_period: 14
+      overbought_level: 70
+      oversold_level: 30
+      position_size: 0.1
+      confirmation_bars: 1
+      stop_loss_pct: 3.0
+
+  aggressive:
+    name: Aggressive
+    description: Wider RSI bands for more frequent signals.
+    values:
+      rsi_period: 10
+      overbought_level: 65
+      oversold_level: 35
+      position_size: 0.15
+      confirmation_bars: 1
+      stop_loss_pct: 5.0
+
+risks:
+  - "RSI can remain overbought/oversold for extended periods in trends"
+  - "False signals common in strong trending markets"
+  - "Divergence signals may not lead to immediate reversals"
+  - "Stop-loss may be hit before reversal occurs"
+  - "Multiple small losses possible in choppy conditions"
+
+supported_symbols: []
+supported_exchanges:
+  - binance
+  - okx
+  - bybit
+
+min_capital: 200
+
+tags:
+  - rsi
+  - oscillator
+  - mean-reversion
+  - beginner-friendly
+  - technical-analysis
+
+author: VeloZ Team
+created_at: "2026-02-25"
+updated_at: "2026-02-25"

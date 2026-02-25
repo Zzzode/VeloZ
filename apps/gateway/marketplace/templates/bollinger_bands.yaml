@@ -1,0 +1,199 @@
+# Bollinger Bands Strategy Template
+# Version: 1.0.0
+
+id: bollinger-bands
+name: Bollinger Band Breakout
+version: "1.0.0"
+category: volatility
+strategy_type: bollinger_bands
+difficulty: intermediate
+risk_level: high
+
+description:
+  short: Trade volatility breakouts when price breaks through Bollinger Bands.
+  long: |
+    The Bollinger Bands strategy uses price volatility to identify potential
+    breakout opportunities. Bollinger Bands consist of a middle band (moving average)
+    and upper/lower bands set at a specified number of standard deviations.
+
+    This strategy can be used in two ways: mean reversion (fade moves to the bands)
+    or breakout (trade in direction of band breaks). This template implements the
+    breakout approach, entering when price breaks through the bands with momentum.
+  how_it_works: |
+    1. Calculate the middle band (SMA over the period)
+    2. Calculate upper band (middle + std_dev * standard deviations)
+    3. Calculate lower band (middle - std_dev * standard deviations)
+    4. Enter long when price closes above upper band with volume confirmation
+    5. Enter short when price closes below lower band with volume confirmation
+    6. Exit when price returns to middle band or opposite band
+    7. Use band width for volatility filtering
+  when_to_use:
+    - After periods of low volatility (band squeeze)
+    - When expecting volatility expansion
+    - During breakout setups
+    - In markets with clear support/resistance
+  when_not_to_use:
+    - During very high volatility (bands too wide)
+    - In choppy, directionless markets
+    - When bands are extremely narrow for extended periods
+    - During major news events
+
+parameters:
+  - name: period
+    display_name: Period
+    type: integer
+    description: Number of periods for the moving average and standard deviation.
+    default: 20
+    min: 10
+    max: 100
+    step: 1
+
+  - name: std_dev
+    display_name: Standard Deviations
+    type: float
+    description: Number of standard deviations for the bands.
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    step: 0.1
+
+  - name: position_size
+    display_name: Position Size
+    type: float
+    description: Size of each position as a fraction of capital.
+    default: 0.1
+    min: 0.01
+    max: 0.5
+    step: 0.01
+
+  - name: entry_mode
+    display_name: Entry Mode
+    type: enum
+    description: How to interpret band touches.
+    default: breakout
+    enum_values:
+      - value: breakout
+        label: Breakout
+        description: Trade in direction of band break
+      - value: reversion
+        label: Mean Reversion
+        description: Fade moves to the bands
+
+  - name: use_squeeze
+    display_name: Use Squeeze Filter
+    type: boolean
+    description: Only trade after volatility squeeze (narrow bands).
+    default: true
+
+  - name: squeeze_threshold
+    display_name: Squeeze Threshold
+    type: float
+    description: Band width percentile to identify squeeze (lower = tighter squeeze).
+    default: 20
+    min: 5
+    max: 50
+    step: 5
+    depends_on:
+      parameter: use_squeeze
+      condition: equals
+      value: true
+    advanced: true
+
+  - name: volume_confirmation
+    display_name: Volume Confirmation
+    type: boolean
+    description: Require above-average volume on breakout.
+    default: true
+    advanced: true
+
+  - name: exit_at_middle
+    display_name: Exit at Middle Band
+    type: boolean
+    description: Exit position when price returns to middle band.
+    default: true
+
+  - name: stop_loss_pct
+    display_name: Stop Loss
+    type: percentage
+    description: Stop loss percentage from entry price.
+    default: 3.0
+    min: 0
+    max: 20.0
+    step: 0.5
+    unit: "%"
+
+  - name: take_profit_pct
+    display_name: Take Profit
+    type: percentage
+    description: Take profit percentage. Set to 0 for band-based exit only.
+    default: 0
+    min: 0
+    max: 50.0
+    step: 1.0
+    unit: "%"
+
+presets:
+  conservative:
+    name: Conservative
+    description: Wider bands with squeeze filter for high-probability breakouts.
+    values:
+      period: 20
+      std_dev: 2.5
+      position_size: 0.05
+      entry_mode: breakout
+      use_squeeze: true
+      squeeze_threshold: 15
+      volume_confirmation: true
+      stop_loss_pct: 2.0
+
+  moderate:
+    name: Moderate
+    description: Standard Bollinger Band parameters.
+    values:
+      period: 20
+      std_dev: 2.0
+      position_size: 0.1
+      entry_mode: breakout
+      use_squeeze: true
+      squeeze_threshold: 20
+      volume_confirmation: true
+      stop_loss_pct: 3.0
+
+  aggressive:
+    name: Aggressive
+    description: Tighter bands for more frequent signals.
+    values:
+      period: 15
+      std_dev: 1.5
+      position_size: 0.15
+      entry_mode: breakout
+      use_squeeze: false
+      volume_confirmation: false
+      stop_loss_pct: 5.0
+
+risks:
+  - "False breakouts can lead to quick losses"
+  - "Bands expand during volatility, moving targets"
+  - "Squeeze periods can last longer than expected"
+  - "Mean reversion mode can catch falling knives"
+  - "High volatility can trigger stop losses quickly"
+
+supported_symbols: []
+supported_exchanges:
+  - binance
+  - okx
+  - bybit
+
+min_capital: 500
+
+tags:
+  - bollinger-bands
+  - volatility
+  - breakout
+  - squeeze
+  - intermediate
+  - technical-analysis
+
+author: VeloZ Team
+created_at: "2026-02-25"
+updated_at: "2026-02-25"

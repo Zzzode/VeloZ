@@ -5,7 +5,7 @@ set -euo pipefail
 dry_run=0
 preset="${1:-dev}"
 
-if [[ "${preset}" == "--dry-run" ]]; then
+if [[ "${1:-}" == "--dry-run" ]]; then
   dry_run=1
   preset="${2:-dev}"
 elif [[ "${2:-}" == "--dry-run" ]]; then
@@ -19,12 +19,24 @@ if [[ "${dry_run}" -eq 1 ]]; then
   echo "=== Dry run mode ==="
   echo "Preset: ${preset}"
   echo "Would run:"
-  echo "  1. Build with preset: ${preset}"
-  echo "  2. Execute: python3 apps/gateway/gateway.py"
+  echo "  1. Build UI with npm"
+  echo "  2. Build C++ engine with cmake"
+  echo "  3. Execute: python3 apps/gateway/gateway.py"
   exit 0
 fi
 
 # Actual execution
+# Step 1: Build UI (required for P0 features)
+echo "=== Step 1/3: Building UI ==="
+cd apps/ui
+npm install
+npm run build
+cd ../..
+
+# Step 2: Build C++ engine with preset
+echo "=== Step 2/3: Building C++ engine ==="
 ./scripts/build.sh "${preset}"
 
+# Step 3: Start gateway (includes UI dev server)
+echo "=== Step 3/3: Starting gateway ==="
 exec python3 apps/gateway/gateway.py

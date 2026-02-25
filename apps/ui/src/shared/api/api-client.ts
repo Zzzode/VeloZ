@@ -303,7 +303,7 @@ export class VelozApiClient {
   // Core Request Method
   // ===========================================================================
 
-  private async request<T>(
+  public async request<T>(
     method: string,
     path: string,
     options: {
