@@ -91,7 +91,7 @@ size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
   return total_size;
 }
 
-kj::String http_get(kj::StringPtr url) {
+kj::String http_get(kj::StringPtr url, long timeout_sec = 10L) {
   CurlHandle curl;
   if (!curl) {
     return kj::str("");
@@ -103,7 +103,7 @@ kj::String http_get(kj::StringPtr url) {
   curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, write_callback);
   curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &response_string);
   curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 30L);
+  curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, timeout_sec);
 
   CURLcode res = curl_easy_perform(curl.get());
   if (res != CURLE_OK) {
