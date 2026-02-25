@@ -31,6 +31,20 @@ VeloZ behavior can be configured via environment variables before starting the g
 | `VELOZ_BINANCE_API_KEY` | (empty) | Binance API key (required for trading) |
 | `VELOZ_BINANCE_API_SECRET` | (empty) | Binance API secret (required for trading) |
 
+**WebSocket Connection Settings:**
+
+| Variable | Default | Description |
+|-----------|---------|-------------|
+| `VELOZ_WS_TIMEOUT` | `30000` | WebSocket connection timeout in milliseconds |
+| `VELOZ_WS_RECONNECT_DELAY` | `5000` | Delay between reconnection attempts in milliseconds |
+
+**Example (production with custom WebSocket settings):**
+```bash
+export VELOZ_BINANCE_WS_BASE_URL=wss://stream.binance.com:9443/ws
+export VELOZ_WS_TIMEOUT=30000
+export VELOZ_WS_RECONNECT_DELAY=5000
+```
+
 ### Execution Mode Configuration
 
 | Variable | Default | Description |

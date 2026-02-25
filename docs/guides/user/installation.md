@@ -178,6 +178,31 @@ docker compose --profile full --profile monitoring --profile secrets up -d
 | `monitoring` | prometheus, grafana, loki, alertmanager, jaeger | Observability |
 | `secrets` | vault, vault-init | Secrets management |
 
+**Profile Combinations:**
+
+```bash
+# Gateway only (development/testing)
+docker compose up -d gateway
+
+# Gateway with persistence (production data)
+docker compose --profile full up -d
+
+# Gateway with observability (metrics, logs, tracing)
+docker compose --profile monitoring up -d
+
+# Gateway with secrets management (Vault)
+docker compose --profile secrets up -d
+
+# Complete production stack
+docker compose --profile full --profile monitoring --profile secrets up -d
+```
+
+**Service Dependencies:**
+
+- `redis` and `postgres` (in `full` profile) provide persistent storage
+- `vault` (in `secrets` profile) provides secure credential storage
+- Monitoring services (in `monitoring` profile) provide observability and alerting
+
 ### Access Services
 
 | Service | URL | Default Credentials |

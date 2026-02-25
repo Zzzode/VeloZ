@@ -18,18 +18,38 @@ VeloZ v1.0 is production-ready with these key features:
 
 ## Quick Start
 
-The fastest way to try VeloZ is to build and run the gateway with the UI:
+The fastest way to try VeloZ is to use the gateway script which builds everything and starts the service:
 
 ```bash
-# Build the project (using development preset)
-cmake --preset dev
-cmake --build --preset dev-all -j$(nproc)
-
-# Run the gateway (includes the web UI)
+# Run the gateway (builds UI, builds engine, and starts server)
 ./scripts/run_gateway.sh dev
 ```
 
+**Note:** The `run_gateway.sh` script will:
+1. Build the UI (requires Node.js and npm): `cd apps/ui && npm install && npm run build`
+2. Build the C++ engine: `./scripts/build.sh dev`
+3. Start the Python gateway
+
 The gateway will start on `http://127.0.0.1:8080/`. Open this URL in your browser to access the trading UI.
+
+### Manual Build (Advanced)
+
+If you prefer to build components manually:
+
+```bash
+# 1. Configure and build the C++ project
+cmake --preset dev
+cmake --build --preset dev-all -j$(nproc)
+
+# 2. Build the UI (requires Node.js and npm)
+cd apps/ui
+npm install
+npm run build
+cd ../..
+
+# 3. Start the gateway
+python3 apps/gateway/gateway.py
+```
 
 ---
 
@@ -45,7 +65,8 @@ The gateway will start on `http://127.0.0.1:8080/`. Open this URL in your browse
 | **RAM** | 4 GB | 8 GB+ |
 | **Disk** | 2 GB | 5 GB+ |
 | **Python** | 3.8+ | 3.11+ |
-| **Node.js** | 18+ (for UI tests) | 20+ |
+| **Node.js** | 18+ (required for UI) | 20+ |
+| **npm** | 9+ | 10+ |
 
 ### Dependencies (Automatically Fetched)
 
@@ -63,8 +84,9 @@ No manual dependency installation is required.
 | Dependency | Purpose | Installation |
 |------------|---------|--------------|
 | clang-format | Code formatting | `brew install clang-format` (macOS) |
-| Node.js | UI testing | `brew install node` (macOS) |
 | Ninja | Faster builds | `brew install ninja` (macOS) |
+
+**Platform Note:** Commands using `-j$(nproc)` work on Linux. For macOS, use `-j$(sysctl -n hw.ncpu)` or simply `-j` to use all available cores automatically.
 
 ---
 
@@ -93,7 +115,7 @@ cmake --build --preset dev-all -j$(nproc)
 # Run all tests
 ctest --preset dev -j$(nproc)
 
-# Expected output: 615+ tests passed (100%)
+# Expected output: 1199+ tests passing (100%) - 615 C++ + 584 UI
 ```
 
 ### 4. Start the Gateway
@@ -584,7 +606,7 @@ curl http://127.0.0.1:8080/api/market \
 - **write**: Place and cancel orders
 - **admin**: Manage users and API keys
 
-See [User Guide](README.md#authentication--security) for complete authentication documentation.
+See [Security Best Practices](security-best-practices.md) for complete security documentation.
 
 ### Audit Logging
 
@@ -618,11 +640,10 @@ See [Configuration Guide](configuration.md#audit-logging-configuration) for deta
 
 ### User Guides
 
-- **[User Guide](README.md)** - Complete user documentation index
 - **[Configuration Guide](configuration.md)** - All configuration options
 - **[Trading Guide](trading-guide.md)** - Order management, positions, execution algorithms
-- **[API Usage Guide](api-usage-guide.md)** - Practical API examples with Python client
-- **[Best Practices](best-practices.md)** - Security, trading, and operational best practices
+- **[HTTP API Reference](../../api/http_api.md)** - Complete API documentation with examples
+- **[Security Best Practices](security-best-practices.md)** - Security configuration and recommendations
 - **[Glossary](glossary.md)** - Definitions of trading, risk, and technical terms
 
 ### Tutorials
