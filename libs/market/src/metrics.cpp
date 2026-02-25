@@ -1,4 +1,5 @@
 #include "veloz/market/metrics.h"
+
 #include "veloz/core/metrics.h"
 
 #include <cmath> // std::ceil - standard C++ math function (no KJ equivalent)

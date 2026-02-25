@@ -1,5 +1,6 @@
 #include "veloz/market/managed_order_book.h"
 
+#include <chrono>
 #include <kj/debug.h>
 
 namespace veloz::market {

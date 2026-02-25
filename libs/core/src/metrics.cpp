@@ -76,7 +76,8 @@ MetricsRegistry& global_metrics() {
                               "Number of pending tasks in event loop"_kj);
   newRegistry->register_histogram("veloz_event_loop_task_latency"_kj,
                                   "Event loop task execution latency in seconds"_kj);
-  newRegistry->register_counter("veloz_reconnect_count"_kj, "Total number of reconnect attempts"_kj);
+  newRegistry->register_counter("veloz_reconnect_count"_kj,
+                                "Total number of reconnect attempts"_kj);
 
   MetricsRegistry& ref = *newRegistry;
   lock->registry = kj::mv(newRegistry);

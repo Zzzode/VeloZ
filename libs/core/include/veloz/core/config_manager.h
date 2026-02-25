@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <kj/common.h>
+#include <kj/debug.h>
 #include <kj/filesystem.h> // kj::Path for file paths
 #include <kj/function.h>
 #include <kj/map.h>

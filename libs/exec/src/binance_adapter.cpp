@@ -424,29 +424,30 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
       position_side = kj::heapString(value);
     }
 
-    return connect_async().then([this, symbol, side, type, tif, qty, price, stop_price,
-                                 client_order_id = kj::mv(client_order_id), reduce_only,
-                                 post_only, position_side = kj::mv(position_side)]() mutable
-                                 -> kj::Promise<kj::Maybe<ExecutionReport>> {
-      if (!is_connected()) {
-        return kj::Maybe<ExecutionReport>(kj::none);
-      }
-      PlaceOrderRequest new_req;
-      new_req.symbol = symbol;
-      new_req.side = side;
-      new_req.type = type;
-      new_req.tif = tif;
-      new_req.qty = qty;
-      new_req.price = price;
-      new_req.stop_price = stop_price;
-      new_req.client_order_id = kj::mv(client_order_id);
-      new_req.reduce_only = reduce_only;
-      new_req.post_only = post_only;
-      KJ_IF_SOME(value, position_side) {
-        new_req.position_side = kj::heapString(value);
-      }
-      return place_order_async(new_req);
-    });
+    return connect_async().then(
+        [this, symbol, side, type, tif, qty, price, stop_price,
+         client_order_id = kj::mv(client_order_id), reduce_only, post_only,
+         position_side =
+             kj::mv(position_side)]() mutable -> kj::Promise<kj::Maybe<ExecutionReport>> {
+          if (!is_connected()) {
+            return kj::Maybe<ExecutionReport>(kj::none);
+          }
+          PlaceOrderRequest new_req;
+          new_req.symbol = symbol;
+          new_req.side = side;
+          new_req.type = type;
+          new_req.tif = tif;
+          new_req.qty = qty;
+          new_req.price = price;
+          new_req.stop_price = stop_price;
+          new_req.client_order_id = kj::mv(client_order_id);
+          new_req.reduce_only = reduce_only;
+          new_req.post_only = post_only;
+          KJ_IF_SOME(value, position_side) {
+            new_req.position_side = kj::heapString(value);
+          }
+          return place_order_async(new_req);
+        });
   }
 
   kj::StringPtr endpoint = "/api/v3/order"_kj;

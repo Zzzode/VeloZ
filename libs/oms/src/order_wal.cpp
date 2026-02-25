@@ -552,8 +552,8 @@ void OrderWal::deserialize_order_update(kj::ArrayPtr<const kj::byte> payload,
   }
   KJ_IF_SOME(existing, store.get(client_order_id)) {
     if (ts_ns > 0 && existing.last_ts_ns > 0 && ts_ns <= existing.last_ts_ns) {
-      KJ_LOG(WARNING, "Skipping out-of-order OrderUpdate during WAL replay", client_order_id,
-             ts_ns, existing.last_ts_ns);
+      KJ_LOG(WARNING, "Skipping out-of-order OrderUpdate during WAL replay", client_order_id, ts_ns,
+             existing.last_ts_ns);
       return;
     }
   }
@@ -593,7 +593,7 @@ void OrderWal::deserialize_order_fill(kj::ArrayPtr<const kj::byte> payload,
 }
 
 void OrderWal::deserialize_order_cancel(kj::ArrayPtr<const kj::byte> payload,
-                                       OrderStore& store) const {
+                                        OrderStore& store) const {
   size_t offset = 0;
   size_t max_size = payload.size();
 
@@ -606,8 +606,8 @@ void OrderWal::deserialize_order_cancel(kj::ArrayPtr<const kj::byte> payload,
   }
   KJ_IF_SOME(existing, store.get(client_order_id)) {
     if (ts_ns > 0 && existing.last_ts_ns > 0 && ts_ns <= existing.last_ts_ns) {
-      KJ_LOG(WARNING, "Skipping out-of-order OrderCancel during WAL replay", client_order_id,
-             ts_ns, existing.last_ts_ns);
+      KJ_LOG(WARNING, "Skipping out-of-order OrderCancel during WAL replay", client_order_id, ts_ns,
+             existing.last_ts_ns);
       return;
     }
   }
