@@ -1092,6 +1092,7 @@ kj::Promise<void> BinanceWebSocket::schedule_reconnect() {
 
   reconnect_attempts_++;
   reconnect_count_++;
+  metrics_.record_reconnect();
 
   // Exponential backoff with jitter, capped at 30 seconds
   auto delay_ms = reconnect_delay_ms_.load();

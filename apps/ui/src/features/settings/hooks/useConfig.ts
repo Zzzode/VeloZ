@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ConfigFormData } from '../types/config';
+import type { ConfigFormData } from '../types/config';
 
 const API_BASE = 'http://127.0.0.1:8080';
 

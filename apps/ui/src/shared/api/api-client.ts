@@ -598,7 +598,7 @@ export class VelozApiClient {
   // ===========================================================================
 
   async health(): Promise<HealthResponse> {
-    return this.request<HealthResponse>('GET', '/health', { skipAuth: true });
+    return this.request<HealthResponse>('GET', '/api/health', { skipAuth: true });
   }
 
   async getConfig(): Promise<ConfigResponse> {

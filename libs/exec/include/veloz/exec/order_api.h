@@ -79,6 +79,7 @@ struct PlaceOrderRequest final {
   kj::String strategy_id;     ///< Originating strategy ID (for rejection routing)
   bool reduce_only{false};    ///< Reduce-only order (for futures trading only)
   bool post_only{false};      ///< Post-only order (for limit orders only)
+  kj::Maybe<kj::String> position_side;
 };
 
 /**

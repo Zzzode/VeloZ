@@ -223,7 +223,10 @@ const API_BASE = 'http://127.0.0.1:8080';
 const healthHandlers = [
   http.get(`${API_BASE}/api/health`, async () => {
     await delay(50);
-    return HttpResponse.json<HealthResponse>({ ok: true });
+    return HttpResponse.json<HealthResponse>({
+      ok: true,
+      engine: { connected: true },
+    });
   }),
 
   http.get(`${API_BASE}/api/config`, async () => {

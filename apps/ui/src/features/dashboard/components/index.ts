@@ -7,3 +7,4 @@ export { ActivePositionsCard } from './ActivePositionsCard';
 export { RecentOrdersCard } from './RecentOrdersCard';
 export { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 export { EngineStatusCard } from './EngineStatusCard';
+export { OperationalMetricsCard } from './OperationalMetricsCard';

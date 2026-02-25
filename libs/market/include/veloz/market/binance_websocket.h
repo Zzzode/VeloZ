@@ -2,6 +2,7 @@
 
 #include "veloz/core/json.h"
 #include "veloz/market/market_event.h"
+#include "veloz/market/metrics.h"
 
 #include <atomic> // std::atomic - KJ doesn't provide atomic primitives
 #include <cstdint>
@@ -188,6 +189,9 @@ private:
   std::atomic<int> reconnect_count_;
   std::atomic<std::int64_t> last_message_time_;
   std::atomic<std::int64_t> message_count_;
+
+  // Metrics tracking
+  MarketMetrics metrics_;
 
   // Read buffer for incoming data
   kj::Vector<kj::byte> read_buffer_;

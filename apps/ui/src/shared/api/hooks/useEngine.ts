@@ -22,6 +22,18 @@ export function useEngineStatus() {
   });
 }
 
+export function useEngineHealth() {
+  return useQuery({
+    queryKey: queryKeys.engine.health(),
+    queryFn: async () => {
+      const client = getApiClient();
+      return client.health();
+    },
+    staleTime: 5000,
+    refetchInterval: 10000,
+  });
+}
+
 /**
  * Start the engine
  */

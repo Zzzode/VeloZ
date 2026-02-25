@@ -155,6 +155,9 @@ export interface RevokeApiKeyResponse {
 /** Health check response */
 export interface HealthResponse {
   ok: true;
+  engine: {
+    connected: boolean;
+  };
 }
 
 /** Gateway configuration */

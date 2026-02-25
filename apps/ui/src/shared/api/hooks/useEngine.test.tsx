@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useEngineStatus, useStartEngine, useStopEngine } from './useEngine';
+import { useEngineStatus, useStartEngine, useStopEngine, useEngineHealth } from './useEngine';
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -100,6 +100,23 @@ describe('useStartEngine', () => {
 
     expect(result.current.data?.ok).toBe(true);
     expect(result.current.data?.message).toContain('started');
+  });
+});
+
+describe('useEngineHealth', () => {
+  it('should fetch engine health successfully', async () => {
+    const { result } = renderHook(() => useEngineHealth(), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.isLoading).toBe(true);
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toBeDefined();
+    expect(result.current.data?.engine.connected).toBeTypeOf('boolean');
   });
 });
 

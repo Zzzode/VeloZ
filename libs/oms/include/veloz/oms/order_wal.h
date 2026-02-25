@@ -176,6 +176,7 @@ private:
   void deserialize_order_new(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
   void deserialize_order_update(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
   void deserialize_order_fill(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
+  void deserialize_order_cancel(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
   void deserialize_checkpoint(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
 
   // Configuration

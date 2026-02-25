@@ -16,11 +16,14 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.request
 from pathlib import Path
 from queue import Queue, Empty
 
 # Add gateway directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gateway import Handler
+from http.server import ThreadingHTTPServer
 
 
 class EngineProcess:
@@ -141,6 +144,39 @@ class EngineProcess:
             except Exception:
                 break
 
+
+class TestGatewayHealthEndpoint(unittest.TestCase):
+    def setUp(self):
+        class DummyBridge:
+            def __init__(self):
+                self.connected = False
+
+            def is_connected(self):
+                return self.connected
+
+        self.bridge = DummyBridge()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.httpd.bridge = self.bridge
+        self.httpd.router = None
+        self.httpd.auth_manager = None
+        self.httpd.security_manager = None
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        host, port = self.httpd.server_address
+        self.base_url = f"http://{host}:{port}"
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.thread.join(timeout=2.0)
+
+    def test_health_reports_engine_disconnected(self):
+        with urllib.request.urlopen(f"{self.base_url}/api/health", timeout=2.0) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+        payload = json.loads(body)
+        self.assertTrue(payload.get("ok"))
+        self.assertIn("engine", payload)
+        self.assertFalse(payload["engine"].get("connected", True))
 
 def find_engine_binary() -> str:
     """Find the engine binary path."""

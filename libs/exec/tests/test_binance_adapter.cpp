@@ -163,4 +163,21 @@ KJ_TEST("PlaceOrderRequest: Stop price field exists") {
   }
 }
 
+KJ_TEST("BinanceAdapter: Futures order includes position side") {
+  auto io = kj::setupAsyncIo();
+  veloz::exec::BinanceAdapter adapter(io, "test_api_key"_kj, "test_secret_key"_kj, true);
+
+  veloz::exec::PlaceOrderRequest req;
+  req.symbol = veloz::common::SymbolId{"BTCUSDT"};
+  req.side = veloz::exec::OrderSide::Buy;
+  req.type = veloz::exec::OrderType::Limit;
+  req.tif = veloz::exec::TimeInForce::GTC;
+  req.qty = 1.0;
+  req.price = 65000.0;
+  req.position_side = kj::str("LONG");
+
+  auto params = adapter.build_order_params(req);
+  KJ_EXPECT(params.contains("positionSide=LONG"_kj));
+}
+
 } // namespace

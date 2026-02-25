@@ -420,6 +420,7 @@ ENDPOINT_PERMISSIONS = {
     "/api/market": [Permission.READ_MARKET],
     "/api/stream": [Permission.READ_MARKET],
     "/api/config": [Permission.READ_CONFIG],
+    "/api/health": [Permission.READ_CONFIG],
 
     # Order endpoints
     "/api/orders": [Permission.READ_ORDERS],
@@ -662,7 +663,7 @@ class AuthManager:
         self._admin_password = admin_password if admin_password is not None else os.environ.get("VELOZ_ADMIN_PASSWORD", "")
 
         # Public endpoints that don't require authentication
-        self._public_endpoints = {"/health", "/api/stream"}
+        self._public_endpoints = {"/health", "/api/health", "/api/stream"}
 
         # Create default admin API key if password is set
         if self._admin_password:
@@ -842,6 +843,9 @@ class EngineBridge:
                 else None
             ),
         }
+
+    def is_connected(self):
+        return self._proc.poll() is None
 
     def pop_events(self, last_id):
         with self._lock:
@@ -2117,6 +2121,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/execution/ping":
             self._send_json(200, self.server.router.ping())
+            return
+        if parsed.path == "/api/health":
+            self._send_json(
+                200,
+                {"ok": True, "engine": {"connected": self.server.bridge.is_connected()}},
+            )
             return
         if parsed.path == "/api/stream":
             self._handle_sse(parsed)

@@ -49,6 +49,7 @@ export const queryKeys = {
   engine: {
     all: ['engine'] as const,
     status: () => [...queryKeys.engine.all, 'status'] as const,
+    health: () => [...queryKeys.engine.all, 'health'] as const,
   },
 
   // Config

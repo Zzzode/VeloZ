@@ -10,6 +10,7 @@ import {
   RecentOrdersCard,
   ConnectionStatusIndicator,
   EngineStatusCard,
+  OperationalMetricsCard,
 } from './components';
 import { useSSEConnection } from './hooks';
 
@@ -28,10 +29,11 @@ export default function Dashboard() {
       </div>
 
       {/* Top Row - Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MarketOverviewCard />
         <AccountSummaryCard />
         <EngineStatusCard />
+        <OperationalMetricsCard />
       </div>
 
       {/* Bottom Row - Activity */}

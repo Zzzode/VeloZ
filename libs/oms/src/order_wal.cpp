@@ -514,6 +514,14 @@ void OrderWal::deserialize_order_new(kj::ArrayPtr<const kj::byte> payload,
   auto has_price = read_uint8(payload, offset, max_size);
   auto price = read_double(payload, offset, max_size);
 
+  if (client_order_id.size() == 0) {
+    return;
+  }
+  if (store.get(client_order_id) != kj::none) {
+    KJ_LOG(WARNING, "Skipping duplicate OrderNew during WAL replay", client_order_id);
+    return;
+  }
+
   veloz::exec::PlaceOrderRequest request;
   request.client_order_id = kj::mv(client_order_id);
   request.symbol = veloz::common::SymbolId(kj::mv(symbol_str));
@@ -539,6 +547,20 @@ void OrderWal::deserialize_order_update(kj::ArrayPtr<const kj::byte> payload,
   auto reason = read_string(payload, offset, max_size);
   auto ts_ns = read_int64(payload, offset, max_size);
 
+  if (client_order_id.size() == 0) {
+    return;
+  }
+  KJ_IF_SOME(existing, store.get(client_order_id)) {
+    if (ts_ns > 0 && existing.last_ts_ns > 0 && ts_ns <= existing.last_ts_ns) {
+      KJ_LOG(WARNING, "Skipping out-of-order OrderUpdate during WAL replay", client_order_id,
+             ts_ns, existing.last_ts_ns);
+      return;
+    }
+  }
+  else {
+    KJ_LOG(WARNING, "OrderUpdate for unknown order during WAL replay", client_order_id);
+  }
+
   store.apply_order_update(client_order_id, ""_kj, ""_kj, venue_order_id, status, reason, ts_ns);
 }
 
@@ -553,7 +575,47 @@ void OrderWal::deserialize_order_fill(kj::ArrayPtr<const kj::byte> payload,
   auto price = read_double(payload, offset, max_size);
   auto ts_ns = read_int64(payload, offset, max_size);
 
+  if (client_order_id.size() == 0) {
+    return;
+  }
+  KJ_IF_SOME(existing, store.get(client_order_id)) {
+    if (ts_ns > 0 && existing.last_ts_ns > 0 && ts_ns <= existing.last_ts_ns) {
+      KJ_LOG(WARNING, "Skipping out-of-order OrderFill during WAL replay", client_order_id, ts_ns,
+             existing.last_ts_ns);
+      return;
+    }
+  }
+  else {
+    KJ_LOG(WARNING, "OrderFill for unknown order during WAL replay", client_order_id);
+  }
+
   store.apply_fill(client_order_id, symbol, qty, price, ts_ns);
+}
+
+void OrderWal::deserialize_order_cancel(kj::ArrayPtr<const kj::byte> payload,
+                                       OrderStore& store) const {
+  size_t offset = 0;
+  size_t max_size = payload.size();
+
+  auto client_order_id = read_string(payload, offset, max_size);
+  auto reason = read_string(payload, offset, max_size);
+  auto ts_ns = read_int64(payload, offset, max_size);
+
+  if (client_order_id.size() == 0) {
+    return;
+  }
+  KJ_IF_SOME(existing, store.get(client_order_id)) {
+    if (ts_ns > 0 && existing.last_ts_ns > 0 && ts_ns <= existing.last_ts_ns) {
+      KJ_LOG(WARNING, "Skipping out-of-order OrderCancel during WAL replay", client_order_id,
+             ts_ns, existing.last_ts_ns);
+      return;
+    }
+  }
+  else {
+    KJ_LOG(WARNING, "OrderCancel for unknown order during WAL replay", client_order_id);
+  }
+
+  store.apply_order_update(client_order_id, ""_kj, ""_kj, ""_kj, "CANCELED"_kj, reason, ts_ns);
 }
 
 void OrderWal::deserialize_checkpoint(kj::ArrayPtr<const kj::byte> payload,
@@ -647,6 +709,7 @@ uint64_t OrderWal::write_checkpoint(const OrderStore& store) {
 
 void OrderWal::replay(WalReplayCallback callback) {
   auto files = list_wal_files();
+  uint64_t last_sequence = 0;
 
   for (const auto& filename : files) {
     auto path = kj::Path::parse(filename);
@@ -696,6 +759,16 @@ void OrderWal::replay(WalReplayCallback callback) {
           continue;
         }
 
+        if (header.sequence <= last_sequence) {
+          KJ_LOG(WARNING, "Skipping duplicate/out-of-order WAL entry", header.sequence,
+                 last_sequence);
+          offset += sizeof(header) + header.payload_size;
+          continue;
+        }
+        if (last_sequence > 0 && header.sequence > last_sequence + 1) {
+          KJ_LOG(WARNING, "WAL sequence gap detected", last_sequence, header.sequence);
+        }
+
         // Call callback with entry
         callback(header.type, payloadBytes);
 
@@ -704,12 +777,11 @@ void OrderWal::replay(WalReplayCallback callback) {
           auto lock = state_.lockExclusive();
           lock->stats.entries_replayed++;
           lock->stats.bytes_replayed += sizeof(header) + header.payload_size;
-          if (header.sequence > lock->sequence) {
-            lock->sequence = header.sequence;
-            lock->stats.current_sequence = header.sequence;
-          }
+          lock->sequence = header.sequence;
+          lock->stats.current_sequence = header.sequence;
         }
 
+        last_sequence = header.sequence;
         offset += sizeof(header) + header.payload_size;
       }
     }
@@ -729,7 +801,7 @@ void OrderWal::replay_into(OrderStore& store) {
       deserialize_order_fill(payload, store);
       break;
     case WalEntryType::OrderCancel:
-      // Cancel is handled via OrderUpdate with CANCELED status
+      deserialize_order_cancel(payload, store);
       break;
     case WalEntryType::Checkpoint:
       deserialize_checkpoint(payload, store);

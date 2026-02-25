@@ -84,6 +84,8 @@ public:
   void set_timeout(kj::Duration timeout);
   kj::Duration get_timeout() const;
 
+  kj::String build_order_params(const PlaceOrderRequest& req);
+
   // ReconciliationQueryInterface implementation (Task #2)
   kj::Promise<kj::Vector<ExecutionReport>>
   query_open_orders_async(const veloz::common::SymbolId& symbol) override;

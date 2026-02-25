@@ -249,6 +249,52 @@ kj::StringPtr BinanceAdapter::time_in_force_to_string(TimeInForce tif) {
   }
 }
 
+kj::String BinanceAdapter::build_order_params(const PlaceOrderRequest& req) {
+  auto symbol = format_symbol(req.symbol);
+  auto side = order_side_to_string(req.side);
+  auto type = order_type_to_string(req.type);
+  auto tif = time_in_force_to_string(req.tif);
+  auto timestamp = get_timestamp_ms();
+
+  kj::String params;
+  KJ_IF_SOME(priceVal, req.price) {
+    if (req.client_order_id.size() > 0) {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&price=", priceVal,
+                       "&newClientOrderId=", req.client_order_id, "&timestamp=", timestamp);
+    } else {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&price=", priceVal, "&timestamp=", timestamp);
+    }
+  }
+  else {
+    if (req.client_order_id.size() > 0) {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&newClientOrderId=", req.client_order_id,
+                       "&timestamp=", timestamp);
+    } else {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&timestamp=", timestamp);
+    }
+  }
+
+  KJ_IF_SOME(stopPrice, req.stop_price) {
+    params = kj::str(params, "&stopPrice=", stopPrice);
+  }
+
+  if (req.reduce_only) {
+    params = kj::str(params, "&reduceOnly=true");
+  }
+  if (req.post_only) {
+    params = kj::str(params, "&postOnly=true");
+  }
+  KJ_IF_SOME(positionSide, req.position_side) {
+    params = kj::str(params, "&positionSide=", positionSide);
+  }
+
+  return params;
+}
+
 OrderStatus BinanceAdapter::parse_order_status(kj::StringPtr status_str) {
   if (status_str == "NEW") {
     return OrderStatus::New;
@@ -373,10 +419,15 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
     auto client_order_id = kj::heapString(req.client_order_id);
     auto reduce_only = req.reduce_only;
     auto post_only = req.post_only;
+    kj::Maybe<kj::String> position_side;
+    KJ_IF_SOME(value, req.position_side) {
+      position_side = kj::heapString(value);
+    }
 
     return connect_async().then([this, symbol, side, type, tif, qty, price, stop_price,
                                  client_order_id = kj::mv(client_order_id), reduce_only,
-                                 post_only]() mutable -> kj::Promise<kj::Maybe<ExecutionReport>> {
+                                 post_only, position_side = kj::mv(position_side)]() mutable
+                                 -> kj::Promise<kj::Maybe<ExecutionReport>> {
       if (!is_connected()) {
         return kj::Maybe<ExecutionReport>(kj::none);
       }
@@ -391,52 +442,16 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
       new_req.client_order_id = kj::mv(client_order_id);
       new_req.reduce_only = reduce_only;
       new_req.post_only = post_only;
+      KJ_IF_SOME(value, position_side) {
+        new_req.position_side = kj::heapString(value);
+      }
       return place_order_async(new_req);
     });
   }
 
   kj::StringPtr endpoint = "/api/v3/order"_kj;
 
-  // Build query string
-  auto symbol = format_symbol(req.symbol);
-  auto side = order_side_to_string(req.side);
-  auto type = order_type_to_string(req.type);
-  auto tif = time_in_force_to_string(req.tif);
-  auto timestamp = get_timestamp_ms();
-
-  kj::String params;
-  KJ_IF_SOME(priceVal, req.price) {
-    if (req.client_order_id.size() > 0) {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&price=", priceVal,
-                       "&newClientOrderId=", req.client_order_id, "&timestamp=", timestamp);
-    } else {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&price=", priceVal, "&timestamp=", timestamp);
-    }
-  }
-  else {
-    if (req.client_order_id.size() > 0) {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&newClientOrderId=", req.client_order_id,
-                       "&timestamp=", timestamp);
-    } else {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&timestamp=", timestamp);
-    }
-  }
-
-  // Add stop price for stop orders
-  KJ_IF_SOME(stopPrice, req.stop_price) {
-    params = kj::str(params, "&stopPrice=", stopPrice);
-  }
-
-  if (req.reduce_only) {
-    params = kj::str(params, "&reduceOnly=true");
-  }
-  if (req.post_only) {
-    params = kj::str(params, "&postOnly=true");
-  }
+  auto params = build_order_params(req);
 
   // Add signature using KJ-only HmacSha256 interface
   auto signature = build_signature(params);

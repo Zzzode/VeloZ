@@ -2,13 +2,43 @@
  * EngineStatusCard Component Tests
  * Tests for engine status display with loading, error, and data states
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@/test/test-utils';
 import { server } from '@/test/mocks/server';
 import { http, HttpResponse } from 'msw';
 import { EngineStatusCard } from '../components/EngineStatusCard';
+import Dashboard from '../index';
+
+// Setup MSW server
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
 
 const API_BASE = 'http://127.0.0.1:8080';
+
+vi.mock('../hooks', async () => {
+  const actual = await vi.importActual<typeof import('../hooks')>('../hooks');
+  return {
+    ...actual,
+    useSSEConnection: () => ({
+      reconnect: vi.fn(),
+      disconnect: vi.fn(),
+      connectionState: 'disconnected',
+    }),
+  };
+});
+
+vi.mock('@/shared/api/hooks/useEngine', async () => {
+  const actual = await vi.importActual<typeof import('@/shared/api/hooks/useEngine')>('@/shared/api/hooks/useEngine');
+  return {
+    ...actual,
+    useEngineHealth: () => ({
+      data: { engine: { connected: true } },
+      isLoading: false,
+      error: null,
+    }),
+  };
+});
 
 describe('EngineStatusCard', () => {
   beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -124,6 +154,18 @@ describe('EngineStatusCard', () => {
       await waitFor(() => {
         expect(screen.getByText('Engine unavailable')).toBeInTheDocument();
       });
+    });
+  });
+});
+
+describe('Dashboard', () => {
+  it('should render engine connectivity and order latency', async () => {
+    render(<Dashboard />);
+
+    // Wait for the health check to complete
+    await waitFor(() => {
+      expect(screen.getByText(/Engine Connected/)).toBeInTheDocument();
+      expect(screen.getByText(/Order Latency/)).toBeInTheDocument();
     });
   });
 });

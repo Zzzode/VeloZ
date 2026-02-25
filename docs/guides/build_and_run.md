@@ -231,6 +231,15 @@ The script:
 - Calls `./scripts/build.sh <preset>` first
 - Runs the engine with a short smoke test (`timeout 3s`)
 
+#### Dry Run Mode
+
+To see what the script would do without actually executing:
+
+```bash
+./scripts/run_engine.sh --dry-run
+./scripts/run_engine.sh dev --dry-run
+```
+
 ### 4.3 Engine Service Mode
 
 The engine supports HTTP service mode for direct API access:
@@ -254,6 +263,15 @@ The gateway uses Python stdlib to start an HTTP service and bridges to the engin
 ```bash
 # Terminal 1: Start gateway
 ./scripts/run_gateway.sh dev
+```
+
+#### Dry Run Mode
+
+To see what the script would do without actually executing:
+
+```bash
+./scripts/run_gateway.sh --dry-run
+./scripts/run_gateway.sh dev --dry-run
 ```
 
 Default listen address: `http://127.0.0.1:8080/`
