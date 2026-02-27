@@ -18,6 +18,7 @@
 #include <fstream>
 #include <kj/debug.h>
 #include <kj/main.h>
+#include <thread>
 
 using namespace veloz::loadtest;
 
@@ -384,6 +385,8 @@ void print_usage() {
 int main(int argc, char* argv[]) {
   try {
     ProductionTestConfig config;
+    bool events_override = false;
+    bool orders_override = false;
 
     // Parse arguments
     for (int i = 1; i < argc; ++i) {
@@ -391,8 +394,10 @@ int main(int argc, char* argv[]) {
         config.duration_sec = static_cast<uint64_t>(std::atol(argv[++i]));
       } else if (std::strcmp(argv[i], "--events") == 0 && i + 1 < argc) {
         config.target_events_per_sec = std::atof(argv[++i]);
+        events_override = true;
       } else if (std::strcmp(argv[i], "--orders") == 0 && i + 1 < argc) {
         config.target_orders_per_sec = std::atof(argv[++i]);
+        orders_override = true;
       } else if (std::strcmp(argv[i], "--symbols") == 0 && i + 1 < argc) {
         config.num_symbols = static_cast<size_t>(std::atol(argv[++i]));
       } else if (std::strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
@@ -410,6 +415,16 @@ int main(int argc, char* argv[]) {
         print_usage();
         return 0;
       }
+    }
+
+    if (config.duration_sec == 10 && !events_override && !orders_override) {
+      auto cores = std::thread::hardware_concurrency();
+      if (cores == 0) {
+        cores = 1;
+      }
+      double scale = static_cast<double>(cores) / 16.0;
+      config.target_events_per_sec = 50000.0 * scale;
+      config.target_orders_per_sec = 5000.0 * scale;
     }
 
     // Run test

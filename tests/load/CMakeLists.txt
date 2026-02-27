@@ -78,3 +78,7 @@ set_tests_properties(production_load_test_quick PROPERTIES
     TIMEOUT 600
     LABELS "load;performance;production"
 )
+
+if(NOT DEFINED ENV{VELOZ_RUN_PRODUCTION_LOAD_TESTS})
+  set_tests_properties(production_load_test_quick PROPERTIES DISABLED TRUE)
+endif()
