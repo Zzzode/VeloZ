@@ -45,6 +45,7 @@ if(VELOZ_BUILD_BACKTEST)
     add_subdirectory(libs/backtest)
 endif()
 add_subdirectory(apps/engine)
+add_subdirectory(apps/gateway_cpp)
 
 # Integration tests
 if(VELOZ_BUILD_TESTS AND VELOZ_BUILD_BACKTEST)
