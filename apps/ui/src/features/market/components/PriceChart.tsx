@@ -143,6 +143,8 @@ export function PriceChart({ height = 400 }: PriceChartProps) {
     const now = Math.floor(Date.now() / 1000) as Time;
     const price = currentPrice.price;
 
+    if (price === null || price === undefined) return;
+
     // Update the last candle
     seriesRef.current.update({
       time: now,

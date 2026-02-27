@@ -1,5 +1,6 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Modal } from '@/shared/components';
 import { useConfigStore } from '../../store/configStore';
 import { WizardProgress } from './WizardProgress';
@@ -17,17 +18,9 @@ interface SetupWizardProps {
   onClose: () => void;
 }
 
-const WIZARD_STEPS = [
-  { id: 'welcome', title: 'Welcome' },
-  { id: 'exchange', title: 'Exchange' },
-  { id: 'risk', title: 'Risk' },
-  { id: 'mode', title: 'Mode' },
-  { id: 'security', title: 'Security' },
-  { id: 'complete', title: 'Complete' },
-];
-
 export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const {
     currentStep,
     wizardData,
@@ -38,6 +31,15 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
     testNewConnection,
     isLoading,
   } = useConfigStore();
+
+  const WIZARD_STEPS = useMemo(() => [
+    { id: 'welcome', title: t('setupWizard.steps.welcome') },
+    { id: 'exchange', title: t('setupWizard.steps.exchange') },
+    { id: 'risk', title: t('setupWizard.steps.risk') },
+    { id: 'mode', title: t('setupWizard.steps.mode') },
+    { id: 'security', title: t('setupWizard.steps.security') },
+    { id: 'complete', title: t('setupWizard.steps.complete') },
+  ], [t]);
 
   const handleSkipWizard = useCallback(() => {
     onClose();
@@ -69,11 +71,11 @@ export function SetupWizard({ isOpen, onClose }: SetupWizardProps) {
   const handleComplete = useCallback(async () => {
     try {
       await completeWizard();
-      // Stay on complete step to show success
+      nextStep(); // Move to Complete step
     } catch (error) {
       console.error('Failed to complete wizard:', error);
     }
-  }, [completeWizard]);
+  }, [completeWizard, nextStep]);
 
   const handleStartSimulated = useCallback(() => {
     onClose();

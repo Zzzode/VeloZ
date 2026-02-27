@@ -1,0 +1,48 @@
+{
+  "setupWizard": {
+    "title": "设置向导",
+    "steps": {
+      "welcome": "欢迎",
+      "exchange": "交易所",
+      "risk": "风控",
+      "mode": "模式",
+      "security": "安全",
+      "complete": "完成"
+    },
+    "security": {
+      "title": "安全设置",
+      "subtitle": "通过额外的安全措施保护您的账户。",
+      "optional": "可选但推荐",
+      "optionalDesc": "这些安全功能有助于保护您的账户，稍后可以在设置中配置。",
+      "twoFactor": {
+        "title": "双因素认证 (2FA)",
+        "subtitle": "添加额外的安全层",
+        "info": "2FA 将在设置后配置。您需要像 Google Authenticator 或 Authy 这样的身份验证应用。"
+      },
+      "recoveryEmail": {
+        "title": "恢复邮箱",
+        "subtitle": "接收安全警报和账户恢复选项",
+        "placeholder": "your@email.com",
+        "error": "请输入有效的电子邮件地址"
+      },
+      "backupCodes": {
+        "title": "备份代码",
+        "subtitle": "生成用于账户恢复的备份代码",
+        "info": "启用 2FA 后可用"
+      },
+      "tips": {
+        "title": "安全最佳实践",
+        "tip1": "为您的 VeloZ 账户使用唯一的强密码",
+        "tip2": "在您的交易所 API 密钥上启用 IP 限制",
+        "tip3": "切勿分享您的 API 密钥或恢复代码",
+        "tip4": "定期检查您的连接设备和会话"
+      }
+    },
+    "buttons": {
+      "back": "返回",
+      "skip": "跳过",
+      "continue": "继续",
+      "complete": "完成"
+    }
+  }
+}

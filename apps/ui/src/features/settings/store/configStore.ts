@@ -288,7 +288,7 @@ export const useConfigStore = create<ConfigState>()(
         set({ isLoadingKeys: true });
 
         try {
-          const response = await fetch(`${API_BASE}/api/keys`);
+          const response = await fetch(`${API_BASE}/api/exchange-keys`);
           if (!response.ok) {
             throw new Error('Failed to load API keys');
           }
@@ -302,7 +302,7 @@ export const useConfigStore = create<ConfigState>()(
 
       addAPIKey: async (data) => {
         try {
-          const response = await fetch(`${API_BASE}/api/keys`, {
+          const response = await fetch(`${API_BASE}/api/exchange-keys`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
@@ -326,7 +326,7 @@ export const useConfigStore = create<ConfigState>()(
 
       deleteAPIKey: async (keyId) => {
         try {
-          const response = await fetch(`${API_BASE}/api/keys/${keyId}`, {
+          const response = await fetch(`${API_BASE}/api/exchange-keys?key_id=${keyId}`, {
             method: 'DELETE',
           });
 

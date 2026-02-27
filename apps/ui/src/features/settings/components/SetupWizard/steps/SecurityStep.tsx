@@ -1,5 +1,6 @@
 import { Button } from '@/shared/components';
 import { ShieldCheck, Smartphone, Mail, Key } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface SecurityStepProps {
   twoFactorEnabled: boolean;
@@ -20,13 +21,14 @@ export function SecurityStep({
   onBack,
   onSkip,
 }: SecurityStepProps) {
+  const { t } = useTranslation();
   const isEmailValid = !recoveryEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail);
 
   return (
     <div className="max-w-2xl mx-auto py-6">
-      <h2 className="text-2xl font-bold text-text mb-2">Security Setup</h2>
+      <h2 className="text-2xl font-bold text-text mb-2">{t('setupWizard.security.title')}</h2>
       <p className="text-text-muted mb-6">
-        Protect your account with additional security measures.
+        {t('setupWizard.security.subtitle')}
       </p>
 
       {/* Security Overview */}
@@ -34,10 +36,9 @@ export function SecurityStep({
         <div className="flex items-start gap-3">
           <ShieldCheck className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-700">
-            <p className="font-medium">Optional but Recommended</p>
+            <p className="font-medium">{t('setupWizard.security.optional')}</p>
             <p className="text-blue-600">
-              These security features help protect your account and can be configured
-              later from Settings.
+              {t('setupWizard.security.optionalDesc')}
             </p>
           </div>
         </div>
@@ -54,9 +55,9 @@ export function SecurityStep({
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-medium text-text">Two-Factor Authentication</h3>
+                  <h3 className="font-medium text-text">{t('setupWizard.security.twoFactor.title')}</h3>
                   <p className="text-sm text-text-muted mt-1">
-                    Add an extra layer of security with 2FA
+                    {t('setupWizard.security.twoFactor.subtitle')}
                   </p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
@@ -73,8 +74,7 @@ export function SecurityStep({
               {twoFactorEnabled && (
                 <div className="mt-4 p-3 bg-gray-50 rounded-lg">
                   <p className="text-sm text-text-muted">
-                    2FA will be configured after setup. You'll need an authenticator app
-                    like Google Authenticator or Authy.
+                    {t('setupWizard.security.twoFactor.info')}
                   </p>
                 </div>
               )}
@@ -89,16 +89,16 @@ export function SecurityStep({
               <Mail className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-text">Recovery Email</h3>
+              <h3 className="font-medium text-text">{t('setupWizard.security.recoveryEmail.title')}</h3>
               <p className="text-sm text-text-muted mt-1">
-                Receive security alerts and account recovery options
+                {t('setupWizard.security.recoveryEmail.subtitle')}
               </p>
               <div className="mt-3">
                 <input
                   type="email"
                   value={recoveryEmail}
                   onChange={(e) => onRecoveryEmailChange(e.target.value)}
-                  placeholder="your@email.com"
+                  placeholder={t('setupWizard.security.recoveryEmail.placeholder')}
                   className={`
                     w-full px-3 py-2 border rounded-md text-sm
                     focus:outline-none focus:ring-2 focus:border-transparent
@@ -111,7 +111,7 @@ export function SecurityStep({
                 />
                 {!isEmailValid && (
                   <p className="text-xs text-red-500 mt-1">
-                    Please enter a valid email address
+                    {t('setupWizard.security.recoveryEmail.error')}
                   </p>
                 )}
               </div>
@@ -126,12 +126,12 @@ export function SecurityStep({
               <Key className="w-5 h-5 text-gray-500" />
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-text">Backup Codes</h3>
+              <h3 className="font-medium text-text">{t('setupWizard.security.backupCodes.title')}</h3>
               <p className="text-sm text-text-muted mt-1">
-                Generate backup codes for account recovery
+                {t('setupWizard.security.backupCodes.subtitle')}
               </p>
               <p className="text-xs text-text-muted mt-2">
-                Available after enabling 2FA
+                {t('setupWizard.security.backupCodes.info')}
               </p>
             </div>
           </div>
@@ -140,23 +140,23 @@ export function SecurityStep({
 
       {/* Security Tips */}
       <div className="bg-surface border border-border rounded-lg p-4 mb-8">
-        <h3 className="font-medium text-text mb-3">Security Best Practices</h3>
+        <h3 className="font-medium text-text mb-3">{t('setupWizard.security.tips.title')}</h3>
         <ul className="space-y-2 text-sm text-text-muted">
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0" />
-            Use a unique, strong password for your VeloZ account
+            {t('setupWizard.security.tips.tip1')}
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0" />
-            Enable IP restrictions on your exchange API keys
+            {t('setupWizard.security.tips.tip2')}
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0" />
-            Never share your API keys or recovery codes
+            {t('setupWizard.security.tips.tip3')}
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5 flex-shrink-0" />
-            Regularly review your connected devices and sessions
+            {t('setupWizard.security.tips.tip4')}
           </li>
         </ul>
       </div>
@@ -164,10 +164,10 @@ export function SecurityStep({
       {/* Navigation */}
       <div className="flex items-center gap-4">
         <Button variant="secondary" onClick={onBack} className="flex-1">
-          Back
+          {t('setupWizard.buttons.back')}
         </Button>
         <Button variant="secondary" onClick={onSkip}>
-          Skip
+          {t('setupWizard.buttons.skip')}
         </Button>
         <Button
           variant="primary"
@@ -175,7 +175,7 @@ export function SecurityStep({
           disabled={!isEmailValid}
           className="flex-1"
         >
-          Continue
+          {t('setupWizard.buttons.continue')}
         </Button>
       </div>
     </div>
