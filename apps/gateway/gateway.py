@@ -1254,6 +1254,10 @@ class BinanceSpotRestClient:
         self._api_key = api_key or ""
         self._api_secret = api_secret or ""
 
+    def update_credentials(self, api_key, api_secret):
+        self._api_key = api_key or ""
+        self._api_secret = api_secret or ""
+
     def enabled(self):
         return bool(self._base_url and self._api_key and self._api_secret)
 
@@ -1963,6 +1967,11 @@ class ExecutionRouter:
 
 
 class Handler(SimpleHTTPRequestHandler):
+    static_dir = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=self.static_dir, **kwargs)
+
     def end_headers(self):
         # Get security manager from server if available
         security_manager = getattr(self.server, "security_manager", None)
@@ -2976,6 +2985,15 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             self._audit_log("create_exchange_key", {"key_id": key_id, "exchange": exchange})
+
+            # Update active credentials if applicable
+            if exchange == "binance":
+                router = getattr(self.server, "router", None)
+                if router and router._execution_mode == "binance_testnet_spot":
+                    if router._binance:
+                        router._binance.update_credentials(api_key, api_secret)
+                        audit_logger.info("Updated active Binance credentials")
+
             self._send_json(201, {
                 "ok": True,
                 "keyId": key_id,
@@ -3295,14 +3313,19 @@ class Handler(SimpleHTTPRequestHandler):
 def main():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     ui_dir = os.path.join(repo_root, "apps", "ui")
-    os.chdir(ui_dir)
+    ui_dist_dir = os.path.join(ui_dir, "dist")
+    static_dir = ui_dir
+    if os.path.exists(os.path.join(ui_dist_dir, "index.html")):
+        static_dir = ui_dist_dir
+    Handler.static_dir = static_dir
+    audit_logger.info(f"Serving UI from {static_dir}")
 
     # Initialize metrics system
     metrics_manager = init_metrics()
     if metrics_available():
-        print("Prometheus metrics enabled at /metrics")
+        audit_logger.info("Prometheus metrics enabled at /metrics")
     else:
-        print("Warning: prometheus_client not installed, metrics will be limited")
+        audit_logger.warning("prometheus_client not installed, metrics will be limited")
 
     # Initialize Vault client for secrets management
     vault_client = None
@@ -3442,7 +3465,12 @@ def main():
     else:
         audit_logger.info("Authentication disabled (set VELOZ_AUTH_ENABLED=true to enable)")
 
+    display_host = host
+    if host == "0.0.0.0":
+        display_host = "127.0.0.1"
+
     audit_logger.info(f"Gateway listening on http://{host}:{port}")
+    audit_logger.info(f"Open http://{display_host}:{port} in your browser to access the UI")
     try:
         httpd.serve_forever()
     finally:
