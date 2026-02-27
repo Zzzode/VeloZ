@@ -150,6 +150,7 @@ int EngineApp::run_service() {
   // Start market data manager if enabled
   kj::Promise<void> marketDataPromise = kj::READY_NOW;
   if (config_.enable_market_data) {
+    start_event_loop();
     KJ_IF_SOME(l, logger_) {
       l.info("Starting market data integration...");
     }
@@ -184,6 +185,8 @@ int EngineApp::run_service() {
     mdm->stop();
   }
 
+  stop_event_loop();
+
   httpServer->drain().wait(io.waitScope);
 
   httpService->set_engine_state(EngineLifecycleState::Stopped);
@@ -193,6 +196,32 @@ int EngineApp::run_service() {
   }
 
   return 0;
+}
+
+void EngineApp::start_event_loop() {
+  if (event_loop_ != kj::none) {
+    return;
+  }
+  auto loop = kj::heap<veloz::core::EventLoop>();
+  auto* loop_ptr = loop.get();
+  auto thread = kj::heap<kj::Thread>([loop_ptr] { loop_ptr->run(); });
+  event_loop_ = kj::mv(loop);
+  event_loop_thread_ = kj::mv(thread);
+}
+
+void EngineApp::stop_event_loop() {
+  KJ_IF_SOME(loop, event_loop_) {
+    loop->stop();
+  }
+  event_loop_thread_ = kj::none;
+  event_loop_ = kj::none;
+}
+
+bool EngineApp::is_event_loop_running() const {
+  KJ_IF_SOME(loop, event_loop_) {
+    return loop->is_running();
+  }
+  return false;
 }
 
 kj::Promise<void> EngineApp::run_http_server(kj::AsyncIoContext& io, EngineHttpServer& server) {
@@ -211,13 +240,18 @@ kj::Promise<void> EngineApp::run_market_data(kj::AsyncIoContext& io) {
   emitter_ = kj::heap<EventEmitter>(out_);
 
   KJ_IF_SOME(emitter, emitter_) {
+    kj::Maybe<veloz::core::EventLoop&> loop_ref = kj::none;
+    KJ_IF_SOME(loop, event_loop_) {
+      loop_ref = *loop;
+    }
+
     // Create market data manager configuration
     MarketDataManager::Config mdConfig;
     mdConfig.use_testnet = config_.use_testnet;
     mdConfig.auto_reconnect = true;
 
     // Create market data manager
-    market_data_manager_ = kj::heap<MarketDataManager>(io, *emitter, mdConfig);
+    market_data_manager_ = kj::heap<MarketDataManager>(io, *emitter, mdConfig, loop_ref);
 
     KJ_IF_SOME(mdm, market_data_manager_) {
       KJ_IF_SOME(l, logger_) {

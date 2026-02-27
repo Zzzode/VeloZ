@@ -80,6 +80,7 @@ private:
   // Request handlers
   kj::Promise<void> handleStatus(Response& response);
   kj::Promise<void> handleHealth(Response& response);
+  kj::Promise<void> handleConfig(Response& response);
   kj::Promise<void> handleStart(Response& response);
   kj::Promise<void> handleStop(Response& response);
   kj::Promise<void> handleNotFound(Response& response);
@@ -94,6 +95,7 @@ private:
   // JSON response helpers
   kj::String buildStatusJson() const;
   kj::String buildHealthJson() const;
+  kj::String buildConfigJson() const;
   kj::String buildSuccessJson(kj::StringPtr message) const;
   kj::String buildErrorJson(kj::StringPtr error) const;
 };

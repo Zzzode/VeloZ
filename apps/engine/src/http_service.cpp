@@ -58,6 +58,90 @@ kj::Promise<void> EngineHttpService::request(kj::HttpMethod method, kj::StringPt
   (void)headers;
   (void)requestBody;
 
+  if (url == "/api/control/status"_kj) {
+    if (method == kj::HttpMethod::GET) {
+      return handleStatus(response);
+    }
+    return handleMethodNotAllowed(response);
+  }
+
+  if (url == "/api/control/health"_kj) {
+    if (method == kj::HttpMethod::GET) {
+      return handleHealth(response);
+    }
+    return handleMethodNotAllowed(response);
+  }
+
+  if (url == "/api/control/config"_kj) {
+    if (method == kj::HttpMethod::GET) {
+      return handleConfig(response);
+    }
+    return handleMethodNotAllowed(response);
+  }
+
+  if (url == "/api/control/start"_kj) {
+    if (method == kj::HttpMethod::POST) {
+      return handleStart(response);
+    }
+    return handleMethodNotAllowed(response);
+  }
+
+  if (url == "/api/control/stop"_kj) {
+    if (method == kj::HttpMethod::POST) {
+      return handleStop(response);
+    }
+    return handleMethodNotAllowed(response);
+  }
+
+  if (url == "/api/control/strategies"_kj) {
+    if (method == kj::HttpMethod::GET) {
+      return handleListStrategies(response);
+    }
+    return handleMethodNotAllowed(response);
+  }
+
+  kj::StringPtr controlRemaining;
+  if (url_starts_with(url, "/api/control/strategies/"_kj, controlRemaining)) {
+    auto slashPos = controlRemaining.findFirst('/');
+    kj::StringPtr strategyId;
+    kj::StringPtr action;
+
+    KJ_IF_SOME(pos, slashPos) {
+      strategyId = kj::StringPtr(controlRemaining.begin(), pos);
+      action = kj::StringPtr(controlRemaining.begin() + pos + 1,
+                              controlRemaining.size() - pos - 1);
+    }
+    else {
+      strategyId = controlRemaining;
+      action = ""_kj;
+    }
+
+    if (strategyId.size() == 0) {
+      return handleNotFound(response);
+    }
+
+    if (action.size() == 0) {
+      if (method == kj::HttpMethod::GET) {
+        return handleGetStrategy(strategyId, response);
+      }
+      return handleMethodNotAllowed(response);
+    }
+
+    if (action == "start"_kj) {
+      if (method == kj::HttpMethod::POST) {
+        return handleStartStrategy(strategyId, response);
+      }
+      return handleMethodNotAllowed(response);
+    }
+
+    if (action == "stop"_kj) {
+      if (method == kj::HttpMethod::POST) {
+        return handleStopStrategy(strategyId, response);
+      }
+      return handleMethodNotAllowed(response);
+    }
+  }
+
   // Route requests based on URL and method
   if (url == "/api/status"_kj) {
     if (method == kj::HttpMethod::GET) {
@@ -176,6 +260,16 @@ kj::Promise<void> EngineHttpService::handleStatus(Response& response) {
 
 kj::Promise<void> EngineHttpService::handleHealth(Response& response) {
   kj::String body = buildHealthJson();
+  kj::HttpHeaders responseHeaders(headerTable_);
+  responseHeaders.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+
+  auto stream = response.send(200, "OK"_kj, responseHeaders, body.size());
+  auto writePromise = stream->write(body.asBytes());
+  return writePromise.attach(kj::mv(stream), kj::mv(body));
+}
+
+kj::Promise<void> EngineHttpService::handleConfig(Response& response) {
+  kj::String body = buildConfigJson();
   kj::HttpHeaders responseHeaders(headerTable_);
   responseHeaders.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
 
@@ -433,6 +527,10 @@ kj::String EngineHttpService::buildHealthJson() const {
   bool healthy = (state == EngineLifecycleState::Running);
   return kj::str(R"({"healthy":)", healthy ? "true"_kj : "false"_kj, R"(,"status":")",
                  lifecycle_state_to_string(state), R"("})");
+}
+
+kj::String EngineHttpService::buildConfigJson() const {
+  return kj::str(R"({"config":{}})");
 }
 
 kj::String EngineHttpService::buildSuccessJson(kj::StringPtr message) const {

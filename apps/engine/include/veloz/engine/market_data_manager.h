@@ -1,5 +1,6 @@
 #pragma once
 
+#include "veloz/core/event_loop.h"
 #include "veloz/engine/event_emitter.h"
 #include "veloz/market/binance_websocket.h"
 #include "veloz/market/market_event.h"
@@ -36,7 +37,8 @@ public:
    * @param emitter Event emitter for publishing market events
    * @param config Configuration options
    */
-  MarketDataManager(kj::AsyncIoContext& ioContext, EventEmitter& emitter, Config config);
+  MarketDataManager(kj::AsyncIoContext& ioContext, EventEmitter& emitter, Config config,
+                    kj::Maybe<veloz::core::EventLoop&> event_loop = kj::none);
   ~MarketDataManager();
 
   // Disable copy and move
@@ -92,8 +94,15 @@ public:
   [[nodiscard]] std::int64_t total_subscriptions() const;
 
 private:
+  friend struct MarketDataManagerTestAccess;
+
   // Handle incoming market event from WebSocket
   void on_market_event(const veloz::market::MarketEvent& event);
+  kj::Vector<veloz::core::EventTag>
+  build_market_event_tags(const veloz::market::MarketEvent& event) const;
+  veloz::core::EventPriority
+  market_event_priority(const veloz::market::MarketEvent& event) const;
+  veloz::market::MarketEvent clone_market_event(const veloz::market::MarketEvent& event) const;
 
   // Get or create WebSocket for venue
   kj::Maybe<veloz::market::BinanceWebSocket&> get_binance_websocket();
@@ -101,6 +110,7 @@ private:
   Config config_;
   kj::AsyncIoContext& ioContext_;
   EventEmitter& emitter_;
+  kj::Maybe<veloz::core::EventLoop&> event_loop_;
 
   // Running state
   std::atomic<bool> running_{false};

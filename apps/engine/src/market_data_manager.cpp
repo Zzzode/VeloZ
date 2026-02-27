@@ -6,8 +6,8 @@
 namespace veloz::engine {
 
 MarketDataManager::MarketDataManager(kj::AsyncIoContext& ioContext, EventEmitter& emitter,
-                                     Config config)
-    : config_(config), ioContext_(ioContext), emitter_(emitter) {
+                                     Config config, kj::Maybe<veloz::core::EventLoop&> event_loop)
+    : config_(config), ioContext_(ioContext), emitter_(emitter), event_loop_(event_loop) {
   KJ_LOG(INFO, "MarketDataManager initialized", config_.use_testnet ? "testnet" : "mainnet");
 }
 
@@ -221,6 +221,16 @@ std::int64_t MarketDataManager::total_subscriptions() const {
 
 void MarketDataManager::on_market_event(const veloz::market::MarketEvent& event) {
   total_events_++;
+  KJ_IF_SOME(loop, event_loop_) {
+    if (loop.is_running()) {
+      auto tags = build_market_event_tags(event);
+      auto priority = market_event_priority(event);
+      auto copy = clone_market_event(event);
+      loop.post_with_tags([this, event = kj::mv(copy)]() mutable { emitter_.emit_market_event(event); },
+                          priority, kj::mv(tags));
+      return;
+    }
+  }
   emitter_.emit_market_event(event);
 }
 
@@ -229,6 +239,101 @@ kj::Maybe<veloz::market::BinanceWebSocket&> MarketDataManager::get_binance_webso
     return *ws;
   }
   return kj::none;
+}
+
+kj::Vector<veloz::core::EventTag>
+MarketDataManager::build_market_event_tags(const veloz::market::MarketEvent& event) const {
+  kj::Vector<veloz::core::EventTag> tags;
+  tags.add(kj::str("market"));
+  tags.add(kj::str("venue:", veloz::common::to_string(event.venue)));
+  tags.add(kj::str("symbol:", event.symbol.value));
+
+  kj::StringPtr type_tag = "unknown"_kj;
+  switch (event.type) {
+  case veloz::market::MarketEventType::Trade:
+    type_tag = "trade"_kj;
+    break;
+  case veloz::market::MarketEventType::BookTop:
+    type_tag = "book_top"_kj;
+    break;
+  case veloz::market::MarketEventType::BookDelta:
+    type_tag = "book_delta"_kj;
+    break;
+  case veloz::market::MarketEventType::Kline:
+    type_tag = "kline"_kj;
+    break;
+  case veloz::market::MarketEventType::Ticker:
+    type_tag = "ticker"_kj;
+    break;
+  case veloz::market::MarketEventType::FundingRate:
+    type_tag = "funding_rate"_kj;
+    break;
+  case veloz::market::MarketEventType::MarkPrice:
+    type_tag = "mark_price"_kj;
+    break;
+  default:
+    break;
+  }
+  tags.add(kj::str("type:", type_tag));
+  return tags;
+}
+
+veloz::core::EventPriority
+MarketDataManager::market_event_priority(const veloz::market::MarketEvent& event) const {
+  switch (event.type) {
+  case veloz::market::MarketEventType::Trade:
+    return veloz::core::EventPriority::High;
+  case veloz::market::MarketEventType::BookDelta:
+    return veloz::core::EventPriority::High;
+  case veloz::market::MarketEventType::BookTop:
+    return veloz::core::EventPriority::Normal;
+  case veloz::market::MarketEventType::Ticker:
+    return veloz::core::EventPriority::Normal;
+  case veloz::market::MarketEventType::MarkPrice:
+    return veloz::core::EventPriority::Normal;
+  case veloz::market::MarketEventType::Kline:
+    return veloz::core::EventPriority::Low;
+  case veloz::market::MarketEventType::FundingRate:
+    return veloz::core::EventPriority::Low;
+  default:
+    return veloz::core::EventPriority::Low;
+  }
+}
+
+veloz::market::MarketEvent
+MarketDataManager::clone_market_event(const veloz::market::MarketEvent& event) const {
+  veloz::market::MarketEvent copy;
+  copy.type = event.type;
+  copy.venue = event.venue;
+  copy.market = event.market;
+  copy.symbol = event.symbol;
+  copy.ts_exchange_ns = event.ts_exchange_ns;
+  copy.ts_recv_ns = event.ts_recv_ns;
+  copy.ts_pub_ns = event.ts_pub_ns;
+  copy.payload = kj::heapString(event.payload);
+
+  if (event.data.is<veloz::market::TradeData>()) {
+    copy.data = event.data.get<veloz::market::TradeData>();
+  } else if (event.data.is<veloz::market::BookData>()) {
+    const auto& source = event.data.get<veloz::market::BookData>();
+    veloz::market::BookData book;
+    book.sequence = source.sequence;
+    book.first_update_id = source.first_update_id;
+    book.is_snapshot = source.is_snapshot;
+    for (auto level : source.bids) {
+      book.bids.add(level);
+    }
+    for (auto level : source.asks) {
+      book.asks.add(level);
+    }
+    copy.data = kj::mv(book);
+  } else if (event.data.is<veloz::market::KlineData>()) {
+    copy.data = event.data.get<veloz::market::KlineData>();
+  } else {
+    copy.data = veloz::market::EmptyData{};
+  }
+
+  return copy;
 }
 
 } // namespace veloz::engine
