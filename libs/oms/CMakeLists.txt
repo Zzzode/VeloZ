@@ -25,5 +25,9 @@ if(VELOZ_BUILD_TESTS)
       kj-test
   )
   add_test(NAME veloz_oms_tests COMMAND veloz_oms_tests)
+  set_tests_properties(veloz_oms_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+    LABELS "unit;oms"
+  )
 endif()
 

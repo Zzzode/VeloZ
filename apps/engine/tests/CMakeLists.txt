@@ -47,11 +47,21 @@ target_link_libraries(test_engine_app
     kj-async
 )
 
-# Register tests
+# Register tests with timeout and labels
 add_test(NAME test_command_parser COMMAND test_command_parser)
 add_test(NAME test_stdio_engine COMMAND test_stdio_engine)
 add_test(NAME test_http_service COMMAND test_http_service)
 add_test(NAME test_engine_app COMMAND test_engine_app)
+
+set_tests_properties(
+    test_command_parser
+    test_stdio_engine
+    test_http_service
+    test_engine_app
+    PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+    LABELS "unit;engine"
+)
 
 # State persistence tests
 add_executable(test_state_persistence
@@ -66,3 +76,7 @@ target_link_libraries(test_state_persistence
 )
 
 add_test(NAME test_state_persistence COMMAND test_state_persistence)
+set_tests_properties(test_state_persistence PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+    LABELS "unit;engine"
+)

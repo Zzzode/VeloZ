@@ -49,4 +49,8 @@ if(VELOZ_BUILD_TESTS)
             kj-async
     )
     add_test(NAME veloz_strategy_tests COMMAND veloz_strategy_tests)
+    set_tests_properties(veloz_strategy_tests PROPERTIES
+        TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+        LABELS "unit;strategy"
+    )
 endif()

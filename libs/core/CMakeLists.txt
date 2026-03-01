@@ -78,6 +78,10 @@ if(VELOZ_BUILD_TESTS)
       kj-test
     )
   add_test(NAME veloz_core_tests COMMAND veloz_core_tests)
+  set_tests_properties(veloz_core_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+    LABELS "unit;core"
+  )
 endif()
 
 # Benchmarks

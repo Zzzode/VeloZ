@@ -19,6 +19,10 @@ target_link_libraries(veloz_integration_backtest_tests
 )
 target_compile_features(veloz_integration_backtest_tests PUBLIC cxx_std_23)
 add_test(NAME veloz_integration_backtest_tests COMMAND veloz_integration_backtest_tests)
+set_tests_properties(veloz_integration_backtest_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+    LABELS "integration;backtest;slow"
+)
 
 # Order WAL recovery integration tests
 add_executable(veloz_integration_wal_tests
@@ -35,6 +39,10 @@ target_link_libraries(veloz_integration_wal_tests
 )
 target_compile_features(veloz_integration_wal_tests PUBLIC cxx_std_23)
 add_test(NAME veloz_integration_wal_tests COMMAND veloz_integration_wal_tests)
+set_tests_properties(veloz_integration_wal_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+    LABELS "integration;oms;slow"
+)
 
 # Multi-strategy concurrent execution integration tests
 add_executable(veloz_integration_strategy_tests
@@ -52,6 +60,10 @@ target_link_libraries(veloz_integration_strategy_tests
 )
 target_compile_features(veloz_integration_strategy_tests PUBLIC cxx_std_23)
 add_test(NAME veloz_integration_strategy_tests COMMAND veloz_integration_strategy_tests)
+set_tests_properties(veloz_integration_strategy_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+    LABELS "integration;strategy;slow"
+)
 
 # Engine integration tests (full event flow)
 add_executable(veloz_integration_engine_tests
@@ -70,3 +82,7 @@ target_link_libraries(veloz_integration_engine_tests
 )
 target_compile_features(veloz_integration_engine_tests PUBLIC cxx_std_23)
 add_test(NAME veloz_integration_engine_tests COMMAND veloz_integration_engine_tests)
+set_tests_properties(veloz_integration_engine_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+    LABELS "integration;engine;slow"
+)

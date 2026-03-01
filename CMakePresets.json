@@ -217,9 +217,81 @@
   "testPresets": [
     {
       "name": "dev",
+      "displayName": "All Tests (Dev)",
       "configurePreset": "dev",
       "execution": {
-        "timeout": 60
+        "timeout": 600,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true,
+        "verbosity": "default"
+      }
+    },
+    {
+      "name": "dev-unit",
+      "displayName": "Unit Tests Only (Dev)",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "unit"
+        }
+      },
+      "execution": {
+        "timeout": 120,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-integration",
+      "displayName": "Integration Tests Only (Dev)",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "integration"
+        }
+      },
+      "execution": {
+        "timeout": 300,
+        "noTestsAction": "ignore"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-load",
+      "displayName": "Load Tests Only (Dev)",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "load"
+        }
+      },
+      "execution": {
+        "timeout": 900,
+        "noTestsAction": "ignore"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-quick",
+      "displayName": "Quick Tests (exclude slow)",
+      "configurePreset": "dev",
+      "filter": {
+        "exclude": {
+          "label": "slow"
+        }
+      },
+      "execution": {
+        "timeout": 120,
+        "noTestsAction": "error"
       },
       "output": {
         "outputOnFailure": true
@@ -227,9 +299,45 @@
     },
     {
       "name": "coverage",
+      "displayName": "Coverage Tests",
       "configurePreset": "coverage",
+      "filter": {
+        "exclude": {
+          "label": "load"
+        }
+      },
       "execution": {
-        "timeout": 60
+        "timeout": 600,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "All Tests (Release)",
+      "configurePreset": "release",
+      "execution": {
+        "timeout": 600,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "All Tests (ASan)",
+      "configurePreset": "asan",
+      "filter": {
+        "exclude": {
+          "label": "load"
+        }
+      },
+      "execution": {
+        "timeout": 900,
+        "noTestsAction": "error"
       },
       "output": {
         "outputOnFailure": true

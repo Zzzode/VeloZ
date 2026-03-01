@@ -40,5 +40,9 @@ if(VELOZ_BUILD_TESTS)
       kj-test
   )
   add_test(NAME veloz_risk_tests COMMAND veloz_risk_tests)
+  set_tests_properties(veloz_risk_tests PROPERTIES
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+    LABELS "unit;risk"
+  )
 endif()
 

@@ -75,4 +75,8 @@ if(VELOZ_BUILD_TESTS)
         target_link_libraries(veloz_exec_tests PRIVATE kj-tls)
     endif()
     add_test(NAME veloz_exec_tests COMMAND veloz_exec_tests)
+    set_tests_properties(veloz_exec_tests PROPERTIES
+        TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+        LABELS "unit;exec"
+    )
 endif()

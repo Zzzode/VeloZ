@@ -70,6 +70,10 @@ if(VELOZ_BUILD_TESTS)
             kj-async
         )
     add_test(NAME veloz_market_tests COMMAND veloz_market_tests)
+    set_tests_properties(veloz_market_tests PROPERTIES
+        TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+        LABELS "unit;market"
+    )
 
     # WebSocket unit tests (conditionally built)
     if(VELOZ_BUILD_WEBSOCKET)
@@ -83,6 +87,10 @@ if(VELOZ_BUILD_TESTS)
                 kj-test
             )
         add_test(NAME veloz_websocket_tests COMMAND veloz_websocket_tests)
+        set_tests_properties(veloz_websocket_tests PROPERTIES
+            TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+            LABELS "unit;market;network"
+        )
 
         # REST client tests
         add_executable(veloz_rest_client_tests
@@ -97,5 +105,9 @@ if(VELOZ_BUILD_TESTS)
                 kj-http
             )
         add_test(NAME veloz_rest_client_tests COMMAND veloz_rest_client_tests)
+        set_tests_properties(veloz_rest_client_tests PROPERTIES
+            TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+            LABELS "unit;market;network"
+        )
     endif()
 endif()

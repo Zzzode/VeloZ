@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Add cmake module path for custom modules
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Set CMAKE_POLICY_VERSION_MINIMUM to suppress capnproto warnings
 # Cap'n Proto requires CMake 3.5+ but uses older patterns
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
@@ -29,6 +32,7 @@ endif()
 # Enable testing early so BUILD_TESTING is set for all subdirectories
 if(VELOZ_BUILD_TESTS)
     enable_testing()
+    include(VeloZTestTimeouts)
 endif()
 
 # KJ Test framework is provided by libs/core/kj/CMakeLists.txt
@@ -45,7 +49,9 @@ if(VELOZ_BUILD_BACKTEST)
     add_subdirectory(libs/backtest)
 endif()
 add_subdirectory(apps/engine)
-add_subdirectory(apps/gateway_cpp)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/gateway_cpp/CMakeLists.txt")
+    add_subdirectory(apps/gateway_cpp)
+endif()
 
 # Integration tests
 if(VELOZ_BUILD_TESTS AND VELOZ_BUILD_BACKTEST)

@@ -39,10 +39,11 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-# Set timeout for quick test (2 minutes)
+# Set timeout for quick test using project timeout variable
 set_tests_properties(load_test_quick PROPERTIES
-    TIMEOUT 120
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
     LABELS "load;performance"
+    RUN_SERIAL TRUE
 )
 
 # Production load test executable
@@ -75,8 +76,9 @@ add_test(
 )
 
 set_tests_properties(production_load_test_quick PROPERTIES
-    TIMEOUT 600
+    TIMEOUT ${VELOZ_TEST_TIMEOUT_EXTENDED}
     LABELS "load;performance;production"
+    RUN_SERIAL TRUE
 )
 
 if(NOT DEFINED ENV{VELOZ_RUN_PRODUCTION_LOAD_TESTS})
