@@ -94,41 +94,67 @@ class KeyringBackend(KeychainBackend):
         except ImportError:
             logger.warning("keyring library not available, using fallback storage")
             self._available = False
-            self._fallback_storage = {}
+        
+        self._fallback_storage = {}
+        self._fallback_file = "veloz_keychain.json"
+        self._load_fallback()
+
+    def _load_fallback(self):
+        try:
+            import os
+            if os.path.exists(self._fallback_file):
+                with open(self._fallback_file, 'r') as f:
+                    self._fallback_storage = json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load fallback keychain: {e}")
+
+    def _save_fallback(self):
+        try:
+            with open(self._fallback_file, 'w') as f:
+                json.dump(self._fallback_storage, f)
+        except Exception as e:
+            logger.error(f"Failed to save fallback keychain: {e}")
 
     def store(self, service: str, account: str, secret: str) -> bool:
-        try:
-            if self._available:
+        if self._available:
+            try:
                 self.keyring.set_password(service, account, secret)
-            else:
-                self._fallback_storage[f"{service}/{account}"] = secret
-            return True
-        except Exception as e:
-            logger.error(f"Failed to store secret: {e}")
-            return False
+                return True
+            except Exception as e:
+                logger.warning(f"keyring failed ({e}), using fallback storage")
+                # Fall through to fallback
+
+        self._fallback_storage[f"{service}/{account}"] = secret
+        self._save_fallback()
+        return True
 
     def retrieve(self, service: str, account: str) -> Optional[str]:
-        try:
-            if self._available:
-                return self.keyring.get_password(service, account)
-            else:
-                return self._fallback_storage.get(f"{service}/{account}")
-        except Exception as e:
-            logger.error(f"Failed to retrieve secret: {e}")
-            return None
+        if self._available:
+            try:
+                val = self.keyring.get_password(service, account)
+                if val is not None:
+                    return val
+            except Exception:
+                pass
+
+        return self._fallback_storage.get(f"{service}/{account}")
 
     def delete(self, service: str, account: str) -> bool:
-        try:
-            if self._available:
+        success = False
+        if self._available:
+            try:
                 self.keyring.delete_password(service, account)
-            else:
-                key = f"{service}/{account}"
-                if key in self._fallback_storage:
-                    del self._fallback_storage[key]
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete secret: {e}")
-            return False
+                success = True
+            except Exception:
+                pass
+        
+        key = f"{service}/{account}"
+        if key in self._fallback_storage:
+            del self._fallback_storage[key]
+            self._save_fallback()
+            success = True
+            
+        return success
 
     def list_accounts(self, service: str) -> list:
         """List accounts - requires reading the index."""

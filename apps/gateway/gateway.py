@@ -7,6 +7,7 @@ import os
 import socket
 import ssl
 import subprocess
+import struct
 import threading
 import time
 import urllib.error
@@ -1966,6 +1967,69 @@ class ExecutionRouter:
                 self._user_stream_connected = False
 
 
+class WebSocketManager:
+    """Manages WebSocket connections and broadcasts."""
+    def __init__(self):
+        self._connections: dict[str, list[tuple[socket.socket, str, str]]] = {}  # path -> [(sock, address, port)]
+        self._lock = threading.Lock()
+
+    def add_connection(self, path: str, sock: socket.socket, address: str, port: int):
+        """Add a new WebSocket connection."""
+        with self._lock:
+            self._connections.setdefault(path, []).append((sock, address, port))
+
+    def remove_connection(self, path: str, sock: socket.socket):
+        """Remove a WebSocket connection."""
+        with self._lock:
+            self._connections[path] = [(s, a, p) for s, a, p in self._connections.get(path, [])
+                                       if s != sock]
+
+    def broadcast(self, path: str, message: str, exclude_sock: socket.socket = None):
+        """Broadcast message to all connections on a path."""
+        with self._lock:
+            connections = self._connections.get(path, [])
+            for sock, _, _ in connections:
+                if sock != exclude_sock:
+                    try:
+                        self._send_ws_message(sock, message)
+                    except:
+                        pass
+
+    def _send_ws_message(self, sock: socket.socket, message: str):
+        """Send a WebSocket message."""
+        data = message.encode('utf-8')
+        frame = self._create_ws_frame(data)
+        try:
+            sock.sendall(frame)
+        except:
+            pass
+
+    def _create_ws_frame(self, data: bytes, opcode: int = 0x1) -> bytes:
+        """Create a WebSocket frame."""
+        fin = 0x80
+        frame = bytearray()
+        frame.append(fin | opcode)
+
+        payload_len = len(data)
+        if payload_len <= 125:
+            frame.append(payload_len)
+        elif payload_len <= 65535:
+            frame.append(126 | (payload_len & 0xFF))
+            frame.append((payload_len >> 8) & 0xFF)
+        else:
+            frame.append(127)
+            frame.append((payload_len >> 24) & 0xFF)
+            frame.append((payload_len >> 16) & 0xFF)
+            frame.append((payload_len >> 8) & 0xFF)
+            frame.append(payload_len & 0xFF)
+
+        return bytes(frame) + data
+
+
+# Global WebSocket manager
+ws_manager = WebSocketManager()
+
+
 class Handler(SimpleHTTPRequestHandler):
     static_dir = None
 
@@ -2014,6 +2078,12 @@ class Handler(SimpleHTTPRequestHandler):
         self._auth_info = None
 
         if not auth_manager or not auth_manager.is_enabled():
+            # Populate dummy auth info when auth is disabled
+            self._auth_info = {
+                "user_id": "anonymous", 
+                "permissions": ["read", "write", "admin", "admin:keys", "admin:users", "admin:config"], 
+                "auth_method": "disabled"
+            }
             return True
 
         # Public endpoints skip auth but still rate limit
@@ -2178,8 +2248,26 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/settings/export":
             self._handle_export_settings()
             return
-        if parsed.path == "/":
-            self.path = "/index.html"
+            
+        # SPA Routing: If path is not an API endpoint and file doesn't exist, serve index.html
+        if not parsed.path.startswith("/api/") and not parsed.path.startswith("/metrics") and not parsed.path.startswith("/ws/"):
+            # Check if it's a static file request
+            # translate_path uses the configured directory
+            path = self.translate_path(self.path)
+            if not os.path.exists(path) or os.path.isdir(path):
+                # Serve index.html for client-side routing
+                # Manually serve index.html to avoid issues with modifying self.path
+                index_path = os.path.join(Handler.static_dir, "index.html")
+                if os.path.exists(index_path):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    fs = os.stat(index_path)
+                    self.send_header("Content-Length", str(fs.st_size))
+                    self.end_headers()
+                    with open(index_path, "rb") as f:
+                        self.wfile.write(f.read())
+                    return
+        
         return super().do_GET()
 
     def do_POST(self):
@@ -3244,13 +3332,13 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:
             last_id = None
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-
         try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
             while True:
                 ok = self.server.bridge.wait_for_event(last_id, timeout_s=10.0)
                 if not ok:
@@ -3265,7 +3353,12 @@ class Handler(SimpleHTTPRequestHandler):
                     msg = f"id: {eid}\nevent: {e.get('type','event')}\ndata: {payload}\n\n"
                     self.wfile.write(msg.encode("utf-8"))
                 self.wfile.flush()
-        except Exception:
+        except (ConnectionResetError, BrokenPipeError):
+            # Normal client disconnect
+            return
+        except Exception as e:
+            # Log other errors but don't crash
+            audit_logger.error(f"SSE error: {e}")
             return
 
     def _send_json(self, status, obj, extra_headers: Optional[dict] = None):
