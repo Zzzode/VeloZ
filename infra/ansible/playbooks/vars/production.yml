@@ -1,0 +1,47 @@
+---
+# Production environment variables
+
+environment: production
+veloz_namespace: veloz-prod
+veloz_release_name: veloz
+veloz_image_tag: "{{ lookup('env', 'VELOZ_IMAGE_TAG') | default('latest', true) }}"
+veloz_replica_count: 2
+
+# Deployment settings
+deployment_strategy: blue-green
+keep_previous_deployment: true
+health_check_retries: 60
+health_check_delay: 10
+
+# Helm values overrides
+helm_values:
+  global:
+    environment: production
+  engine:
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "1"
+      limits:
+        memory: "2Gi"
+        cpu: "4"
+  monitoring:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  networkPolicy:
+    enabled: true
+
+# AWS settings
+aws_region: us-east-1
+eks_cluster_name: veloz-production
+
+# Secrets (from Vault or AWS Secrets Manager)
+secrets:
+  vault_path: "secret/data/veloz/production"
+  rds_secret_arn: "{{ lookup('env', 'RDS_SECRET_ARN') }}"
+  redis_secret_arn: "{{ lookup('env', 'REDIS_SECRET_ARN') }}"
+
+# Notification settings
+slack_webhook_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') | default('', true) }}"
+pagerduty_routing_key: "{{ lookup('env', 'PAGERDUTY_ROUTING_KEY') | default('', true) }}"

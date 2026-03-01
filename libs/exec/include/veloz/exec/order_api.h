@@ -35,11 +35,15 @@ enum class OrderSide : std::uint8_t {
 /**
  * @brief Order type enumeration
  *
- * Defines the order types, including market and limit orders.
+ * Defines the order types, including market, limit, and stop orders.
  */
 enum class OrderType : std::uint8_t {
-  Market = 0, ///< Market order
-  Limit = 1   ///< Limit order
+  Market = 0,         ///< Market order
+  Limit = 1,          ///< Limit order
+  StopLoss = 2,       ///< Stop loss market order (triggers at stop price)
+  StopLossLimit = 3,  ///< Stop loss limit order (triggers at stop price, executes at limit)
+  TakeProfit = 4,     ///< Take profit market order (triggers at stop price)
+  TakeProfitLimit = 5 ///< Take profit limit order (triggers at stop price, executes at limit)
 };
 
 /**
@@ -67,12 +71,15 @@ struct PlaceOrderRequest final {
   OrderType type{OrderType::Limit};  ///< Order type (default: limit)
   TimeInForce tif{TimeInForce::GTC}; ///< Time in force (default: GTC)
 
-  double qty{0.0};         ///< Order quantity
-  kj::Maybe<double> price; ///< Order price (optional for market orders)
+  double qty{0.0};              ///< Order quantity
+  kj::Maybe<double> price;      ///< Order price (optional for market orders)
+  kj::Maybe<double> stop_price; ///< Stop/trigger price (for stop orders)
 
   kj::String client_order_id; ///< Client order ID (for unique identification)
+  kj::String strategy_id;     ///< Originating strategy ID (for rejection routing)
   bool reduce_only{false};    ///< Reduce-only order (for futures trading only)
   bool post_only{false};      ///< Post-only order (for limit orders only)
+  kj::Maybe<kj::String> position_side;
 };
 
 /**
@@ -128,7 +135,7 @@ struct ExecutionReport final {
  * Used for order book data instead of std::pair.
  */
 struct PriceLevel {
-  double price{0.0};  ///< Price at this level
+  double price{0.0};    ///< Price at this level
   double quantity{0.0}; ///< Quantity at this level
 };
 
@@ -139,7 +146,7 @@ struct PriceLevel {
  * Used for recent trades data instead of std::pair.
  */
 struct TradeData {
-  double price{0.0};  ///< Trade price
+  double price{0.0};    ///< Trade price
   double quantity{0.0}; ///< Trade quantity
 };
 

@@ -20,12 +20,20 @@ struct DescendingPrice {
   explicit DescendingPrice(double v) : value(v) {}
 
   // Invert comparison for descending order
-  bool operator<(const DescendingPrice& other) const { return value > other.value; }
-  bool operator==(const DescendingPrice& other) const { return value == other.value; }
+  bool operator<(const DescendingPrice& other) const {
+    return value > other.value;
+  }
+  bool operator==(const DescendingPrice& other) const {
+    return value == other.value;
+  }
 
   // Allow comparison with raw double
-  bool operator<(double other) const { return value > other; }
-  bool operator==(double other) const { return value == other; }
+  bool operator<(double other) const {
+    return value > other;
+  }
+  bool operator==(double other) const {
+    return value == other;
+  }
 };
 
 // Liquidity point for liquidity profile analysis
@@ -84,6 +92,9 @@ public:
   // Apply batch of deltas (for efficiency)
   UpdateResult apply_deltas(const kj::Vector<BookLevel>& bids, const kj::Vector<BookLevel>& asks,
                             int64_t first_sequence, int64_t final_sequence);
+
+  // Apply BookData directly (handles both snapshot and delta based on is_snapshot flag)
+  UpdateResult apply_book_data(const BookData& data);
 
   // Query methods
   [[nodiscard]] const kj::Vector<BookLevel>& bids() const;

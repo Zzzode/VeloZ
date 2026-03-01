@@ -847,7 +847,8 @@ public:
       _kJ_HANDLE_TYPE(long long)
 #undef _kJ_HANDLE_TYPE
 
-          inline constexpr operator char() const {
+          inline constexpr
+          operator char() const {
     // `char` is different from both `signed char` and `unsigned char`, and may be signed or
     // unsigned on different platforms.  Ugh.
     return char(-1) < 0 ? MaxValue_::maxSigned<char>() : MaxValue_::maxUnsigned<char>();
@@ -875,7 +876,8 @@ public:
       _kJ_HANDLE_TYPE(long long)
 #undef _kJ_HANDLE_TYPE
 
-          inline constexpr operator char() const {
+          inline constexpr
+          operator char() const {
     // `char` is different from both `signed char` and `unsigned char`, and may be signed or
     // unsigned on different platforms.  Ugh.
     return char(-1) < 0 ? MinValue_::minSigned<char>() : MinValue_::minUnsigned<char>();

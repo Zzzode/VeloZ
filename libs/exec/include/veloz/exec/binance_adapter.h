@@ -1,6 +1,7 @@
 #pragma once
 
 #include "veloz/exec/exchange_adapter.h"
+#include "veloz/exec/reconciliation.h"
 
 #include <kj/array.h>
 #include <kj/async-io.h>
@@ -11,7 +12,6 @@
 #include <kj/string.h>
 #include <kj/time.h>
 #include <kj/vector.h>
-#include <string> // std::string required for OpenSSL external API compatibility
 
 namespace kj {
 class TlsContext;
@@ -20,9 +20,9 @@ class TlsContext;
 namespace veloz::exec {
 
 // BinanceAdapter uses KJ async I/O for HTTP operations.
-// std::string is still used for OpenSSL HMAC signature generation (external API requirement).
-// This is an exception to the KJ-first rule per CLAUDE.md guidelines.
-class BinanceAdapter final : public ExchangeAdapter {
+// HMAC signatures use kj::String interface through HmacSha256 wrapper.
+// Implements ReconciliationQueryInterface for order reconciliation support.
+class BinanceAdapter final : public ExchangeAdapter, public ReconciliationQueryInterface {
 public:
   // Constructor requires KJ async I/O context for async HTTP operations
   BinanceAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key, kj::StringPtr secret_key,
@@ -59,17 +59,46 @@ public:
   get_recent_trades_async(const veloz::common::SymbolId& symbol, int limit = 500);
   kj::Promise<kj::Maybe<double>> get_account_balance_async(kj::StringPtr asset);
 
+  // Order query methods (Production Trading - Task #11)
+  kj::Promise<kj::Maybe<ExecutionReport>> get_order_async(const veloz::common::SymbolId& symbol,
+                                                          kj::StringPtr client_order_id);
+  kj::Promise<kj::Maybe<kj::Array<ExecutionReport>>>
+  get_open_orders_async(const veloz::common::SymbolId& symbol);
+  kj::Promise<kj::Maybe<kj::Array<ExecutionReport>>> get_all_open_orders_async();
+
+  // Synchronous order query methods
+  kj::Maybe<ExecutionReport> get_order(const veloz::common::SymbolId& symbol,
+                                       kj::StringPtr client_order_id);
+  kj::Maybe<kj::Array<ExecutionReport>> get_open_orders(const veloz::common::SymbolId& symbol);
+  kj::Maybe<kj::Array<ExecutionReport>> get_all_open_orders();
+
   // Synchronous versions for backward compatibility (blocks on async)
   kj::Maybe<double> get_current_price(const veloz::common::SymbolId& symbol);
   kj::Maybe<kj::Array<PriceLevel>> get_order_book(const veloz::common::SymbolId& symbol,
-                                                   int depth = 10);
-  kj::Maybe<kj::Array<TradeData>>
-  get_recent_trades(const veloz::common::SymbolId& symbol, int limit = 500);
+                                                  int depth = 10);
+  kj::Maybe<kj::Array<TradeData>> get_recent_trades(const veloz::common::SymbolId& symbol,
+                                                    int limit = 500);
   kj::Maybe<double> get_account_balance(kj::StringPtr asset);
 
   // Configuration
   void set_timeout(kj::Duration timeout);
   kj::Duration get_timeout() const;
+
+  kj::String build_order_params(const PlaceOrderRequest& req);
+
+  // ReconciliationQueryInterface implementation (Task #2)
+  kj::Promise<kj::Vector<ExecutionReport>>
+  query_open_orders_async(const veloz::common::SymbolId& symbol) override;
+
+  kj::Promise<kj::Maybe<ExecutionReport>> query_order_async(const veloz::common::SymbolId& symbol,
+                                                            kj::StringPtr client_order_id) override;
+
+  kj::Promise<kj::Vector<ExecutionReport>> query_orders_async(const veloz::common::SymbolId& symbol,
+                                                              std::int64_t start_time_ms,
+                                                              std::int64_t end_time_ms) override;
+
+  kj::Promise<kj::Maybe<ExecutionReport>>
+  cancel_order_async(const veloz::common::SymbolId& symbol, kj::StringPtr client_order_id) override;
 
 private:
   // Async HTTP methods using KJ HTTP client
@@ -81,9 +110,8 @@ private:
   kj::Promise<kj::Own<kj::HttpClient>> get_http_client();
 
   // Helper methods
-  // OpenSSL is used for HMAC-SHA256 signature generation - this is required for Binance API
-  // authentication. KJ does not provide HMAC functionality, so we use OpenSSL (external API).
-  std::string build_signature(const std::string& query_string);
+  // Build HMAC signature using KJ string interface via HmacSha256 wrapper
+  kj::String build_signature(kj::StringPtr query_string);
   kj::String format_symbol(const veloz::common::SymbolId& symbol);
   kj::StringPtr order_side_to_string(OrderSide side);
   kj::StringPtr order_type_to_string(OrderType type);
@@ -102,9 +130,9 @@ private:
   // TLS context for HTTPS connections
   kj::Own<kj::TlsContext> tls_context_;
 
-  // API key and secret - std::string for OpenSSL HMAC compatibility
-  std::string api_key_;
-  std::string secret_key_;
+  // API key and secret - using kj::String for KJ compatibility
+  kj::String api_key_;
+  kj::String secret_key_;
 
   // Connection status
   bool connected_;

@@ -1,14 +1,13 @@
-
 #include "veloz/core/config_manager.h"
 
 #include "veloz/core/json.h"
 
 #include <cstring>
-#include <format>
 #include <fstream>
-#include <iostream>
 #include <iterator>
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/filesystem.h> // kj::newDiskFilesystem for filesystem operations
 #include <kj/memory.h>
 
 namespace veloz::core {
@@ -20,167 +19,198 @@ using JsonValue = veloz::core::JsonValue;
 // ConfigManager Implementation
 // ============================================================================
 
-bool ConfigManager::load_from_json(const std::filesystem::path& file_path, bool reload) {
-  try {
-    auto doc = JsonDocument::parse_file(std::string(file_path));
+bool ConfigManager::load_from_json(const kj::Path& file_path, bool reload) {
+  // Use KJ exception handling pattern
+  kj::Maybe<kj::Exception> maybeException = kj::runCatchingExceptions([&]() {
+    auto doc = JsonDocument::parse_file(file_path);
     auto root = doc.root();
 
     {
-      std::scoped_lock lock(mu_);
-      config_file_ = file_path;
+      auto state = state_.lockExclusive();
+      state->config_file = file_path.clone();
     }
 
     // Apply all values from JSON
     root.for_each_object(
-        [this](const std::string& key, const JsonValue& value) { apply_json_value(key, value); });
+        [this](kj::StringPtr key, const JsonValue& value) { apply_json_value(key, value); });
 
     if (reload) {
       trigger_hot_reload();
     }
+  });
 
-    return true;
-  } catch (const std::exception&) {
+  KJ_IF_SOME(exception, maybeException) {
+    KJ_LOG(WARNING, "Failed to load JSON config", exception.getDescription());
     return false;
   }
+  return true;
 }
 
-bool ConfigManager::load_from_json_string(std::string_view json_content, bool reload) {
-  try {
-    auto doc = JsonDocument::parse(std::string(json_content));
+bool ConfigManager::load_from_json_string(kj::StringPtr json_content, bool reload) {
+  // Use KJ exception handling pattern
+  kj::Maybe<kj::Exception> maybeException = kj::runCatchingExceptions([&]() {
+    auto doc = JsonDocument::parse(json_content);
     auto root = doc.root();
 
     // Apply all values from JSON
     root.for_each_object(
-        [this](const std::string& key, const JsonValue& value) { apply_json_value(key, value); });
+        [this](kj::StringPtr key, const JsonValue& value) { apply_json_value(key, value); });
 
     if (reload) {
       trigger_hot_reload();
     }
+  });
 
-    return true;
-  } catch (const std::exception&) {
+  KJ_IF_SOME(exception, maybeException) {
+    KJ_LOG(WARNING, "Failed to parse JSON string", exception.getDescription());
     return false;
   }
+  return true;
 }
 
-bool ConfigManager::load_from_yaml(const std::filesystem::path& file_path, bool reload) {
-  try {
-    std::ifstream ifs(file_path);
+bool ConfigManager::load_from_yaml(const kj::Path& file_path, bool reload) {
+  // Use KJ exception handling pattern
+  bool success = false;
+  kj::Maybe<kj::Exception> maybeException = kj::runCatchingExceptions([&]() {
+    // Convert kj::Path to string for std::ifstream
+    auto path_str = file_path.toString();
+    std::ifstream ifs(path_str.cStr());
     if (!ifs.is_open()) {
-      return false;
+      return;
     }
 
-    std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    if (content.empty()) {
-      return false;
+    kj::Vector<char> content;
+    for (std::istreambuf_iterator<char> it(ifs), end; it != end; ++it) {
+      content.add(*it);
     }
+    if (content.size() == 0) {
+      return;
+    }
+    content.add('\0');
+    kj::String content_str(content.releaseAsArray());
 
-    return load_from_json_string(content, reload);
-  } catch (const std::exception&) {
+    success = load_from_json_string(content_str, reload);
+  });
+
+  KJ_IF_SOME(exception, maybeException) {
+    KJ_LOG(WARNING, "Failed to load YAML config", exception.getDescription());
     return false;
   }
+  return success;
 }
 
-bool ConfigManager::save_to_json(const std::filesystem::path& file_path) const {
-  try {
-    // Create directory if it doesn't exist
-    if (auto parent_path = file_path.parent_path(); !parent_path.empty()) {
-      std::filesystem::create_directories(parent_path);
+bool ConfigManager::save_to_json(const kj::Path& file_path) const {
+  // Use KJ exception handling pattern
+  bool success = false;
+  kj::Maybe<kj::Exception> maybeException = kj::runCatchingExceptions([&]() {
+    // Get filesystem and root directory reference
+    auto fs = kj::newDiskFilesystem();
+
+    // Create directory if it doesn't exist using KJ filesystem API
+    // openSubdir with CREATE | CREATE_PARENT creates all necessary parent directories
+    if (file_path.size() > 1) {
+      auto parent = file_path.parent();
+      if (parent.size() > 0) {
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     fs->getCurrent().openSubdir(parent, kj::WriteMode::CREATE |
+                                                             kj::WriteMode::CREATE_PARENT);
+                   })) {
+          // Directory creation failed, log but continue
+          KJ_LOG(WARNING, "Failed to create parent directory", exception.getDescription());
+        }
+      }
     }
 
-    // Use the existing to_json() method which is correct
-    std::string json_str = to_json();
+    // Use existing to_json() method
+    kj::String json_str = to_json();
 
-    std::ofstream ofs(file_path);
+    // Convert kj::Path to string for std::ofstream (kept for file writing)
+    auto path_str = file_path.toString();
+    std::ofstream ofs(path_str.cStr());
     if (!ofs.is_open()) {
-      return false;
+      return;
     }
 
-    ofs << json_str;
-    return true;
-  } catch (const std::exception& e) {
-    std::cerr << "Exception in save_to_json: " << e.what() << std::endl;
+    ofs << json_str.cStr();
+    success = true;
+  });
+
+  KJ_IF_SOME(exception, maybeException) {
+    KJ_LOG(ERROR, "Exception in save_to_json", exception.getDescription());
     return false;
   }
+  return success;
 }
 
-std::string ConfigManager::to_json() const {
-  kj::Function<void(const ConfigGroup*, std::string&)> append_group_json =
-      [&](const ConfigGroup* group, std::string& out) {
-        out += "{";
-        bool first = true;
-
+kj::String ConfigManager::to_json() const {
+  kj::Vector<kj::String> parts;
+  kj::Function<void(const ConfigGroup*, kj::Vector<kj::String>&)> append_group_json =
+      [&](const ConfigGroup* group, kj::Vector<kj::String>& out) {
+        kj::Vector<kj::String> item_parts;
         for (auto* item : group->get_items()) {
           if (!item->is_set()) {
             continue;
           }
-          if (!first) {
-            out += ",";
-          }
-          std::string key = json_utils::escape_string(item->key());
-          out += "\"";
-          out += key;
-          out += "\":";
-          out += item->to_json_string();
-          first = false;
+          auto escaped_key = json_utils::escape_string(item->key());
+          item_parts.add(kj::str("\"", escaped_key.cStr(), "\":", item->to_json_string()));
         }
 
         for (auto* sub_group : group->get_groups()) {
-          if (!first) {
-            out += ",";
-          }
-          std::string key = json_utils::escape_string(sub_group->name());
-          out += "\"";
-          out += key;
-          out += "\":";
-          append_group_json(sub_group, out);
-          first = false;
+          auto escaped_name = json_utils::escape_string(sub_group->name());
+          kj::Vector<kj::String> sub_group_parts;
+          append_group_json(sub_group, sub_group_parts);
+          kj::String sub_group_json = kj::str("{", kj::strArray(sub_group_parts, ","), "}");
+          item_parts.add(kj::str("\"", escaped_name.cStr(), "\":", sub_group_json));
         }
 
-        out += "}";
+        for (auto& part : item_parts) {
+          out.add(kj::mv(part));
+        }
       };
 
-  std::string result;
-  append_group_json(root_group_.get(), result);
-  return result;
+  append_group_json(root_group_.get(), parts);
+  return kj::str("{", kj::strArray(parts, ","), "}");
 }
 
-ConfigItemBase* ConfigManager::find_item(std::string_view path) const {
-  std::scoped_lock lock(mu_);
-
+ConfigItemBase* ConfigManager::find_item(kj::StringPtr path) const {
   // Parse path (e.g., "group.subgroup.item" or just "item")
-  std::string p = std::string(path);
-  std::vector<std::string> parts;
-  size_t pos = 0;
-  while ((pos = p.find('.')) != std::string::npos) {
-    parts.push_back(p.substr(0, pos));
-    p.erase(0, pos + 1);
+  kj::Vector<kj::String> parts_vec;
+  auto copy = kj::str(path);
+  char* p = copy.begin();
+  char* start = p;
+  while (*p != '\0') {
+    if (*p == '.') {
+      parts_vec.add(kj::str(kj::ArrayPtr<const char>(start, p)));
+      start = p + 1;
+    }
+    p++;
   }
-  parts.push_back(p);
+  if (start < p) {
+    parts_vec.add(kj::str(kj::ArrayPtr<const char>(start, p)));
+  }
 
-  if (parts.empty()) {
+  if (parts_vec.size() == 0) {
     return nullptr;
   }
 
-  if (parts.size() == 1) {
+  if (parts_vec.size() == 1) {
     // Direct item lookup in root group
     for (auto* item : root_group_->get_items()) {
-      std::string item_key(item->key());
-      if (item_key == parts[0]) {
+      if (item->key() == parts_vec[0]) {
         return item;
       }
     }
     return nullptr;
   }
 
-  // Navigate through groups
-  ConfigGroup* current = root_group_->get_group(parts[0]);
+  // Navigate through groups (use const version since this is a const method)
+  const ConfigGroup* current = root_group_->get_group(parts_vec[0]);
   if (!current) {
     return nullptr;
   }
 
-  for (size_t i = 1; i < parts.size() - 1; ++i) {
-    current = current->get_group(parts[i]);
+  for (size_t i = 1; i < parts_vec.size() - 1; ++i) {
+    current = current->get_group(parts_vec[i]);
     if (!current) {
       return nullptr;
     }
@@ -188,8 +218,7 @@ ConfigItemBase* ConfigManager::find_item(std::string_view path) const {
 
   // Find item in final group
   for (auto* item : current->get_items()) {
-    std::string item_key(item->key());
-    if (item_key == parts.back()) {
+    if (item->key() == parts_vec.back()) {
       return item;
     }
   }
@@ -201,44 +230,43 @@ bool ConfigManager::validate() const {
   return root_group_->validate();
 }
 
-std::vector<std::string> ConfigManager::validation_errors() const {
+kj::Vector<kj::String> ConfigManager::validation_errors() const {
   return root_group_->validation_errors();
 }
 
 void ConfigManager::add_hot_reload_callback(HotReloadCallback callback) {
-  std::scoped_lock lock(mu_);
-  hot_reload_callbacks_.add(kj::mv(callback));
+  state_.lockExclusive()->hot_reload_callbacks.add(kj::mv(callback));
 }
 
 void ConfigManager::trigger_hot_reload() {
-  std::scoped_lock lock(mu_);
-  for (auto& callback : hot_reload_callbacks_) {
-    try {
-      callback();
-    } catch (...) {
-      // Swallow exceptions from callbacks
+  auto state = state_.lockExclusive();
+  for (auto& callback : state->hot_reload_callbacks) {
+    // Use KJ exception handling - swallow exceptions from callbacks
+    KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() { callback(); })) {
+      KJ_LOG(WARNING, "Hot reload callback failed", exception.getDescription());
     }
   }
 }
 
-void ConfigManager::set_config_file(const std::filesystem::path& file_path) {
-  std::scoped_lock lock(mu_);
-  config_file_ = file_path;
+void ConfigManager::set_config_file(const kj::Path& file_path) {
+  state_.lockExclusive()->config_file = file_path.clone();
 }
 
-void ConfigManager::apply_json_value(const std::string& key, const JsonValue& value) {
+void ConfigManager::apply_json_value(kj::StringPtr key, const JsonValue& value) {
   if (value.is_object()) {
-    value.for_each_object([this, &key](const std::string& child_key, const JsonValue& child_value) {
-      if (key.empty()) {
-        apply_json_value(child_key, child_value);
+    value.for_each_object([this, key](kj::StringPtr child_key, const JsonValue& child_value) {
+      if (key.size() == 0) {
+        auto joined = kj::str(child_key);
+        apply_json_value(joined, child_value);
       } else {
-        apply_json_value(key + "." + child_key, child_value);
+        auto joined = kj::str(key, ".", child_key);
+        apply_json_value(joined, child_value);
       }
     });
     return;
   }
 
-  auto find_item_in_group = [](ConfigGroup* group, std::string_view item_key) -> ConfigItemBase* {
+  auto find_item_in_group = [](ConfigGroup* group, kj::StringPtr item_key) -> ConfigItemBase* {
     for (auto* item : group->get_items()) {
       if (item->key() == item_key) {
         return item;
@@ -247,27 +275,29 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
     return nullptr;
   };
 
-  auto ensure_group_unlocked = [](ConfigGroup* parent, std::string_view name) -> ConfigGroup* {
+  auto ensure_group_unlocked = [](ConfigGroup* parent, kj::StringPtr name) -> ConfigGroup* {
     if (auto* existing = parent->get_group(name)) {
       return existing;
     }
-    // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-    auto new_group = std::make_unique<ConfigGroup>(std::string(name));
+    auto new_group = kj::heap<ConfigGroup>(name);
     auto* raw = new_group.get();
     parent->add_group(kj::mv(new_group));
     return raw;
   };
 
-  std::scoped_lock lock(mu_);
-
-  std::string p = key;
-  std::vector<std::string> parts;
-  size_t pos = 0;
-  while ((pos = p.find('.')) != std::string::npos) {
-    parts.push_back(p.substr(0, pos));
-    p.erase(0, pos + 1);
+  kj::Vector<kj::String> parts;
+  size_t start = 0;
+  for (;;) {
+    KJ_IF_SOME(dot, key.slice(start).findFirst('.')) {
+      size_t idx = start + dot;
+      parts.add(kj::str(key.slice(start, idx)));
+      start = idx + 1;
+    }
+    else {
+      parts.add(kj::str(key.slice(start)));
+      break;
+    }
   }
-  parts.push_back(p);
 
   if (parts.empty()) {
     return;
@@ -285,15 +315,15 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
 
   ConfigItemBase* item = find_item_in_group(current_group, parts.back());
   if (item) {
-    // Parse the JSON value and convert to string
-    std::string str_val;
+    // Parse JSON value and convert to string
+    kj::String str_val;
 
     if (value.is_bool()) {
-      str_val = value.get_bool() ? "true" : "false";
+      str_val = value.get_bool() ? kj::str("true"_kj) : kj::str("false"_kj);
     } else if (value.is_int()) {
-      str_val = std::to_string(value.get_int());
+      str_val = kj::str(value.get_int());
     } else if (value.is_real()) {
-      str_val = std::to_string(value.get_double());
+      str_val = kj::str(value.get_double());
     } else if (value.is_string()) {
       str_val = value.get_string();
     } else if (value.is_array()) {
@@ -307,7 +337,9 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
         } else if (arr_val.is_real()) {
           arr_builder.add(arr_val.get_double());
         } else if (arr_val.is_string()) {
-          arr_builder.add(arr_val.get_string());
+          KJ_IF_SOME(sp, arr_val.get_string_ptr()) {
+            arr_builder.add(sp);
+          }
         }
       });
       str_val = arr_builder.build();
@@ -317,15 +349,16 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
     return;
   }
 
-  std::unique_ptr<ConfigItemBase> created;
+  kj::Own<ConfigItemBase> created;
+  kj::StringPtr key_str = parts.back();
   if (value.is_bool()) {
-    created = ConfigItem<bool>::Builder(parts.back(), "").build();
+    created = ConfigItem<bool>::Builder(key_str, ""_kj).build();
   } else if (value.is_int()) {
-    created = ConfigItem<int>::Builder(parts.back(), "").build();
+    created = ConfigItem<int>::Builder(key_str, ""_kj).build();
   } else if (value.is_real()) {
-    created = ConfigItem<double>::Builder(parts.back(), "").build();
+    created = ConfigItem<double>::Builder(key_str, ""_kj).build();
   } else if (value.is_string()) {
-    created = ConfigItem<std::string>::Builder(parts.back(), "").build();
+    created = ConfigItem<kj::String>::Builder(key_str, ""_kj).build();
   } else if (value.is_array()) {
     bool seen_string = false;
     bool seen_real = false;
@@ -344,15 +377,15 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
     });
 
     if (seen_string) {
-      created = ConfigItem<std::vector<std::string>>::Builder(parts.back(), "").build();
+      created = ConfigItem<kj::Vector<kj::String>>::Builder(key_str, ""_kj).build();
     } else if (seen_real) {
-      created = ConfigItem<std::vector<double>>::Builder(parts.back(), "").build();
+      created = ConfigItem<kj::Vector<double>>::Builder(key_str, ""_kj).build();
     } else if (seen_int) {
-      created = ConfigItem<std::vector<int>>::Builder(parts.back(), "").build();
+      created = ConfigItem<kj::Vector<int>>::Builder(key_str, ""_kj).build();
     } else if (seen_bool) {
-      created = ConfigItem<std::vector<bool>>::Builder(parts.back(), "").build();
+      created = ConfigItem<kj::Vector<bool>>::Builder(key_str, ""_kj).build();
     } else {
-      created = ConfigItem<std::vector<std::string>>::Builder(parts.back(), "").build();
+      created = ConfigItem<kj::Vector<kj::String>>::Builder(key_str, ""_kj).build();
     }
   }
 
@@ -360,13 +393,13 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
     return;
   }
 
-  std::string str_val;
+  kj::String str_val;
   if (value.is_bool()) {
-    str_val = value.get_bool() ? "true" : "false";
+    str_val = value.get_bool() ? kj::str("true"_kj) : kj::str("false"_kj);
   } else if (value.is_int()) {
-    str_val = std::to_string(value.get_int());
+    str_val = kj::str(value.get_int());
   } else if (value.is_real()) {
-    str_val = std::to_string(value.get_double());
+    str_val = kj::str(value.get_double());
   } else if (value.is_string()) {
     str_val = value.get_string();
   } else if (value.is_array()) {
@@ -379,15 +412,17 @@ void ConfigManager::apply_json_value(const std::string& key, const JsonValue& va
       } else if (arr_val.is_real()) {
         arr_builder.add(arr_val.get_double());
       } else if (arr_val.is_string()) {
-        arr_builder.add(arr_val.get_string());
+        KJ_IF_SOME(sp, arr_val.get_string_ptr()) {
+          arr_builder.add(sp);
+        }
       }
     });
     str_val = arr_builder.build();
   }
 
-  ConfigItemBase* created_raw = created.get();
+  // Set the value BEFORE transferring ownership to avoid dangling pointer
+  created->from_string(str_val);
   current_group->add_item(kj::mv(created));
-  created_raw->from_string(str_val);
 }
 
 } // namespace veloz::core

@@ -1,16 +1,16 @@
 #include "veloz/engine/command_parser.h"
 #include "veloz/engine/stdio_engine.h"
 
-#include <gtest/gtest.h>
 #include <kj/common.h>
-#include <kj/function.h>
-#include <kj/io.h>
-#include <kj/memory.h>
-#include <kj/mutex.h>
-#include <kj/string.h>
-#include <kj/vector.h>
+#include <kj/test.h>
 
 namespace veloz::engine {
+
+namespace {
+
+// ============================================================================
+// Test Helpers
+// ============================================================================
 
 // Simple in-memory output stream for testing
 class VectorOutputStream : public kj::OutputStream {
@@ -30,7 +30,9 @@ public:
     return kj::String(copy.releaseAsArray());
   }
 
-  void clear() { data_.clear(); }
+  void clear() {
+    data_.clear();
+  }
 
 private:
   kj::Vector<char> data_;
@@ -56,62 +58,73 @@ private:
   size_t pos_;
 };
 
-class StdioEngineTest : public ::testing::Test {
-public:
-  ~StdioEngineTest() noexcept override = default;
+// Helper function to check if a string contains a substring
+bool contains(kj::StringPtr haystack, kj::StringPtr needle) {
+  size_t needle_len = needle.size();
+  size_t haystack_len = haystack.size();
 
-protected:
-  void SetUp() override {
-    output_ = kj::heap<VectorOutputStream>();
-    input_ = kj::heap<VectorInputStream>("");
-    engine_ = kj::heap<StdioEngine>(*output_, *input_);
-
-    order_received = false;
-    cancel_received = false;
-    query_received = false;
+  if (needle_len > haystack_len) {
+    return false;
   }
 
-  void TearDown() override {
-    engine_ = nullptr;
-    output_ = nullptr;
-    input_ = nullptr;
+  for (size_t i = 0; i <= haystack_len - needle_len; ++i) {
+    bool match = true;
+    for (size_t j = 0; j < needle_len; ++j) {
+      if (haystack[i + j] != needle[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return true;
+    }
   }
+  return false;
+}
 
-  kj::Own<VectorOutputStream> output_;
-  kj::Own<VectorInputStream> input_;
-  kj::Own<StdioEngine> engine_;
-  bool order_received;
-  bool cancel_received;
-  bool query_received;
-};
+// ============================================================================
+// StdioEngine Tests
+// ============================================================================
 
-TEST_F(StdioEngineTest, SetOrderHandler) {
+KJ_TEST("StdioEngine: SetOrderHandler") {
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
+
   bool handler_called = false;
-  engine_->set_order_handler([&](const ParsedOrder&) { handler_called = true; });
-  EXPECT_TRUE(true); // Should not throw
+  engine.set_order_handler([&](const ParsedOrder&) { handler_called = true; });
+  KJ_EXPECT(true); // Should not throw
 }
 
-TEST_F(StdioEngineTest, SetCancelHandler) {
+KJ_TEST("StdioEngine: SetCancelHandler") {
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
+
   bool handler_called = false;
-  engine_->set_cancel_handler([&](const ParsedCancel&) { handler_called = true; });
-  EXPECT_TRUE(true); // Should not throw
+  engine.set_cancel_handler([&](const ParsedCancel&) { handler_called = true; });
+  KJ_EXPECT(true); // Should not throw
 }
 
-TEST_F(StdioEngineTest, SetQueryHandler) {
+KJ_TEST("StdioEngine: SetQueryHandler") {
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
+
   bool handler_called = false;
-  engine_->set_query_handler([&](const ParsedQuery&) { handler_called = true; });
-  EXPECT_TRUE(true); // Should not throw
+  engine.set_query_handler([&](const ParsedQuery&) { handler_called = true; });
+  KJ_EXPECT(true); // Should not throw
 }
 
-TEST_F(StdioEngineTest, Constructor) {
-  VectorOutputStream test_output;
-  VectorInputStream test_input("");
-  StdioEngine test_engine(test_output, test_input);
+KJ_TEST("StdioEngine: Constructor") {
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
 
-  EXPECT_TRUE(true); // Should not throw
+  KJ_EXPECT(true); // Should not throw
 }
 
-TEST_F(StdioEngineTest, DefaultHandlersNotCalled) {
+KJ_TEST("StdioEngine: DefaultHandlersNotCalled") {
   // Create engine with empty input
   VectorOutputStream out;
   VectorInputStream in("");
@@ -122,79 +135,65 @@ TEST_F(StdioEngineTest, DefaultHandlersNotCalled) {
 
   // Output should contain startup event
   kj::String output = out.getString();
-  // Check if "engine_started" substring exists
-  bool found = false;
-  const char* needle = "engine_started";
-  size_t needle_len = strlen(needle);
-  if (output.size() >= needle_len) {
-    for (size_t i = 0; i <= output.size() - needle_len; ++i) {
-      bool match = true;
-      for (size_t j = 0; j < needle_len; ++j) {
-        if (output[i + j] != needle[j]) {
-          match = false;
-          break;
-        }
-      }
-      if (match) {
-        found = true;
-        break;
-      }
-    }
-  }
-  EXPECT_TRUE(found);
+  KJ_EXPECT(contains(output, "engine_started"_kj));
 }
 
-TEST_F(StdioEngineTest, EmitOrderEventFormat) {
+KJ_TEST("StdioEngine: EmitOrderEventFormat") {
   // Test that order events are properly formatted
-  kj::String output = output_->getString();
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
+
+  kj::String output = out.getString();
 
   // Check for event format
-  EXPECT_TRUE(true); // Placeholder for JSON format validation
+  KJ_EXPECT(true); // Placeholder for JSON format validation
 }
 
-TEST_F(StdioEngineTest, EmitCancelEventFormat) {
+KJ_TEST("StdioEngine: EmitCancelEventFormat") {
   // Test that cancel events are properly formatted
-  EXPECT_TRUE(true); // Placeholder for JSON format validation
+  KJ_EXPECT(true); // Placeholder for JSON format validation
 }
 
-TEST_F(StdioEngineTest, EmitQueryEventFormat) {
+KJ_TEST("StdioEngine: EmitQueryEventFormat") {
   // Test that query events are properly formatted
-  EXPECT_TRUE(true); // Placeholder for JSON format validation
+  KJ_EXPECT(true); // Placeholder for JSON format validation
 }
 
-TEST_F(StdioEngineTest, EmitErrorEvent) {
+KJ_TEST("StdioEngine: EmitErrorEvent") {
   // Test error event emission
   // This would require testing internal emit_error method
-  EXPECT_TRUE(true); // Placeholder for error event validation
+  KJ_EXPECT(true); // Placeholder for error event validation
 }
 
-TEST_F(StdioEngineTest, ShutdownEvent) {
+KJ_TEST("StdioEngine: ShutdownEvent") {
   // Test that shutdown event is emitted
-  EXPECT_TRUE(true); // Placeholder for shutdown event validation
+  KJ_EXPECT(true); // Placeholder for shutdown event validation
 }
 
-TEST_F(StdioEngineTest, ThreadSafety) {
+KJ_TEST("StdioEngine: ThreadSafety") {
   // Test that output is thread-safe
   // This would require multiple threads calling emit_event
-  EXPECT_TRUE(true); // Placeholder for thread safety test
+  KJ_EXPECT(true); // Placeholder for thread safety test
 }
 
-TEST_F(StdioEngineTest, MultipleHandlers) {
+KJ_TEST("StdioEngine: MultipleHandlers") {
   // Test setting multiple handlers
+  VectorOutputStream out;
+  VectorInputStream in("");
+  StdioEngine engine(out, in);
+
   bool order_called = false;
   bool cancel_called = false;
   bool query_called = false;
 
-  engine_->set_order_handler([&](const ParsedOrder&) { order_called = true; });
-  engine_->set_cancel_handler([&](const ParsedCancel&) { cancel_called = true; });
-  engine_->set_query_handler([&](const ParsedQuery&) { query_called = true; });
+  engine.set_order_handler([&](const ParsedOrder&) { order_called = true; });
+  engine.set_cancel_handler([&](const ParsedCancel&) { cancel_called = true; });
+  engine.set_query_handler([&](const ParsedQuery&) { query_called = true; });
 
-  EXPECT_TRUE(true); // Should not throw
+  KJ_EXPECT(true); // Should not throw
 }
 
-int main(int argc, char** argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
+} // namespace
 
 } // namespace veloz::engine

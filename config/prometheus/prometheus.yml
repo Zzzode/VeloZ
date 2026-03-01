@@ -1,0 +1,34 @@
+# Prometheus Configuration for VeloZ Gateway Monitoring
+# File: config/prometheus/prometheus.yml
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'veloz-gateway'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # VeloZ Gateway (C++)
+  - job_name: 'veloz_gateway'
+    static_configs:
+      - targets: ['127.0.0.1:8080']
+    metrics_path: '/metrics'
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node exporter (system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['127.0.0.1:9100']

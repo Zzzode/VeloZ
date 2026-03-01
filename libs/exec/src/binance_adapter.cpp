@@ -1,24 +1,14 @@
 #include "veloz/exec/binance_adapter.h"
+
 #include "veloz/core/json.h"
 #include "veloz/exec/hmac_wrapper.h"
 
+#include <chrono>
 #include <kj/async-io.h>
 #include <kj/compat/http.h>
 #include <kj/compat/tls.h>
 #include <kj/debug.h>
 #include <kj/string.h>
-
-#ifndef VELOZ_NO_OPENSSL
-// OpenSSL is used internally by HmacSha256 wrapper for HMAC-SHA256 signature generation.
-// This is required for Binance API authentication and KJ does not provide HMAC functionality.
-// Per CLAUDE.md guidelines, this is an acceptable use of external library for API compatibility.
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#endif
-
-#include <algorithm>
-#include <iomanip>
-#include <sstream>
 
 namespace veloz::exec {
 
@@ -26,8 +16,8 @@ using namespace veloz::core;
 
 BinanceAdapter::BinanceAdapter(kj::AsyncIoContext& io_context, kj::StringPtr api_key,
                                kj::StringPtr secret_key, bool testnet)
-    : io_context_(io_context), api_key_(api_key.cStr(), api_key.size()),
-      secret_key_(secret_key.cStr(), secret_key.size()), connected_(false), testnet_(testnet),
+    : io_context_(io_context), api_key_(kj::heapString(api_key)),
+      secret_key_(kj::heapString(secret_key)), connected_(false), testnet_(testnet),
       last_activity_time_(io_context.provider->getTimer().now()),
       request_timeout_(10 * kj::SECONDS), rate_limit_window_(1 * kj::SECONDS),
       rate_limit_per_window_(1200), max_retries_(3), retry_delay_(1 * kj::SECONDS) {
@@ -55,10 +45,10 @@ BinanceAdapter::~BinanceAdapter() noexcept {
   disconnect();
 }
 
-std::string BinanceAdapter::build_signature(const std::string& query_string) {
-  // Use HmacSha256 wrapper for HMAC-SHA256 signature
+kj::String BinanceAdapter::build_signature(kj::StringPtr query_string) {
+  // Use HmacSha256 wrapper with KJ-only interface for HMAC-SHA256 signature
   // This is required for Binance API authentication - KJ does not provide HMAC functionality
-  // The wrapper handles OpenSSL C API calls safely
+  // The wrapper handles OpenSSL C API calls safely internally
   return HmacSha256::sign(secret_key_, query_string);
 }
 
@@ -105,8 +95,8 @@ kj::Promise<kj::String> BinanceAdapter::http_get_async(kj::StringPtr endpoint,
         // Build headers
         kj::HttpHeaders headers(*header_table_);
         headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
-        if (!api_key_.empty()) {
-          headers.addPtrPtr("X-MBX-APIKEY"_kj, kj::StringPtr(api_key_.c_str()));
+        if (api_key_.size() > 0) {
+          headers.addPtrPtr("X-MBX-APIKEY"_kj, api_key_.asPtr());
         }
 
         // Make request
@@ -141,8 +131,8 @@ kj::Promise<kj::String> BinanceAdapter::http_post_async(kj::StringPtr endpoint,
         kj::HttpHeaders headers(*header_table_);
         headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
         headers.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/x-www-form-urlencoded"_kj);
-        if (!api_key_.empty()) {
-          headers.addPtrPtr("X-MBX-APIKEY"_kj, kj::StringPtr(api_key_.c_str()));
+        if (api_key_.size() > 0) {
+          headers.addPtrPtr("X-MBX-APIKEY"_kj, api_key_.asPtr());
         }
 
         // Make request with body
@@ -187,8 +177,8 @@ kj::Promise<kj::String> BinanceAdapter::http_delete_async(kj::StringPtr endpoint
         // Build headers
         kj::HttpHeaders headers(*header_table_);
         headers.setPtr(kj::HttpHeaderId::HOST, base_rest_url_);
-        if (!api_key_.empty()) {
-          headers.addPtrPtr("X-MBX-APIKEY"_kj, kj::StringPtr(api_key_.c_str()));
+        if (api_key_.size() > 0) {
+          headers.addPtrPtr("X-MBX-APIKEY"_kj, api_key_.asPtr());
         }
 
         // Make DELETE request
@@ -212,12 +202,13 @@ kj::Promise<kj::String> BinanceAdapter::http_delete_async(kj::StringPtr endpoint
 }
 
 kj::String BinanceAdapter::format_symbol(const veloz::common::SymbolId& symbol) {
-  kj::String formatted = kj::str(symbol.value.c_str());
   // Convert to uppercase
-  for (char& c : formatted) {
-    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  kj::Vector<char> formatted_chars;
+  for (char c : symbol.value) {
+    formatted_chars.add(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
   }
-  return formatted;
+  formatted_chars.add('\0');
+  return kj::heapString(formatted_chars.begin());
 }
 
 kj::StringPtr BinanceAdapter::order_side_to_string(OrderSide side) {
@@ -230,6 +221,14 @@ kj::StringPtr BinanceAdapter::order_type_to_string(OrderType type) {
     return "MARKET"_kj;
   case OrderType::Limit:
     return "LIMIT"_kj;
+  case OrderType::StopLoss:
+    return "STOP_LOSS"_kj;
+  case OrderType::StopLossLimit:
+    return "STOP_LOSS_LIMIT"_kj;
+  case OrderType::TakeProfit:
+    return "TAKE_PROFIT"_kj;
+  case OrderType::TakeProfitLimit:
+    return "TAKE_PROFIT_LIMIT"_kj;
   default:
     return "LIMIT"_kj;
   }
@@ -250,6 +249,52 @@ kj::StringPtr BinanceAdapter::time_in_force_to_string(TimeInForce tif) {
   }
 }
 
+kj::String BinanceAdapter::build_order_params(const PlaceOrderRequest& req) {
+  auto symbol = format_symbol(req.symbol);
+  auto side = order_side_to_string(req.side);
+  auto type = order_type_to_string(req.type);
+  auto tif = time_in_force_to_string(req.tif);
+  auto timestamp = get_timestamp_ms();
+
+  kj::String params;
+  KJ_IF_SOME(priceVal, req.price) {
+    if (req.client_order_id.size() > 0) {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&price=", priceVal,
+                       "&newClientOrderId=", req.client_order_id, "&timestamp=", timestamp);
+    } else {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&price=", priceVal, "&timestamp=", timestamp);
+    }
+  }
+  else {
+    if (req.client_order_id.size() > 0) {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&newClientOrderId=", req.client_order_id,
+                       "&timestamp=", timestamp);
+    } else {
+      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
+                       "&quantity=", req.qty, "&timestamp=", timestamp);
+    }
+  }
+
+  KJ_IF_SOME(stopPrice, req.stop_price) {
+    params = kj::str(params, "&stopPrice=", stopPrice);
+  }
+
+  if (req.reduce_only) {
+    params = kj::str(params, "&reduceOnly=true");
+  }
+  if (req.post_only) {
+    params = kj::str(params, "&postOnly=true");
+  }
+  KJ_IF_SOME(positionSide, req.position_side) {
+    params = kj::str(params, "&positionSide=", positionSide);
+  }
+
+  return params;
+}
+
 OrderStatus BinanceAdapter::parse_order_status(kj::StringPtr status_str) {
   if (status_str == "NEW") {
     return OrderStatus::New;
@@ -267,6 +312,99 @@ OrderStatus BinanceAdapter::parse_order_status(kj::StringPtr status_str) {
   return OrderStatus::New;
 }
 
+namespace {
+// Binance error code handling helper
+// Error codes: https://binance-docs.github.io/apidocs/spot/en/#error-codes
+void log_binance_error(int code, kj::StringPtr msg) {
+  // General server errors (-1xxx)
+  if (code == -1000) {
+    KJ_LOG(ERROR, "Binance: Unknown error", msg);
+  } else if (code == -1001) {
+    KJ_LOG(ERROR, "Binance: Disconnected - internal error", msg);
+  } else if (code == -1002) {
+    KJ_LOG(ERROR, "Binance: Unauthorized - API key issue", msg);
+  } else if (code == -1003) {
+    KJ_LOG(WARNING, "Binance: Rate limit exceeded", msg);
+  } else if (code == -1006) {
+    KJ_LOG(ERROR, "Binance: Unexpected response", msg);
+  } else if (code == -1007) {
+    KJ_LOG(ERROR, "Binance: Timeout", msg);
+  } else if (code == -1014) {
+    KJ_LOG(ERROR, "Binance: Unknown order composition", msg);
+  } else if (code == -1015) {
+    KJ_LOG(WARNING, "Binance: Too many orders - rate limit", msg);
+  } else if (code == -1016) {
+    KJ_LOG(ERROR, "Binance: Service shutting down", msg);
+  } else if (code == -1020) {
+    KJ_LOG(ERROR, "Binance: Unsupported operation", msg);
+  } else if (code == -1021) {
+    KJ_LOG(ERROR, "Binance: Timestamp outside recvWindow", msg);
+  } else if (code == -1022) {
+    KJ_LOG(ERROR, "Binance: Invalid signature", msg);
+  }
+  // Request issues (-11xx)
+  else if (code == -1100) {
+    KJ_LOG(ERROR, "Binance: Illegal characters in parameter", msg);
+  } else if (code == -1101) {
+    KJ_LOG(ERROR, "Binance: Too many parameters", msg);
+  } else if (code == -1102) {
+    KJ_LOG(ERROR, "Binance: Mandatory parameter missing", msg);
+  } else if (code == -1103) {
+    KJ_LOG(ERROR, "Binance: Unknown parameter", msg);
+  } else if (code == -1104) {
+    KJ_LOG(ERROR, "Binance: Unread parameters", msg);
+  } else if (code == -1105) {
+    KJ_LOG(ERROR, "Binance: Parameter empty", msg);
+  } else if (code == -1106) {
+    KJ_LOG(ERROR, "Binance: Parameter not required", msg);
+  } else if (code == -1111) {
+    KJ_LOG(ERROR, "Binance: Bad precision", msg);
+  } else if (code == -1112) {
+    KJ_LOG(ERROR, "Binance: No depth", msg);
+  } else if (code == -1114) {
+    KJ_LOG(ERROR, "Binance: TIF not required", msg);
+  } else if (code == -1115) {
+    KJ_LOG(ERROR, "Binance: Invalid TIF", msg);
+  } else if (code == -1116) {
+    KJ_LOG(ERROR, "Binance: Invalid order type", msg);
+  } else if (code == -1117) {
+    KJ_LOG(ERROR, "Binance: Invalid side", msg);
+  } else if (code == -1118) {
+    KJ_LOG(ERROR, "Binance: Empty new client order ID", msg);
+  } else if (code == -1119) {
+    KJ_LOG(ERROR, "Binance: Empty original client order ID", msg);
+  } else if (code == -1120) {
+    KJ_LOG(ERROR, "Binance: Bad interval", msg);
+  } else if (code == -1121) {
+    KJ_LOG(ERROR, "Binance: Bad symbol", msg);
+  } else if (code == -1125) {
+    KJ_LOG(ERROR, "Binance: Invalid listen key", msg);
+  } else if (code == -1127) {
+    KJ_LOG(ERROR, "Binance: More than allowed lookback", msg);
+  } else if (code == -1128) {
+    KJ_LOG(ERROR, "Binance: Invalid combination of optional parameters", msg);
+  } else if (code == -1130) {
+    KJ_LOG(ERROR, "Binance: Invalid data for parameter", msg);
+  }
+  // Order issues (-2xxx)
+  else if (code == -2010) {
+    KJ_LOG(ERROR, "Binance: New order rejected", msg);
+  } else if (code == -2011) {
+    KJ_LOG(ERROR, "Binance: Cancel rejected", msg);
+  } else if (code == -2013) {
+    KJ_LOG(ERROR, "Binance: Order does not exist", msg);
+  } else if (code == -2014) {
+    KJ_LOG(ERROR, "Binance: API key format invalid", msg);
+  } else if (code == -2015) {
+    KJ_LOG(ERROR, "Binance: Invalid API key, IP, or permissions", msg);
+  } else if (code == -2016) {
+    KJ_LOG(ERROR, "Binance: No trading window", msg);
+  } else {
+    KJ_LOG(ERROR, "Binance: Unknown error code", code, msg);
+  }
+}
+} // namespace
+
 kj::Promise<kj::Maybe<ExecutionReport>>
 BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
   if (!is_connected()) {
@@ -277,71 +415,48 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
     auto tif = req.tif;
     auto qty = req.qty;
     auto price = req.price;
+    auto stop_price = req.stop_price;
     auto client_order_id = kj::heapString(req.client_order_id);
     auto reduce_only = req.reduce_only;
     auto post_only = req.post_only;
+    kj::Maybe<kj::String> position_side;
+    KJ_IF_SOME(value, req.position_side) {
+      position_side = kj::heapString(value);
+    }
 
-    return connect_async().then([this, symbol, side, type, tif, qty, price,
-                                 client_order_id = kj::mv(client_order_id), reduce_only,
-                                 post_only]() mutable -> kj::Promise<kj::Maybe<ExecutionReport>> {
-      if (!is_connected()) {
-        return kj::Maybe<ExecutionReport>(kj::none);
-      }
-      PlaceOrderRequest new_req;
-      new_req.symbol = symbol;
-      new_req.side = side;
-      new_req.type = type;
-      new_req.tif = tif;
-      new_req.qty = qty;
-      new_req.price = price;
-      new_req.client_order_id = kj::mv(client_order_id);
-      new_req.reduce_only = reduce_only;
-      new_req.post_only = post_only;
-      return place_order_async(new_req);
-    });
+    return connect_async().then(
+        [this, symbol, side, type, tif, qty, price, stop_price,
+         client_order_id = kj::mv(client_order_id), reduce_only, post_only,
+         position_side =
+             kj::mv(position_side)]() mutable -> kj::Promise<kj::Maybe<ExecutionReport>> {
+          if (!is_connected()) {
+            return kj::Maybe<ExecutionReport>(kj::none);
+          }
+          PlaceOrderRequest new_req;
+          new_req.symbol = symbol;
+          new_req.side = side;
+          new_req.type = type;
+          new_req.tif = tif;
+          new_req.qty = qty;
+          new_req.price = price;
+          new_req.stop_price = stop_price;
+          new_req.client_order_id = kj::mv(client_order_id);
+          new_req.reduce_only = reduce_only;
+          new_req.post_only = post_only;
+          KJ_IF_SOME(value, position_side) {
+            new_req.position_side = kj::heapString(value);
+          }
+          return place_order_async(new_req);
+        });
   }
 
   kj::StringPtr endpoint = "/api/v3/order"_kj;
 
-  // Build query string
-  auto symbol = format_symbol(req.symbol);
-  auto side = order_side_to_string(req.side);
-  auto type = order_type_to_string(req.type);
-  auto tif = time_in_force_to_string(req.tif);
-  auto timestamp = get_timestamp_ms();
+  auto params = build_order_params(req);
 
-  kj::String params;
-  KJ_IF_SOME(priceVal, req.price) {
-    if (req.client_order_id.size() > 0) {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&price=", priceVal,
-                       "&newClientOrderId=", req.client_order_id, "&timestamp=", timestamp);
-    } else {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&price=", priceVal, "&timestamp=", timestamp);
-    }
-  } else {
-    if (req.client_order_id.size() > 0) {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&newClientOrderId=", req.client_order_id,
-                       "&timestamp=", timestamp);
-    } else {
-      params = kj::str("symbol=", symbol, "&side=", side, "&type=", type, "&timeInForce=", tif,
-                       "&quantity=", req.qty, "&timestamp=", timestamp);
-    }
-  }
-
-  if (req.reduce_only) {
-    params = kj::str(params, "&reduceOnly=true");
-  }
-  if (req.post_only) {
-    params = kj::str(params, "&postOnly=true");
-  }
-
-  // Add signature
-  std::string query_string(params.cStr(), params.size());
-  std::string signature = build_signature(query_string);
-  params = kj::str(params, "&signature=", signature.c_str());
+  // Add signature using KJ-only HmacSha256 interface
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
 
   // Copy needed fields for the lambda
   auto req_symbol = req.symbol;
@@ -354,28 +469,38 @@ BinanceAdapter::place_order_async(const PlaceOrderRequest& req) {
           return {};
         }
 
-        try {
-          auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-          auto root = doc.root();
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
 
-          ExecutionReport report;
-          report.symbol = req_symbol;
-          report.client_order_id = kj::mv(req_client_order_id);
-          report.venue_order_id = kj::heapString(root["orderId"].get_string("").c_str());
-          report.status = parse_order_status(root["status"].get_string("NEW").c_str());
-          report.last_fill_qty = root["executedQty"].get_double(0.0);
-          report.last_fill_price = root["price"].get_double(0.0);
-          report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
-          report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                  std::chrono::steady_clock::now().time_since_epoch())
-                                  .count();
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       log_binance_error(code, msg);
+                       return;
+                     }
 
-          last_activity_time_ = io_context_.provider->getTimer().now();
-          return report;
-        } catch (const std::exception& e) {
-          KJ_LOG(ERROR, "Error parsing place order response", e.what());
+                     ExecutionReport report;
+                     report.symbol = req_symbol;
+                     report.client_order_id = kj::heapString(req_client_order_id);
+                     report.venue_order_id = root["orderId"].get_string(""_kj);
+                     report.status = parse_order_status(root["status"].get_string("NEW"_kj));
+                     report.last_fill_qty = root["executedQty"].get_double(0.0);
+                     report.last_fill_price = root["price"].get_double(0.0);
+                     report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
+                     report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = kj::mv(report);
+                   })) {
+          KJ_LOG(ERROR, "Error parsing place order response", exception.getDescription());
           return {};
         }
+        return result;
       });
 }
 
@@ -407,10 +532,9 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
   auto params = kj::str("symbol=", symbol, "&origClientOrderId=", req.client_order_id,
                         "&timestamp=", timestamp);
 
-  // Add signature
-  std::string query_string(params.cStr(), params.size());
-  std::string signature = build_signature(query_string);
-  params = kj::str(params, "&signature=", signature.c_str());
+  // Add signature using KJ-only HmacSha256 interface
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
 
   // Copy needed fields for the lambda
   auto req_symbol = req.symbol;
@@ -423,28 +547,38 @@ BinanceAdapter::cancel_order_async(const CancelOrderRequest& req) {
           return {};
         }
 
-        try {
-          auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-          auto root = doc.root();
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
 
-          ExecutionReport report;
-          report.symbol = req_symbol;
-          report.client_order_id = kj::mv(req_client_order_id);
-          report.venue_order_id = kj::heapString(root["orderId"].get_string("").c_str());
-          report.status = parse_order_status(root["status"].get_string("CANCELED").c_str());
-          report.last_fill_qty = root["executedQty"].get_double(0.0);
-          report.last_fill_price = root["price"].get_double(0.0);
-          report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
-          report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                  std::chrono::steady_clock::now().time_since_epoch())
-                                  .count();
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       log_binance_error(code, msg);
+                       return;
+                     }
 
-          last_activity_time_ = io_context_.provider->getTimer().now();
-          return report;
-        } catch (const std::exception& e) {
-          KJ_LOG(ERROR, "Error parsing cancel order response", e.what());
+                     ExecutionReport report;
+                     report.symbol = req_symbol;
+                     report.client_order_id = kj::heapString(req_client_order_id);
+                     report.venue_order_id = root["orderId"].get_string(""_kj);
+                     report.status = parse_order_status(root["status"].get_string("CANCELED"_kj));
+                     report.last_fill_qty = root["executedQty"].get_double(0.0);
+                     report.last_fill_price = root["price"].get_double(0.0);
+                     report.ts_exchange_ns = root["transactTime"].get_int(0LL) * 1000000;
+                     report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = kj::mv(report);
+                   })) {
+          KJ_LOG(ERROR, "Error parsing cancel order response", exception.getDescription());
           return {};
         }
+        return result;
       });
 }
 
@@ -484,16 +618,22 @@ kj::Promise<void> BinanceAdapter::connect_async() {
       return;
     }
 
-    try {
-      auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-      auto root = doc.root();
-      if (root["serverTime"].is_valid()) {
-        connected_ = true;
-        last_activity_time_ = io_context_.provider->getTimer().now();
-        KJ_LOG(INFO, "Binance API connected successfully");
-      }
-    } catch (const std::exception& e) {
-      KJ_LOG(ERROR, "Error connecting to Binance API", e.what());
+    KJ_IF_SOME(result, kj::runCatchingExceptions([&]() {
+                 auto doc = JsonDocument::parse(response);
+                 auto root = doc.root();
+                 if (root["serverTime"].is_valid()) {
+                   connected_ = true;
+                   last_activity_time_ = io_context_.provider->getTimer().now();
+                   KJ_LOG(INFO, "Binance API connected successfully");
+                 }
+                 return true;
+               })) {
+      // Connection successful
+      (void)result;
+    }
+    else {
+      // Exception occurred - KJ_LOG already captures exception details
+      KJ_LOG(ERROR, "Error connecting to Binance API");
       connected_ = false;
     }
   });
@@ -535,22 +675,24 @@ BinanceAdapter::get_current_price_async(const veloz::common::SymbolId& symbol) {
       return {};
     }
 
-    try {
-      auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-      auto root = doc.root();
-      auto price_val = root["price"];
-      if (price_val.is_string()) {
-        last_activity_time_ = io_context_.provider->getTimer().now();
-        return std::stod(price_val.get_string());
-      } else if (price_val.is_real()) {
-        last_activity_time_ = io_context_.provider->getTimer().now();
-        return price_val.get_double();
-      }
-    } catch (const std::exception& e) {
-      KJ_LOG(ERROR, "Error getting current price", e.what());
+    kj::Maybe<double> result;
+    KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                 auto doc = JsonDocument::parse(response);
+                 auto root = doc.root();
+                 auto price_val = root["price"];
+                 if (price_val.is_string()) {
+                   last_activity_time_ = io_context_.provider->getTimer().now();
+                   auto s = price_val.get_string();
+                   result = s.parseAs<double>();
+                 } else if (price_val.is_real()) {
+                   last_activity_time_ = io_context_.provider->getTimer().now();
+                   result = price_val.get_double();
+                 }
+               })) {
+      KJ_LOG(ERROR, "Error getting current price", exception.getDescription());
+      return kj::none;
     }
-
-    return kj::none;
+    return result;
   });
 }
 
@@ -565,41 +707,46 @@ BinanceAdapter::get_order_book_async(const veloz::common::SymbolId& symbol, int 
           return kj::none;
         }
 
-        try {
-          auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-          auto root = doc.root();
+        kj::Maybe<kj::Array<PriceLevel>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
 
-          kj::Vector<PriceLevel> order_book;
+                     kj::Vector<PriceLevel> order_book;
 
-          auto bids = root["bids"];
-          if (bids.is_array()) {
-            for (size_t i = 0; i < bids.size(); ++i) {
-              auto bid = bids[i];
-              PriceLevel level;
-              level.price = std::stod(bid[0].get_string());
-              level.quantity = std::stod(bid[1].get_string());
-              order_book.add(kj::mv(level));
-            }
-          }
+                     auto bids = root["bids"];
+                     if (bids.is_array()) {
+                       for (size_t i = 0; i < bids.size(); ++i) {
+                         auto bid = bids[i];
+                         PriceLevel level;
+                         auto priceStr = bid[0].get_string();
+                         auto qtyStr = bid[1].get_string();
+                         level.price = priceStr.parseAs<double>();
+                         level.quantity = qtyStr.parseAs<double>();
+                         order_book.add(kj::mv(level));
+                       }
+                     }
 
-          auto asks = root["asks"];
-          if (asks.is_array()) {
-            for (size_t i = 0; i < asks.size(); ++i) {
-              auto ask = asks[i];
-              PriceLevel level;
-              level.price = std::stod(ask[0].get_string());
-              level.quantity = std::stod(ask[1].get_string());
-              order_book.add(kj::mv(level));
-            }
-          }
+                     auto asks = root["asks"];
+                     if (asks.is_array()) {
+                       for (size_t i = 0; i < asks.size(); ++i) {
+                         auto ask = asks[i];
+                         PriceLevel level;
+                         auto priceStr = ask[0].get_string();
+                         auto qtyStr = ask[1].get_string();
+                         level.price = priceStr.parseAs<double>();
+                         level.quantity = qtyStr.parseAs<double>();
+                         order_book.add(kj::mv(level));
+                       }
+                     }
 
-          last_activity_time_ = io_context_.provider->getTimer().now();
-          return order_book.releaseAsArray();
-        } catch (const kj::Exception& e) {
-          KJ_LOG(ERROR, "Error getting order book", e.getDescription());
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = order_book.releaseAsArray();
+                   })) {
+          KJ_LOG(ERROR, "Error getting order book", exception.getDescription());
+          return kj::none;
         }
-
-        return kj::none;
+        return result;
       });
 }
 
@@ -614,27 +761,30 @@ BinanceAdapter::get_recent_trades_async(const veloz::common::SymbolId& symbol, i
           return kj::none;
         }
 
-        try {
-          auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-          auto root = doc.root();
+        kj::Maybe<kj::Array<TradeData>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
 
-          kj::Vector<TradeData> trades;
+                     kj::Vector<TradeData> trades;
 
-          for (size_t i = 0; i < root.size(); ++i) {
-            auto trade = root[i];
-            TradeData data;
-            data.price = std::stod(trade["price"].get_string());
-            data.quantity = std::stod(trade["qty"].get_string());
-            trades.add(kj::mv(data));
-          }
+                     for (size_t i = 0; i < root.size(); ++i) {
+                       auto trade = root[i];
+                       TradeData data;
+                       auto priceStr = trade["price"].get_string();
+                       auto qtyStr = trade["qty"].get_string();
+                       data.price = priceStr.parseAs<double>();
+                       data.quantity = qtyStr.parseAs<double>();
+                       trades.add(kj::mv(data));
+                     }
 
-          last_activity_time_ = io_context_.provider->getTimer().now();
-          return trades.releaseAsArray();
-        } catch (const kj::Exception& e) {
-          KJ_LOG(ERROR, "Error getting recent trades", e.getDescription());
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = trades.releaseAsArray();
+                   })) {
+          KJ_LOG(ERROR, "Error getting recent trades", exception.getDescription());
+          return kj::none;
         }
-
-        return kj::none;
+        return result;
       });
 }
 
@@ -644,10 +794,9 @@ kj::Promise<kj::Maybe<double>> BinanceAdapter::get_account_balance_async(kj::Str
   auto timestamp = get_timestamp_ms();
   auto params = kj::str("timestamp=", timestamp);
 
-  // Add signature
-  std::string query_string(params.cStr(), params.size());
-  std::string signature = build_signature(query_string);
-  params = kj::str(params, "&signature=", signature.c_str());
+  // Add signature using KJ-only HmacSha256 interface
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
 
   return http_get_async(endpoint, params)
       .then([this, asset = kj::str(asset)](kj::String response) -> kj::Maybe<double> {
@@ -655,25 +804,29 @@ kj::Promise<kj::Maybe<double>> BinanceAdapter::get_account_balance_async(kj::Str
           return {};
         }
 
-        try {
-          auto doc = JsonDocument::parse(std::string(response.cStr(), response.size()));
-          auto root = doc.root();
+        kj::Maybe<double> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
 
-          auto balances = root["balances"];
-          if (balances.is_array()) {
-            for (size_t i = 0; i < balances.size(); ++i) {
-              auto balance = balances[i];
-              if (kj::StringPtr(balance["asset"].get_string("").c_str()) == asset) {
-                last_activity_time_ = io_context_.provider->getTimer().now();
-                return std::stod(balance["free"].get_string());
-              }
-            }
-          }
-        } catch (const std::exception& e) {
-          KJ_LOG(ERROR, "Error getting account balance", e.what());
+                     auto balances = root["balances"];
+                     if (balances.is_array()) {
+                       for (size_t i = 0; i < balances.size(); ++i) {
+                         auto balance = balances[i];
+                         auto assetName = balance["asset"].get_string(""_kj);
+                         if (kj::StringPtr(assetName) == asset) {
+                           last_activity_time_ = io_context_.provider->getTimer().now();
+                           auto freeStr = balance["free"].get_string();
+                           result = freeStr.parseAs<double>();
+                           return;
+                         }
+                       }
+                     }
+                   })) {
+          KJ_LOG(ERROR, "Error getting account balance", exception.getDescription());
+          return {};
         }
-
-        return {};
+        return result;
       });
 }
 
@@ -710,6 +863,314 @@ kj::Maybe<double> BinanceAdapter::get_account_balance(kj::StringPtr asset) {
     return balance;
   }
   return kj::none;
+}
+
+// ============================================================================
+// Production Trading Methods (Task #11)
+// ============================================================================
+
+kj::Promise<kj::Maybe<ExecutionReport>>
+BinanceAdapter::get_order_async(const veloz::common::SymbolId& symbol,
+                                kj::StringPtr client_order_id) {
+  kj::StringPtr endpoint = "/api/v3/order"_kj;
+
+  auto formatted_symbol = format_symbol(symbol);
+  auto timestamp = get_timestamp_ms();
+
+  auto params = kj::str("symbol=", formatted_symbol, "&origClientOrderId=", client_order_id,
+                        "&timestamp=", timestamp);
+
+  // Add signature
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
+
+  // Copy needed fields for the lambda
+  auto req_symbol = symbol;
+  auto req_client_order_id = kj::heapString(client_order_id);
+
+  return http_get_async(endpoint, params)
+      .then([this, req_symbol, req_client_order_id = kj::mv(req_client_order_id)](
+                kj::String response) mutable -> kj::Maybe<ExecutionReport> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<ExecutionReport> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       KJ_LOG(ERROR, "Binance get_order error", code, msg);
+                       return;
+                     }
+
+                     ExecutionReport report;
+                     report.symbol = req_symbol;
+                     report.client_order_id = kj::heapString(req_client_order_id);
+                     report.venue_order_id = root["orderId"].get_string(""_kj);
+                     report.status = parse_order_status(root["status"].get_string("NEW"_kj));
+                     report.last_fill_qty = root["executedQty"].get_double(0.0);
+                     report.last_fill_price = root["price"].get_double(0.0);
+                     report.ts_exchange_ns = root["updateTime"].get_int(0LL) * 1000000;
+                     report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = kj::mv(report);
+                   })) {
+          KJ_LOG(ERROR, "Error parsing get_order response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
+}
+
+kj::Promise<kj::Maybe<kj::Array<ExecutionReport>>>
+BinanceAdapter::get_open_orders_async(const veloz::common::SymbolId& symbol) {
+  kj::StringPtr endpoint = "/api/v3/openOrders"_kj;
+
+  auto formatted_symbol = format_symbol(symbol);
+  auto timestamp = get_timestamp_ms();
+
+  auto params = kj::str("symbol=", formatted_symbol, "&timestamp=", timestamp);
+
+  // Add signature
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
+
+  auto req_symbol = symbol;
+
+  return http_get_async(endpoint, params)
+      .then([this,
+             req_symbol](kj::String response) mutable -> kj::Maybe<kj::Array<ExecutionReport>> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<kj::Array<ExecutionReport>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       KJ_LOG(ERROR, "Binance get_open_orders error", code, msg);
+                       return;
+                     }
+
+                     kj::Vector<ExecutionReport> orders;
+                     for (size_t i = 0; i < root.size(); ++i) {
+                       auto order = root[i];
+
+                       ExecutionReport report;
+                       report.symbol = req_symbol;
+                       report.client_order_id =
+                           kj::heapString(order["clientOrderId"].get_string(""_kj));
+                       report.venue_order_id = order["orderId"].get_string(""_kj);
+                       report.status = parse_order_status(order["status"].get_string("NEW"_kj));
+                       report.last_fill_qty = order["executedQty"].get_double(0.0);
+                       report.last_fill_price = order["price"].get_double(0.0);
+                       report.ts_exchange_ns = order["updateTime"].get_int(0LL) * 1000000;
+                       report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+
+                       orders.add(kj::mv(report));
+                     }
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = orders.releaseAsArray();
+                   })) {
+          KJ_LOG(ERROR, "Error parsing get_open_orders response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
+}
+
+kj::Promise<kj::Maybe<kj::Array<ExecutionReport>>> BinanceAdapter::get_all_open_orders_async() {
+  kj::StringPtr endpoint = "/api/v3/openOrders"_kj;
+
+  auto timestamp = get_timestamp_ms();
+  auto params = kj::str("timestamp=", timestamp);
+
+  // Add signature
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
+
+  return http_get_async(endpoint, params)
+      .then([this](kj::String response) -> kj::Maybe<kj::Array<ExecutionReport>> {
+        if (response.size() == 0) {
+          return kj::none;
+        }
+
+        kj::Maybe<kj::Array<ExecutionReport>> result;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       KJ_LOG(ERROR, "Binance get_all_open_orders error", code, msg);
+                       return;
+                     }
+
+                     kj::Vector<ExecutionReport> orders;
+                     for (size_t i = 0; i < root.size(); ++i) {
+                       auto order = root[i];
+
+                       ExecutionReport report;
+                       // Parse symbol from response
+                       auto symbol_str = order["symbol"].get_string(""_kj);
+                       report.symbol = veloz::common::SymbolId{symbol_str.cStr()};
+                       report.client_order_id =
+                           kj::heapString(order["clientOrderId"].get_string(""_kj));
+                       report.venue_order_id = order["orderId"].get_string(""_kj);
+                       report.status = parse_order_status(order["status"].get_string("NEW"_kj));
+                       report.last_fill_qty = order["executedQty"].get_double(0.0);
+                       report.last_fill_price = order["price"].get_double(0.0);
+                       report.ts_exchange_ns = order["updateTime"].get_int(0LL) * 1000000;
+                       report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+
+                       orders.add(kj::mv(report));
+                     }
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                     result = orders.releaseAsArray();
+                   })) {
+          KJ_LOG(ERROR, "Error parsing get_all_open_orders response", exception.getDescription());
+          return kj::none;
+        }
+        return result;
+      });
+}
+
+// Synchronous order query methods
+kj::Maybe<ExecutionReport> BinanceAdapter::get_order(const veloz::common::SymbolId& symbol,
+                                                     kj::StringPtr client_order_id) {
+  return get_order_async(symbol, client_order_id).wait(io_context_.waitScope);
+}
+
+kj::Maybe<kj::Array<ExecutionReport>>
+BinanceAdapter::get_open_orders(const veloz::common::SymbolId& symbol) {
+  return get_open_orders_async(symbol).wait(io_context_.waitScope);
+}
+
+kj::Maybe<kj::Array<ExecutionReport>> BinanceAdapter::get_all_open_orders() {
+  return get_all_open_orders_async().wait(io_context_.waitScope);
+}
+
+// ============================================================================
+// ReconciliationQueryInterface Implementation (Task #2)
+// ============================================================================
+
+kj::Promise<kj::Vector<ExecutionReport>>
+BinanceAdapter::query_open_orders_async(const veloz::common::SymbolId& symbol) {
+  // Reuse existing get_open_orders_async and convert Array to Vector
+  return get_open_orders_async(symbol).then(
+      [](kj::Maybe<kj::Array<ExecutionReport>> result) -> kj::Vector<ExecutionReport> {
+        KJ_IF_SOME(orders, result) {
+          kj::Vector<ExecutionReport> vec;
+          for (auto& order : orders) {
+            vec.add(kj::mv(order));
+          }
+          return vec;
+        }
+        // Return empty vector if no orders
+        return kj::Vector<ExecutionReport>();
+      });
+}
+
+kj::Promise<kj::Maybe<ExecutionReport>>
+BinanceAdapter::query_order_async(const veloz::common::SymbolId& symbol,
+                                  kj::StringPtr client_order_id) {
+  // Reuse existing get_order_async - signature already matches
+  return get_order_async(symbol, client_order_id);
+}
+
+kj::Promise<kj::Vector<ExecutionReport>>
+BinanceAdapter::query_orders_async(const veloz::common::SymbolId& symbol,
+                                   std::int64_t start_time_ms, std::int64_t end_time_ms) {
+  // Query all orders within time range using Binance allOrders endpoint
+  kj::StringPtr endpoint = "/api/v3/allOrders"_kj;
+
+  auto formatted_symbol = format_symbol(symbol);
+  auto timestamp = get_timestamp_ms();
+
+  auto params = kj::str("symbol=", formatted_symbol, "&startTime=", start_time_ms,
+                        "&endTime=", end_time_ms, "&timestamp=", timestamp);
+
+  // Add signature
+  auto signature = build_signature(params);
+  params = kj::str(params, "&signature=", signature);
+
+  auto req_symbol = symbol;
+
+  return http_get_async(endpoint, params)
+      .then([this, req_symbol](kj::String response) mutable -> kj::Vector<ExecutionReport> {
+        if (response.size() == 0) {
+          return kj::Vector<ExecutionReport>();
+        }
+
+        kj::Vector<ExecutionReport> orders;
+        KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+                     auto doc = JsonDocument::parse(response);
+                     auto root = doc.root();
+
+                     // Check for error response
+                     if (root["code"].is_valid()) {
+                       auto code = root["code"].get_int(0);
+                       auto msg = root["msg"].get_string(""_kj);
+                       KJ_LOG(ERROR, "Binance query_orders error", code, msg);
+                       return;
+                     }
+
+                     for (size_t i = 0; i < root.size(); ++i) {
+                       auto order = root[i];
+
+                       ExecutionReport report;
+                       report.symbol = req_symbol;
+                       report.client_order_id =
+                           kj::heapString(order["clientOrderId"].get_string(""_kj));
+                       report.venue_order_id = order["orderId"].get_string(""_kj);
+                       report.status = parse_order_status(order["status"].get_string("NEW"_kj));
+                       report.last_fill_qty = order["executedQty"].get_double(0.0);
+                       report.last_fill_price = order["price"].get_double(0.0);
+                       report.ts_exchange_ns = order["updateTime"].get_int(0LL) * 1000000;
+                       report.ts_recv_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+
+                       orders.add(kj::mv(report));
+                     }
+
+                     last_activity_time_ = io_context_.provider->getTimer().now();
+                   })) {
+          KJ_LOG(ERROR, "Error parsing query_orders response", exception.getDescription());
+        }
+        return orders;
+      });
+}
+
+kj::Promise<kj::Maybe<ExecutionReport>>
+BinanceAdapter::cancel_order_async(const veloz::common::SymbolId& symbol,
+                                   kj::StringPtr client_order_id) {
+  // Reuse existing cancel_order_async by creating CancelOrderRequest
+  CancelOrderRequest req;
+  req.symbol = symbol;
+  req.client_order_id = kj::heapString(client_order_id);
+  return cancel_order_async(req);
 }
 
 } // namespace veloz::exec

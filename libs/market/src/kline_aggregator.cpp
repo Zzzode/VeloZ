@@ -1,8 +1,19 @@
 #include "veloz/market/kline_aggregator.h"
 
+#include <chrono>
 #include <kj/debug.h>
 
 namespace veloz::market {
+
+namespace {
+
+// Get current time in milliseconds
+int64_t current_time_ms() {
+  auto now = std::chrono::system_clock::now();
+  return std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+}
+
+} // namespace
 
 kj::StringPtr interval_to_string(KlineInterval interval) {
   switch (interval) {
@@ -31,6 +42,10 @@ KlineAggregator::KlineAggregator(Config config) : config_(config) {
   for (auto& state : states_) {
     state.enabled = false;
   }
+}
+
+KlineAggregator::~KlineAggregator() {
+  stop_timer();
 }
 
 void KlineAggregator::enable_interval(KlineInterval interval) {
@@ -88,7 +103,8 @@ void KlineAggregator::process_trade(const TradeData& trade, int64_t timestamp_ms
         updated.kline.close_time = candle_start + interval_ms - 1;
         emit_update(interval, updated, false);
       }
-    } else {
+    }
+    else {
       // Start first candle
       AggregatedKline new_candle;
       new_candle.kline.start_time = candle_start;
@@ -280,6 +296,106 @@ void KlineAggregator::emit_update(KlineInterval interval, const AggregatedKline&
   KJ_IF_SOME(cb, callback_) {
     if ((is_close && config_.emit_on_close) || (!is_close && config_.emit_on_update)) {
       cb(interval, kline);
+    }
+  }
+}
+
+kj::Promise<void> KlineAggregator::start_timer(kj::Timer& timer) {
+  if (timer_running_.exchange(true)) {
+    // Already running
+    co_return;
+  }
+
+  KJ_LOG(INFO, "Starting kline timer", config_.timer_check_interval_ms);
+
+  // Timer loop using coroutine
+  while (timer_running_.load()) {
+    co_await timer.afterDelay(config_.timer_check_interval_ms * kj::MILLISECONDS);
+
+    if (!timer_running_.load()) {
+      break;
+    }
+
+    // Check and close any candles that should have closed
+    check_and_close_candles(current_time_ms());
+  }
+}
+
+void KlineAggregator::stop_timer() {
+  timer_running_ = false;
+}
+
+bool KlineAggregator::is_timer_running() const {
+  return timer_running_.load();
+}
+
+void KlineAggregator::force_close_all(int64_t current_time_ms_val) {
+  for (size_t i = 0; i < 7; ++i) {
+    auto& state = states_[i];
+    if (!state.enabled)
+      continue;
+
+    KJ_IF_SOME(current, state.current) {
+      // Close the current candle
+      current.is_closed = true;
+      emit_update(static_cast<KlineInterval>(i), current, true);
+
+      // Add to history
+      state.history.add(kj::mv(current));
+      total_candles_closed_++;
+
+      // Trim history if needed
+      while (state.history.size() > config_.max_history_per_interval) {
+        kj::Vector<AggregatedKline> new_history;
+        for (size_t j = 1; j < state.history.size(); ++j) {
+          new_history.add(kj::mv(state.history[j]));
+        }
+        state.history = kj::mv(new_history);
+      }
+    }
+    state.current = kj::none;
+  }
+}
+
+void KlineAggregator::check_and_close_candles(int64_t current_time_ms_val) {
+  for (size_t i = 0; i < 7; ++i) {
+    auto& state = states_[i];
+    if (!state.enabled)
+      continue;
+
+    auto interval = static_cast<KlineInterval>(i);
+    int64_t interval_ms = interval_to_ms(interval);
+
+    KJ_IF_SOME(current, state.current) {
+      // Check if current candle should have closed
+      int64_t candle_end = current.kline.start_time + interval_ms;
+      if (current_time_ms_val >= candle_end) {
+        // Close the candle
+        current.is_closed = true;
+        emit_update(interval, current, true);
+
+        // Add to history
+        state.history.add(kj::mv(current));
+        total_candles_closed_++;
+        timer_close_count_++;
+
+        // Trim history if needed
+        while (state.history.size() > config_.max_history_per_interval) {
+          kj::Vector<AggregatedKline> new_history;
+          for (size_t j = 1; j < state.history.size(); ++j) {
+            new_history.add(kj::mv(state.history[j]));
+          }
+          state.history = kj::mv(new_history);
+        }
+
+        // Start new candle at the aligned time
+        int64_t new_start = align_to_interval(current_time_ms_val, interval);
+        AggregatedKline new_candle;
+        new_candle.kline.start_time = new_start;
+        new_candle.kline.close_time = new_start + interval_ms - 1;
+        new_candle.is_closed = false;
+        state.current = kj::mv(new_candle);
+      }
     }
   }
 }

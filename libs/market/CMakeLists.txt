@@ -5,6 +5,7 @@ project(veloz_market LANGUAGES CXX)
 set(MARKET_SOURCES
     src/market_event.cpp
     src/order_book.cpp
+    src/managed_order_book.cpp
     src/subscription_manager.cpp
     src/metrics.cpp
     src/kline_aggregator.cpp
@@ -15,6 +16,7 @@ set(MARKET_SOURCES
 # Custom WebSocket implementation using KJ async I/O (RFC 6455 protocol)
 if(VELOZ_BUILD_WEBSOCKET)
     list(APPEND MARKET_SOURCES src/binance_websocket.cpp)
+    list(APPEND MARKET_SOURCES src/binance_rest_client.cpp)
 endif()
 
 add_library(veloz_market STATIC ${MARKET_SOURCES})
@@ -42,6 +44,7 @@ if(VELOZ_BUILD_WEBSOCKET)
         PUBLIC
             kj
             kj-async
+            kj-http
     )
     if(WITH_OPENSSL)
         target_link_libraries(veloz_market PUBLIC kj-tls)
@@ -54,6 +57,7 @@ if(VELOZ_BUILD_TESTS)
     add_executable(veloz_market_tests
         tests/test_market_event.cpp
         tests/test_order_book.cpp
+        tests/test_managed_order_book.cpp
         tests/test_subscription_manager.cpp
         tests/test_metrics.cpp
         tests/test_market_data_advanced.cpp
@@ -63,8 +67,13 @@ if(VELOZ_BUILD_TESTS)
             veloz_market
             veloz_common
             kj-test
+            kj-async
         )
     add_test(NAME veloz_market_tests COMMAND veloz_market_tests)
+    set_tests_properties(veloz_market_tests PROPERTIES
+        TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+        LABELS "unit;market"
+    )
 
     # WebSocket unit tests (conditionally built)
     if(VELOZ_BUILD_WEBSOCKET)
@@ -78,5 +87,27 @@ if(VELOZ_BUILD_TESTS)
                 kj-test
             )
         add_test(NAME veloz_websocket_tests COMMAND veloz_websocket_tests)
+        set_tests_properties(veloz_websocket_tests PROPERTIES
+            TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+            LABELS "unit;market;network"
+        )
+
+        # REST client tests
+        add_executable(veloz_rest_client_tests
+            tests/test_binance_rest_client.cpp
+            )
+        target_link_libraries(veloz_rest_client_tests
+            PRIVATE
+                veloz_market
+                veloz_common
+                kj-test
+                kj-async
+                kj-http
+            )
+        add_test(NAME veloz_rest_client_tests COMMAND veloz_rest_client_tests)
+        set_tests_properties(veloz_rest_client_tests PROPERTIES
+            TIMEOUT ${VELOZ_TEST_TIMEOUT_LONG}
+            LABELS "unit;market;network"
+        )
     endif()
 endif()

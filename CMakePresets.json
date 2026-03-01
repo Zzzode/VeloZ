@@ -9,7 +9,7 @@
     {
       "name": "dev",
       "displayName": "Dev (Debug)",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/dev",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -19,7 +19,7 @@
     {
       "name": "release",
       "displayName": "Release",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -29,7 +29,7 @@
     {
       "name": "asan",
       "displayName": "ASan (Clang Debug)",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -37,6 +37,19 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage (GCC Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_FLAGS": "-fprofile-arcs -ftest-coverage -O0 -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fprofile-arcs -ftest-coverage"
       }
     }
   ],
@@ -62,18 +75,21 @@
         "veloz_exec",
         "veloz_oms",
         "veloz_risk",
-        "veloz_strategy"
+        "veloz_strategy",
+        "veloz_backtest"
       ]
     },
     {
       "name": "dev-tests",
       "configurePreset": "dev",
       "targets": [
+        "veloz_core_tests",
         "veloz_market_tests",
         "veloz_exec_tests",
         "veloz_oms_tests",
         "veloz_risk_tests",
-        "veloz_strategy_tests"
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
       ]
     },
     {
@@ -104,18 +120,21 @@
         "veloz_exec",
         "veloz_oms",
         "veloz_risk",
-        "veloz_strategy"
+        "veloz_strategy",
+        "veloz_backtest"
       ]
     },
     {
       "name": "release-tests",
       "configurePreset": "release",
       "targets": [
+        "veloz_core_tests",
         "veloz_market_tests",
         "veloz_exec_tests",
         "veloz_oms_tests",
         "veloz_risk_tests",
-        "veloz_strategy_tests"
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
       ]
     },
     {
@@ -146,18 +165,21 @@
         "veloz_exec",
         "veloz_oms",
         "veloz_risk",
-        "veloz_strategy"
+        "veloz_strategy",
+        "veloz_backtest"
       ]
     },
     {
       "name": "asan-tests",
       "configurePreset": "asan",
       "targets": [
+        "veloz_core_tests",
         "veloz_market_tests",
         "veloz_exec_tests",
         "veloz_oms_tests",
         "veloz_risk_tests",
-        "veloz_strategy_tests"
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
       ]
     },
     {
@@ -166,14 +188,156 @@
       "targets": [
         "all"
       ]
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "coverage-tests",
+      "configurePreset": "coverage",
+      "targets": [
+        "veloz_core_tests",
+        "veloz_market_tests",
+        "veloz_exec_tests",
+        "veloz_oms_tests",
+        "veloz_risk_tests",
+        "veloz_strategy_tests",
+        "veloz_backtest_tests"
+      ]
+    },
+    {
+      "name": "coverage-all",
+      "configurePreset": "coverage",
+      "targets": [
+        "all"
+      ]
     }
   ],
   "testPresets": [
     {
       "name": "dev",
+      "displayName": "All Tests (Dev)",
       "configurePreset": "dev",
       "execution": {
-        "timeout": 60
+        "timeout": 600,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true,
+        "verbosity": "default"
+      }
+    },
+    {
+      "name": "dev-unit",
+      "displayName": "Unit Tests Only (Dev)",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "unit"
+        }
+      },
+      "execution": {
+        "timeout": 120,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-integration",
+      "displayName": "Integration Tests Only (Dev)",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "integration"
+        }
+      },
+      "execution": {
+        "timeout": 300,
+        "noTestsAction": "ignore"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-load",
+      "displayName": "Load Tests Only (Dev)",
+      "configurePreset": "dev",
+      "filter": {
+        "include": {
+          "label": "load"
+        }
+      },
+      "execution": {
+        "timeout": 900,
+        "noTestsAction": "ignore"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-quick",
+      "displayName": "Quick Tests (exclude slow)",
+      "configurePreset": "dev",
+      "filter": {
+        "exclude": {
+          "label": "slow"
+        }
+      },
+      "execution": {
+        "timeout": 120,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage Tests",
+      "configurePreset": "coverage",
+      "filter": {
+        "exclude": {
+          "label": "load"
+        }
+      },
+      "execution": {
+        "timeout": 600,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "All Tests (Release)",
+      "configurePreset": "release",
+      "execution": {
+        "timeout": 600,
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "All Tests (ASan)",
+      "configurePreset": "asan",
+      "filter": {
+        "exclude": {
+          "label": "load"
+        }
+      },
+      "execution": {
+        "timeout": 900,
+        "noTestsAction": "error"
       },
       "output": {
         "outputOnFailure": true

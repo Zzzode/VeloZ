@@ -1,0 +1,18 @@
+apiVersion: v2
+name: veloz
+description: VeloZ Quantitative Trading Engine Helm Chart
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - trading
+  - quantitative
+  - crypto
+  - binance
+maintainers:
+  - name: VeloZ Team
+    email: team@veloz.io
+home: https://github.com/veloz/veloz
+sources:
+  - https://github.com/veloz/veloz
+dependencies: []

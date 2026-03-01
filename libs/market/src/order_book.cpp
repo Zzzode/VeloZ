@@ -14,17 +14,15 @@ void OrderBook::apply_snapshot(const kj::Vector<BookLevel>& bids, const kj::Vect
 
   for (const auto& level : bids) {
     if (level.qty > 0.0) {
-      bids_.upsert(DescendingPrice(level.price), level.qty, [](double& existing, double newVal) {
-        existing = newVal;
-      });
+      bids_.upsert(DescendingPrice(level.price), level.qty,
+                   [](double& existing, double newVal) { existing = newVal; });
     }
   }
 
   for (const auto& level : asks) {
     if (level.qty > 0.0) {
-      asks_.upsert(level.price, level.qty, [](double& existing, double newVal) {
-        existing = newVal;
-      });
+      asks_.upsert(level.price, level.qty,
+                   [](double& existing, double newVal) { existing = newVal; });
     }
   }
 
@@ -101,6 +99,15 @@ UpdateResult OrderBook::apply_delta(const BookLevel& level, bool is_bid, int64_t
   return UpdateResult::Applied;
 }
 
+UpdateResult OrderBook::apply_book_data(const BookData& data) {
+  if (data.is_snapshot) {
+    apply_snapshot(data.bids, data.asks, data.sequence);
+    return UpdateResult::Applied;
+  } else {
+    return apply_deltas(data.bids, data.asks, data.first_update_id, data.sequence);
+  }
+}
+
 UpdateResult OrderBook::apply_deltas(const kj::Vector<BookLevel>& bids,
                                      const kj::Vector<BookLevel>& asks, int64_t first_sequence,
                                      int64_t final_sequence) {
@@ -157,17 +164,15 @@ void OrderBook::apply_level(const BookLevel& level, bool is_bid) {
     if (level.qty == 0.0) {
       bids_.erase(DescendingPrice(level.price));
     } else {
-      bids_.upsert(DescendingPrice(level.price), level.qty, [](double& existing, double newVal) {
-        existing = newVal;
-      });
+      bids_.upsert(DescendingPrice(level.price), level.qty,
+                   [](double& existing, double newVal) { existing = newVal; });
     }
   } else {
     if (level.qty == 0.0) {
       asks_.erase(level.price);
     } else {
-      asks_.upsert(level.price, level.qty, [](double& existing, double newVal) {
-        existing = newVal;
-      });
+      asks_.upsert(level.price, level.qty,
+                   [](double& existing, double newVal) { existing = newVal; });
     }
   }
 }

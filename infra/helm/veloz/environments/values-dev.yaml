@@ -1,0 +1,74 @@
+# Development environment values
+# Usage: helm install veloz ./veloz -f environments/values-dev.yaml
+
+global:
+  environment: dev
+
+engine:
+  replicaCount: 1
+
+  image:
+    tag: dev
+    pullPolicy: Always
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "1"
+
+  env:
+    VELOZ_PRESET: "dev"
+    VELOZ_EXECUTION_MODE: "sim_engine"
+    VELOZ_LOG_LEVEL: "DEBUG"
+
+# Use inline secrets for development
+secrets:
+  useExternal: false
+  inline:
+    binanceApiKey: "dev_api_key"
+    binanceApiSecret: "dev_api_secret"
+
+# SQLite for development
+database:
+  external: false
+  postgresql:
+    enabled: false
+
+# No Redis in dev
+redis:
+  enabled: false
+
+# No ingress in dev
+ingress:
+  enabled: false
+
+# No autoscaling in dev
+autoscaling:
+  enabled: false
+
+# No PDB in dev (single replica)
+podDisruptionBudget:
+  enabled: false
+
+# No network policy in dev
+networkPolicy:
+  enabled: false
+
+# Basic monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+  prometheusRule:
+    enabled: false
+
+logging:
+  level: DEBUG
+  format: text
+
+# No persistence in dev
+persistence:
+  enabled: false

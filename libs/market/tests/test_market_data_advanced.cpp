@@ -61,7 +61,8 @@ KJ_TEST("KlineAggregator: Process single trade") {
     KJ_EXPECT(kline.buy_volume == 1.0);
     KJ_EXPECT(kline.sell_volume == 0.0);
     KJ_EXPECT(!kline.is_closed);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 }
@@ -104,7 +105,8 @@ KJ_TEST("KlineAggregator: OHLC calculation") {
     KJ_EXPECT(kline.kline.close == 50200.0);
     KJ_EXPECT(kline.kline.volume == 3.0);
     KJ_EXPECT(kline.trade_count == 4);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 }
@@ -139,7 +141,8 @@ KJ_TEST("KlineAggregator: Candle close on new interval") {
   KJ_IF_SOME(kline, current) {
     KJ_EXPECT(kline.kline.open == 51000.0);
     KJ_EXPECT(!kline.is_closed);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 
@@ -187,7 +190,8 @@ KJ_TEST("KlineAggregator: Buy/sell volume tracking") {
   KJ_IF_SOME(kline, current) {
     KJ_EXPECT(kline.buy_volume == 2.0);
     KJ_EXPECT(kline.sell_volume == 1.0);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("Expected current kline to be present");
   }
 }
@@ -204,6 +208,108 @@ KJ_TEST("KlineAggregator: Interval to milliseconds") {
   KJ_EXPECT(interval_to_ms(KlineInterval::Min5) == 300000LL);
   KJ_EXPECT(interval_to_ms(KlineInterval::Hour1) == 3600000LL);
   KJ_EXPECT(interval_to_ms(KlineInterval::Day1) == 86400000LL);
+}
+
+KJ_TEST("KlineAggregator: Timer configuration") {
+  KlineAggregator::Config config;
+  config.enable_timer_close = true;
+  config.timer_check_interval_ms = 500;
+
+  KlineAggregator aggregator(config);
+  KJ_EXPECT(!aggregator.is_timer_running());
+}
+
+KJ_TEST("KlineAggregator: Check and close candles") {
+  KlineAggregator aggregator;
+  aggregator.enable_interval(KlineInterval::Min1);
+
+  // Create a candle at a specific time
+  int64_t base_time = 1700000000000LL; // Aligned to minute
+  TradeData trade;
+  trade.price = 50000.0;
+  trade.qty = 1.0;
+  aggregator.process_trade(trade, base_time);
+
+  // Verify candle exists and is not closed
+  auto current = aggregator.current_kline(KlineInterval::Min1);
+  KJ_IF_SOME(kline, current) {
+    KJ_EXPECT(!kline.is_closed);
+  }
+  else {
+    KJ_FAIL_EXPECT("Expected current kline to be present");
+  }
+
+  // Check at a time before candle should close - should not close
+  aggregator.check_and_close_candles(base_time + 30000); // 30 seconds later
+  current = aggregator.current_kline(KlineInterval::Min1);
+  KJ_IF_SOME(kline2, current) {
+    KJ_EXPECT(!kline2.is_closed);
+  }
+
+  // Check at a time after candle should close - should close
+  aggregator.check_and_close_candles(base_time + 61000); // 61 seconds later
+
+  // Should have one closed candle in history
+  auto history = aggregator.history(KlineInterval::Min1);
+  KJ_EXPECT(history.size() == 1);
+  KJ_EXPECT(history[0].is_closed);
+  KJ_EXPECT(aggregator.timer_close_count() == 1);
+}
+
+KJ_TEST("KlineAggregator: Force close all candles") {
+  KlineAggregator aggregator;
+  aggregator.enable_interval(KlineInterval::Min1);
+  aggregator.enable_interval(KlineInterval::Min5);
+
+  int64_t base_time = 1700000000000LL;
+
+  // Create candles in both intervals
+  TradeData trade;
+  trade.price = 50000.0;
+  trade.qty = 1.0;
+  aggregator.process_trade(trade, base_time);
+
+  // Verify both intervals have current candles
+  KJ_EXPECT(aggregator.current_kline(KlineInterval::Min1) != kj::none);
+  KJ_EXPECT(aggregator.current_kline(KlineInterval::Min5) != kj::none);
+
+  // Force close all
+  aggregator.force_close_all(base_time + 10000);
+
+  // Current candles should be cleared
+  KJ_EXPECT(aggregator.current_kline(KlineInterval::Min1) == kj::none);
+  KJ_EXPECT(aggregator.current_kline(KlineInterval::Min5) == kj::none);
+
+  // History should have the closed candles
+  KJ_EXPECT(aggregator.history(KlineInterval::Min1).size() == 1);
+  KJ_EXPECT(aggregator.history(KlineInterval::Min5).size() == 1);
+  KJ_EXPECT(aggregator.total_candles_closed() == 2);
+}
+
+KJ_TEST("KlineAggregator: Statistics tracking") {
+  KlineAggregator aggregator;
+  aggregator.enable_interval(KlineInterval::Min1);
+
+  KJ_EXPECT(aggregator.total_trades_processed() == 0);
+  KJ_EXPECT(aggregator.total_candles_closed() == 0);
+  KJ_EXPECT(aggregator.timer_close_count() == 0);
+
+  int64_t base_time = 1700000000000LL;
+  TradeData trade;
+  trade.price = 50000.0;
+  trade.qty = 1.0;
+
+  // Process some trades
+  aggregator.process_trade(trade, base_time);
+  aggregator.process_trade(trade, base_time + 1000);
+  aggregator.process_trade(trade, base_time + 2000);
+
+  KJ_EXPECT(aggregator.total_trades_processed() == 3);
+
+  // Close via timer
+  aggregator.check_and_close_candles(base_time + 61000);
+  KJ_EXPECT(aggregator.total_candles_closed() == 1);
+  KJ_EXPECT(aggregator.timer_close_count() == 1);
 }
 
 // ============================================================================
@@ -339,6 +445,112 @@ KJ_TEST("MarketQualityAnalyzer: Anomaly type to string") {
   KJ_EXPECT(anomaly_type_to_string(AnomalyType::PriceSpike) == "PriceSpike"_kj);
   KJ_EXPECT(anomaly_type_to_string(AnomalyType::VolumeSpike) == "VolumeSpike"_kj);
   KJ_EXPECT(anomaly_type_to_string(AnomalyType::SpreadWidening) == "SpreadWidening"_kj);
+}
+
+KJ_TEST("MarketQualityAnalyzer: Latency tracking") {
+  MarketQualityAnalyzer analyzer;
+
+  // Record some latencies (in nanoseconds)
+  analyzer.record_latency(1000000000LL, 1000100000LL); // 100us
+  analyzer.record_latency(2000000000LL, 2000200000LL); // 200us
+  analyzer.record_latency(3000000000LL, 3000150000LL); // 150us
+
+  auto stats = analyzer.latency_stats();
+  KJ_EXPECT(stats.sample_count == 3);
+  KJ_EXPECT(stats.min_latency_ns == 100000);  // 100us
+  KJ_EXPECT(stats.max_latency_ns == 200000);  // 200us
+  KJ_EXPECT(stats.last_latency_ns == 150000); // 150us
+  KJ_EXPECT(stats.avg_latency_ns == 150000);  // (100+200+150)/3 = 150us
+}
+
+KJ_TEST("MarketQualityAnalyzer: Spread tracking") {
+  MarketQualityAnalyzer::Config config;
+  config.max_spread_bps = 50.0;
+  MarketQualityAnalyzer analyzer(config);
+
+  // Analyze some book updates with different spreads
+  // Spread = (ask - bid) / mid * 10000 bps
+  // bid=100, ask=100.1 -> spread = 0.1/100.05 * 10000 = ~10 bps
+  analyzer.analyze_book(100.0, 100.1, 1000000000LL);
+
+  // bid=100, ask=100.5 -> spread = 0.5/100.25 * 10000 = ~50 bps
+  analyzer.analyze_book(100.0, 100.5, 2000000000LL);
+
+  auto stats = analyzer.spread_stats();
+  KJ_EXPECT(stats.sample_count == 2);
+  KJ_EXPECT(stats.min_spread_bps > 0);
+  KJ_EXPECT(stats.max_spread_bps > stats.min_spread_bps);
+}
+
+KJ_TEST("MarketQualityAnalyzer: Liquidity depth analysis") {
+  MarketQualityAnalyzer analyzer;
+
+  // Create order book levels
+  kj::Vector<BookLevel> bids;
+  bids.add(BookLevel{50000.0, 1.0});
+  bids.add(BookLevel{49999.0, 2.0});
+  bids.add(BookLevel{49998.0, 3.0});
+
+  kj::Vector<BookLevel> asks;
+  asks.add(BookLevel{50001.0, 0.5});
+  asks.add(BookLevel{50002.0, 1.0});
+  asks.add(BookLevel{50003.0, 1.5});
+
+  // Analyze depth
+  auto anomalies = analyzer.analyze_depth(bids, asks, 1000000000LL);
+
+  auto stats = analyzer.liquidity_stats();
+  KJ_EXPECT(stats.sample_count == 1);
+  KJ_EXPECT(stats.total_bid_depth == 6.0); // 1 + 2 + 3
+  KJ_EXPECT(stats.total_ask_depth == 3.0); // 0.5 + 1 + 1.5
+  KJ_EXPECT(stats.bid_ask_ratio == 2.0);   // 6 / 3
+  KJ_EXPECT(stats.depth_imbalance > 0);    // More bids than asks
+}
+
+KJ_TEST("MarketQualityAnalyzer: Spread widening detection in depth") {
+  MarketQualityAnalyzer::Config config;
+  config.max_spread_bps = 10.0; // Very tight threshold
+  MarketQualityAnalyzer analyzer(config);
+
+  // Create order book with wide spread
+  kj::Vector<BookLevel> bids;
+  bids.add(BookLevel{100.0, 1.0});
+
+  kj::Vector<BookLevel> asks;
+  asks.add(BookLevel{101.0, 1.0}); // 1% spread = 100 bps
+
+  auto anomalies = analyzer.analyze_depth(bids, asks, 1000000000LL);
+
+  // Should detect spread widening
+  KJ_EXPECT(anomalies.size() == 1);
+  KJ_EXPECT(anomalies[0].type == AnomalyType::SpreadWidening);
+
+  auto stats = analyzer.spread_stats();
+  KJ_EXPECT(stats.wide_spread_count == 1);
+}
+
+KJ_TEST("MarketQualityAnalyzer: Reset clears all stats") {
+  MarketQualityAnalyzer analyzer;
+
+  // Add some data
+  TradeData trade;
+  trade.price = 50000.0;
+  trade.qty = 1.0;
+  analyzer.analyze_trade(trade, 1000000000LL);
+  analyzer.record_latency(1000000000LL, 1000100000LL);
+
+  // Verify data exists
+  KJ_EXPECT(analyzer.total_events_analyzed() > 0);
+  KJ_EXPECT(analyzer.latency_stats().sample_count > 0);
+
+  // Reset
+  analyzer.reset();
+
+  // Verify all cleared
+  KJ_EXPECT(analyzer.total_events_analyzed() == 0);
+  KJ_EXPECT(analyzer.latency_stats().sample_count == 0);
+  KJ_EXPECT(analyzer.spread_stats().sample_count == 0);
+  KJ_EXPECT(analyzer.liquidity_stats().sample_count == 0);
 }
 
 // ============================================================================

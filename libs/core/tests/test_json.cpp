@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <kj/string.h>
-#include <string> // Kept for JsonDocument API compatibility
 
 using namespace veloz::core;
 
@@ -11,11 +10,11 @@ namespace {
 
 // Test basic JSON parsing
 KJ_TEST("JSON: Parse simple object") {
-  std::string json_str = R"({
+  kj::StringPtr json_str = R"({
         "name": "test",
         "value": 42,
         "flag": true
-    })";
+    })"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
@@ -25,24 +24,27 @@ KJ_TEST("JSON: Parse simple object") {
 
   KJ_IF_SOME(name, root.get("name")) {
     KJ_EXPECT(name.get_string() == "test");
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("name not found");
   }
   KJ_IF_SOME(value, root.get("value")) {
     KJ_EXPECT(value.get_int() == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("value not found");
   }
   KJ_IF_SOME(flag, root.get("flag")) {
     KJ_EXPECT(flag.get_bool());
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("flag not found");
   }
 }
 
 // Test JSON array parsing
 KJ_TEST("JSON: Parse array") {
-  std::string json_str = R"([1, 2, 3, 4, 5])";
+  kj::StringPtr json_str = R"([1, 2, 3, 4, 5])"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
@@ -54,7 +56,7 @@ KJ_TEST("JSON: Parse array") {
 
 // Test nested objects
 KJ_TEST("JSON: Parse nested object") {
-  std::string json_str = R"({
+  kj::StringPtr json_str = R"({
         "user": {
             "name": "Alice",
             "age": 30,
@@ -63,70 +65,74 @@ KJ_TEST("JSON: Parse nested object") {
                 "zip": 10001
             }
         }
-    })";
+    })"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  KJ_IF_SOME(user, root.get("user")) {
+  KJ_IF_SOME(user, root.get("user"_kj)) {
     KJ_EXPECT(user.is_object());
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("user not found");
   }
-  KJ_EXPECT(root["user"]["name"].get_string() == "Alice");
-  KJ_EXPECT(root["user"]["age"].get_int() == 30);
-  KJ_EXPECT(root["user"]["address"]["city"].get_string() == "NYC");
+  KJ_EXPECT(root["user"_kj]["name"_kj].get_string() == "Alice"_kj);
+  KJ_EXPECT(root["user"_kj]["age"_kj].get_int() == 30);
+  KJ_EXPECT(root["user"_kj]["address"_kj]["city"_kj].get_string() == "NYC"_kj);
 }
 
 // Test JSON building
 KJ_TEST("JSON: Build simple object") {
   auto builder = JsonBuilder::object();
-  builder.put("name", "test").put("value", 42).put("flag", true).put("null_val", nullptr);
+  builder.put("name"_kj, "test"_kj)
+      .put("value"_kj, 42)
+      .put("flag"_kj, true)
+      .put("null_val"_kj, nullptr);
 
-  std::string json = builder.build();
+  kj::String json = builder.build();
   auto doc = JsonDocument::parse(json);
 
-  KJ_EXPECT(doc.root()["name"].get_string() == "test");
-  KJ_EXPECT(doc.root()["value"].get_int() == 42);
-  KJ_EXPECT(doc.root()["flag"].get_bool());
-  KJ_EXPECT(doc.root()["null_val"].is_null());
+  KJ_EXPECT(doc.root()["name"_kj].get_string() == "test"_kj);
+  KJ_EXPECT(doc.root()["value"_kj].get_int() == 42);
+  KJ_EXPECT(doc.root()["flag"_kj].get_bool());
+  KJ_EXPECT(doc.root()["null_val"_kj].is_null());
 }
 
 // Test JSON array building
 KJ_TEST("JSON: Build array") {
   auto builder = JsonBuilder::array();
-  builder.add(1).add(2).add(3).add("string").add(true);
+  builder.add(1).add(2).add(3).add("string"_kj).add(true);
 
-  std::string json = builder.build();
+  kj::String json = builder.build();
   auto doc = JsonDocument::parse(json);
 
   KJ_EXPECT(doc.root().is_array());
   KJ_EXPECT(doc.root().size() == 5);
   KJ_EXPECT(doc.root()[size_t(0)].get_int() == 1);
-  KJ_EXPECT(doc.root()[size_t(3)].get_string() == "string");
+  KJ_EXPECT(doc.root()[size_t(3)].get_string() == "string"_kj);
 }
 
 // Test nested building
-// TODO: Fix nested structure building - yyjson integration issue
-// KJ_TEST("JSON: Build nested structure") {
-//   auto builder = JsonBuilder::object();
-//   builder.put("name", "test")
-//       .put_object("nested", [](JsonBuilder& b) { b.put("inner", "value").put("number", 123); })
-//       .put_array("items", [](JsonBuilder& b) { b.add(1).add(2).add(3); });
-//
-//   std::string json = builder.build(true); // pretty print
-//   KJ_EXPECT(!json.empty()); // Check that build() returns non-empty string
-//
-//   auto doc = JsonDocument::parse(json);
-//
-//   KJ_EXPECT(doc.root()["nested"]["inner"].get_string() == "value");
-//   KJ_EXPECT(doc.root()["nested"]["number"].get_int() == 123);
-//   KJ_EXPECT(doc.root()["items"].size() == 3);
-// }
+KJ_TEST("JSON: Build nested structure") {
+  auto builder = JsonBuilder::object();
+  builder.put("name"_kj, "test"_kj)
+      .put_object("nested"_kj,
+                  [](JsonBuilder& b) { b.put("inner"_kj, "value"_kj).put("number"_kj, 123); })
+      .put_array("items"_kj, [](JsonBuilder& b) { b.add(1).add(2).add(3); });
+
+  kj::String json = builder.build(true);
+  KJ_EXPECT(json.size() > 0);
+
+  auto doc = JsonDocument::parse(json);
+
+  KJ_EXPECT(doc.root()["nested"_kj]["inner"_kj].get_string() == "value"_kj);
+  KJ_EXPECT(doc.root()["nested"_kj]["number"_kj].get_int() == 123);
+  KJ_EXPECT(doc.root()["items"_kj].size() == 3);
+}
 
 // Test type checking
 KJ_TEST("JSON: Type checking") {
-  std::string json_str = R"({
+  kj::StringPtr json_str = R"({
         "bool_val": true,
         "int_val": 42,
         "double_val": 3.14,
@@ -134,27 +140,27 @@ KJ_TEST("JSON: Type checking") {
         "null_val": null,
         "array_val": [1, 2, 3],
         "object_val": {"key": "value"}
-    })";
+    })"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  KJ_EXPECT(root["bool_val"].is_bool());
-  KJ_EXPECT(root["int_val"].is_int());
-  KJ_EXPECT(root["double_val"].is_real());
-  KJ_EXPECT(root["string_val"].is_string());
-  KJ_EXPECT(root["null_val"].is_null());
-  KJ_EXPECT(root["array_val"].is_array());
-  KJ_EXPECT(root["object_val"].is_object());
+  KJ_EXPECT(root["bool_val"_kj].is_bool());
+  KJ_EXPECT(root["int_val"_kj].is_int());
+  KJ_EXPECT(root["double_val"_kj].is_real());
+  KJ_EXPECT(root["string_val"_kj].is_string());
+  KJ_EXPECT(root["null_val"_kj].is_null());
+  KJ_EXPECT(root["array_val"_kj].is_array());
+  KJ_EXPECT(root["object_val"_kj].is_object());
 }
 
 // Test keys extraction
 KJ_TEST("JSON: Keys extraction") {
-  std::string json_str = R"({
+  kj::StringPtr json_str = R"({
         "key1": "value1",
         "key2": "value2",
         "key3": "value3"
-    })";
+    })"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
@@ -162,37 +168,52 @@ KJ_TEST("JSON: Keys extraction") {
   auto keys = root.keys();
   KJ_EXPECT(keys.size() == 3);
 
-  std::sort(keys.begin(), keys.end());
-  KJ_EXPECT(keys[0] == "key1");
-  KJ_EXPECT(keys[1] == "key2");
-  KJ_EXPECT(keys[2] == "key3");
+  bool saw1 = false;
+  bool saw2 = false;
+  bool saw3 = false;
+  for (auto& k : keys) {
+    kj::StringPtr kp = k;
+    if (kp == "key1"_kj) {
+      saw1 = true;
+    } else if (kp == "key2"_kj) {
+      saw2 = true;
+    } else if (kp == "key3"_kj) {
+      saw3 = true;
+    }
+  }
+  KJ_EXPECT(saw1);
+  KJ_EXPECT(saw2);
+  KJ_EXPECT(saw3);
 }
 
 // Test for_each_object
 KJ_TEST("JSON: For each object") {
-  std::string json_str = R"({
+  kj::StringPtr json_str = R"({
         "a": 1,
         "b": 2,
         "c": 3
-    })";
+    })"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
   int sum = 0;
-  root.for_each_object([&sum](const std::string&, const JsonValue& val) { sum += val.get_int(); });
+  root.for_each_object([&sum](kj::StringPtr, const JsonValue& val) { sum += val.get_int(); });
   KJ_EXPECT(sum == 6);
 }
 
-// Test string_view for zero-copy access
-KJ_TEST("JSON: String view access") {
-  std::string json_str = R"({"text": "Hello, World!"})";
+KJ_TEST("JSON: String ptr access") {
+  kj::StringPtr json_str = R"({"text": "Hello, World!"})"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  std::string_view sv = root["text"].get_string_view();
-  KJ_EXPECT(sv == "Hello, World!");
+  KJ_IF_SOME(sv, root["text"_kj].get_string_ptr()) {
+    KJ_EXPECT(sv == "Hello, World!"_kj);
+  }
+  else {
+    KJ_FAIL_EXPECT("text not found");
+  }
 }
 
 // Test JSON utilities
@@ -205,11 +226,13 @@ KJ_TEST("JSON: Validation") {
 
 // Test JSON errors
 KJ_TEST("JSON: Parse error handling") {
-  // Parse errors throw exceptions
+  // Parse errors throw kj::Exception
   bool threw = false;
-  try {
-    auto doc = JsonDocument::parse("{ invalid json }");
-  } catch (const std::runtime_error&) {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto doc = JsonDocument::parse("{ invalid json }");
+               (void)doc;
+             })) {
+    (void)exception;
     threw = true;
   }
   KJ_EXPECT(threw);
@@ -217,42 +240,53 @@ KJ_TEST("JSON: Parse error handling") {
 
 // Test JSON copying
 KJ_TEST("JSON: Copy values") {
-  std::string json_str = R"({"key1": "value1", "key2": "value2"})";
+  kj::StringPtr json_str = R"({"key1": "value1", "key2": "value2"})"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  auto val1 = root["key1"];
+  auto val1 = root["key1"_kj];
   auto val2 = val1; // Test copy assignment
 
-  KJ_EXPECT(val2.get_string() == "value1");
+  KJ_EXPECT(val2.get_string() == "value1"_kj);
 }
 
 // Test JSON null handling
 KJ_TEST("JSON: Null handling") {
-  std::string json_str = R"({"null_key": null, "string_key": "value"})";
+  kj::StringPtr json_str = R"({"null_key": null, "string_key": "value"})"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  KJ_EXPECT(root["null_key"].is_null());
-  KJ_EXPECT(!root["string_key"].is_null());
-  KJ_EXPECT(root["string_key"].is_string());
+  KJ_EXPECT(root["null_key"_kj].is_null());
+  KJ_EXPECT(!root["string_key"_kj].is_null());
+  KJ_EXPECT(root["string_key"_kj].is_string());
 }
 
 // Test JSON pretty printing
 KJ_TEST("JSON: Pretty printing") {
   auto builder = JsonBuilder::object();
-  builder.put("a", 1).put("b", 2).put("c", 3);
+  builder.put("a"_kj, 1).put("b"_kj, 2).put("c"_kj, 3);
 
-  std::string json = builder.build(true); // pretty
-  KJ_EXPECT(json.find("\n") != std::string::npos);
-  KJ_EXPECT(json.find("  ") != std::string::npos);
+  auto json = builder.build(true);
+  kj::StringPtr jp = json;
+  bool hasNewline = false;
+  bool hasDoubleSpace = false;
+  for (size_t i = 0; i < jp.size(); ++i) {
+    if (jp[i] == '\n') {
+      hasNewline = true;
+    }
+    if (i + 1 < jp.size() && jp[i] == ' ' && jp[i + 1] == ' ') {
+      hasDoubleSpace = true;
+    }
+  }
+  KJ_EXPECT(hasNewline);
+  KJ_EXPECT(hasDoubleSpace);
 }
 
 // Test JSON array iteration
 KJ_TEST("JSON: Array iteration") {
-  std::string json_str = R"([1, 2, 3, 4])";
+  kj::StringPtr json_str = R"([1, 2, 3, 4])"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
@@ -265,13 +299,13 @@ KJ_TEST("JSON: Array iteration") {
 
 // Test JSON object iteration
 KJ_TEST("JSON: Object iteration") {
-  std::string json_str = R"({"a": 1, "b": 2, "c": 3})";
+  kj::StringPtr json_str = R"({"a": 1, "b": 2, "c": 3})"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
   int count = 0;
-  root.for_each_object([&count](const std::string&, const JsonValue&) { ++count; });
+  root.for_each_object([&count](kj::StringPtr, const JsonValue&) { ++count; });
 
   KJ_EXPECT(count == 3);
 }
@@ -287,12 +321,14 @@ KJ_TEST("JSON: Value equality") {
 
   KJ_IF_SOME(val1, val1_opt) {
     KJ_EXPECT(val1.get_int() == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("val1 not found");
   }
   KJ_IF_SOME(val2, val2_opt) {
     KJ_EXPECT(val2.get_int() == 42);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("val2 not found");
   }
 }
@@ -310,15 +346,15 @@ KJ_TEST("JSON: Empty handling") {
 
 // Test JSON nested arrays
 KJ_TEST("JSON: Nested arrays") {
-  std::string json_str = R"({"arrays": [[1, 2], [3, 4]]})";
+  kj::StringPtr json_str = R"({"arrays": [[1, 2], [3, 4]]})"_kj;
 
   auto doc = JsonDocument::parse(json_str);
   auto root = doc.root();
 
-  KJ_EXPECT(root["arrays"].is_array());
-  KJ_EXPECT(root["arrays"].size() == 2);
-  KJ_EXPECT(root["arrays"][0].is_array());
-  KJ_EXPECT(root["arrays"][0].size() == 2);
+  KJ_EXPECT(root["arrays"_kj].is_array());
+  KJ_EXPECT(root["arrays"_kj].size() == 2);
+  KJ_EXPECT(root["arrays"_kj][0].is_array());
+  KJ_EXPECT(root["arrays"_kj][0].size() == 2);
 }
 
 } // namespace

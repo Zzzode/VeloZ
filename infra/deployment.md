@@ -91,15 +91,50 @@ docker run -d \
 ## Kubernetes Deployment
 
 ### Prerequisites
-- Kubernetes 1.20+
+- Kubernetes 1.24+
 - kubectl configured
-- Helm 3.0+ (optional)
+- Helm 3.10+
 
-### Deploy to Kubernetes
+### Deploy with Helm (Recommended)
+
+```bash
+# Add namespace with resource quotas
+kubectl apply -f infra/k8s/namespace.yaml
+
+# Deploy using Helm with environment-specific values
+# Development
+helm install veloz ./infra/helm/veloz \
+  -f ./infra/helm/veloz/environments/values-dev.yaml \
+  -n veloz
+
+# Staging
+helm install veloz ./infra/helm/veloz \
+  -f ./infra/helm/veloz/environments/values-staging.yaml \
+  -n veloz
+
+# Production
+helm install veloz ./infra/helm/veloz \
+  -f ./infra/helm/veloz/environments/values-production.yaml \
+  -n veloz-prod
+
+# Check deployment status
+helm status veloz -n veloz
+kubectl get pods -n veloz
+
+# Upgrade deployment
+helm upgrade veloz ./infra/helm/veloz \
+  -f ./infra/helm/veloz/environments/values-staging.yaml \
+  -n veloz
+
+# Rollback if needed
+helm rollback veloz 1 -n veloz
+```
+
+### Deploy with kubectl (Basic)
 
 ```bash
 # Create namespace
-kubectl create namespace veloz
+kubectl apply -f infra/k8s/namespace.yaml
 
 # Apply configuration
 kubectl apply -f infra/k8s/deployment.yaml -n veloz
@@ -117,13 +152,70 @@ kubectl port-forward service/veloz-engine 8080:8080 -n veloz
 
 ### Secrets Management
 
-Update the Kubernetes secret with your actual API keys:
+For production, use HashiCorp Vault with the Vault Secrets Operator:
+
+```bash
+# Install Vault Secrets Operator
+helm repo add hashicorp https://helm.releases.hashicorp.com
+helm install vault-secrets-operator hashicorp/vault-secrets-operator -n vault-secrets-operator-system --create-namespace
+
+# Configure VaultAuth
+kubectl apply -f - <<EOF
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: veloz-vault-auth
+  namespace: veloz
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: veloz
+    serviceAccount: veloz
+EOF
+
+# Create VaultStaticSecret
+kubectl apply -f - <<EOF
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: veloz-api-keys
+  namespace: veloz
+spec:
+  type: kv-v2
+  mount: secret
+  path: veloz/api-keys
+  destination:
+    name: veloz-api-keys
+    create: true
+  refreshAfter: 30s
+EOF
+```
+
+For development/testing, use inline secrets:
 ```bash
 kubectl create secret generic veloz-api-keys \
   --namespace veloz \
   --from-literal=binance-api-key="YOUR_API_KEY" \
   --from-literal=binance-api-secret="YOUR_API_SECRET"
 ```
+
+### Helm Chart Features
+
+The VeloZ Helm chart includes:
+
+| Feature | Description |
+|---------|-------------|
+| **Deployment** | Configurable replicas, resources, probes |
+| **Service** | ClusterIP, NodePort, or LoadBalancer |
+| **Ingress** | NGINX ingress with TLS support |
+| **HPA** | Horizontal Pod Autoscaler with CPU/memory metrics |
+| **PDB** | Pod Disruption Budget for availability |
+| **NetworkPolicy** | Ingress/egress traffic control |
+| **ServiceMonitor** | Prometheus Operator integration |
+| **PrometheusRule** | Alerting rules for critical metrics |
+| **RBAC** | Role and RoleBinding for least privilege |
+| **PVC** | Persistent storage for logs and state |
 
 ## Configuration
 

@@ -1,15 +1,12 @@
 #include "veloz/core/json.h"
 
-#include "veloz/core/logger.h"
-
-#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/exception.h>
 #include <kj/memory.h>
-#include <sstream>
-#include <stdexcept>
-#include <string>
+#include <kj/string.h>
 
 // Include yyjson C header
 #include <yyjson.h>
@@ -80,34 +77,36 @@ JsonDocument& JsonDocument::operator=(JsonDocument&& other) noexcept {
   return *this;
 }
 
-JsonDocument JsonDocument::parse(const std::string& str) {
+JsonDocument JsonDocument::parse(kj::StringPtr str) {
   yyjson_read_err err;
-  yyjson_doc* doc = yyjson_read_opts(const_cast<char*>(str.data()), str.size(), 0, nullptr, &err);
+  yyjson_doc* doc = yyjson_read_opts(const_cast<char*>(str.cStr()), static_cast<size_t>(str.size()),
+                                     0, nullptr, &err);
 
   if (!doc) {
-    throw std::runtime_error(std::format("JSON parse error at position {}: {}", err.pos,
-                                         err.msg ? err.msg : "unknown error"));
+    KJ_FAIL_REQUIRE("JSON parse error", err.pos, err.msg ? err.msg : "unknown error");
   }
 
   return JsonDocument(doc);
 }
 
-JsonDocument JsonDocument::parse_file(const std::string& path) {
-  // Read file content
-  std::ifstream file(path, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    throw std::runtime_error(std::format("Failed to open file: {}", path));
-  }
+JsonDocument JsonDocument::parse_file(const kj::Path& path) {
+  auto pathStr = path.toString();
+  std::ifstream file(pathStr.cStr(), std::ios::binary | std::ios::ate);
+  KJ_REQUIRE(file.is_open(), "Failed to open file", pathStr.cStr());
 
   std::streamsize size = file.tellg();
+  KJ_REQUIRE(size >= 0, "Failed to get file size", pathStr.cStr());
   file.seekg(0, std::ios::beg);
 
-  std::string content(size, '\0');
-  if (!file.read(content.data(), size)) {
-    throw std::runtime_error(std::format("Failed to read file: {}", path));
-  }
+  // Allocate one extra byte for NUL terminator (required by kj::StringPtr)
+  auto buf = kj::heapArray<char>(static_cast<size_t>(size) + 1);
+  file.read(buf.begin(), size);
+  KJ_REQUIRE(file.good(), "Failed to read file", pathStr.cStr());
 
-  return parse(content);
+  // Add NUL terminator so kj::StringPtr can safely wrap the buffer
+  buf[static_cast<size_t>(size)] = '\0';
+
+  return parse(kj::StringPtr(buf.begin(), static_cast<size_t>(size)));
 }
 
 JsonValue JsonDocument::root() const {
@@ -216,21 +215,28 @@ double JsonValue::get_double(double default_val) const {
   return static_cast<double>(yyjson_get_uint(val_));
 }
 
-std::string JsonValue::get_string(const std::string& default_val) const {
+kj::String JsonValue::get_string(kj::StringPtr default_val) const {
   if (!is_string()) {
-    return default_val;
-  }
-  const char* str = yyjson_get_str(val_);
-  return str ? str : default_val;
-}
-
-std::string_view JsonValue::get_string_view(const std::string_view& default_val) const {
-  if (!is_string()) {
-    return default_val;
+    return kj::str(default_val);
   }
   const char* str = yyjson_get_str(val_);
   size_t len = yyjson_get_len(val_);
-  return str ? std::string_view(str, len) : default_val;
+  if (str == nullptr) {
+    return kj::str(default_val);
+  }
+  return kj::heapString(str, len);
+}
+
+kj::Maybe<kj::StringPtr> JsonValue::get_string_ptr() const {
+  if (!is_string()) {
+    return kj::none;
+  }
+  const char* str = yyjson_get_str(val_);
+  if (str == nullptr) {
+    return kj::none;
+  }
+  size_t len = yyjson_get_len(val_);
+  return kj::StringPtr(str, len);
 }
 
 size_t JsonValue::size() const {
@@ -250,11 +256,11 @@ JsonValue JsonValue::operator[](size_t index) const {
   return JsonValue(yyjson_arr_get(val_, index));
 }
 
-JsonValue JsonValue::operator[](const std::string& key) const {
+JsonValue JsonValue::operator[](kj::StringPtr key) const {
   if (!is_object()) {
     return JsonValue(nullptr);
   }
-  return JsonValue(yyjson_obj_get(val_, key.c_str()));
+  return JsonValue(yyjson_obj_getn(val_, key.cStr(), static_cast<size_t>(key.size())));
 }
 
 JsonValue JsonValue::operator[](const char* key) const {
@@ -264,18 +270,18 @@ JsonValue JsonValue::operator[](const char* key) const {
   return JsonValue(yyjson_obj_get(val_, key));
 }
 
-kj::Maybe<JsonValue> JsonValue::get(const std::string& key) const {
+kj::Maybe<JsonValue> JsonValue::get(kj::StringPtr key) const {
   if (!is_object()) {
     return kj::none;
   }
-  yyjson_val* child = yyjson_obj_get(val_, key.c_str());
+  yyjson_val* child = yyjson_obj_getn(val_, key.cStr(), static_cast<size_t>(key.size()));
   if (!child) {
     return kj::none;
   }
   return JsonValue(child);
 }
 
-void JsonValue::for_each_array(std::function<void(const JsonValue&)> callback) const {
+void JsonValue::for_each_array(kj::Function<void(const JsonValue&)> callback) const {
   if (!is_array()) {
     return;
   }
@@ -287,7 +293,7 @@ void JsonValue::for_each_array(std::function<void(const JsonValue&)> callback) c
 }
 
 void JsonValue::for_each_object(
-    std::function<void(const std::string&, const JsonValue&)> callback) const {
+    kj::Function<void(kj::StringPtr, const JsonValue&)> callback) const {
   if (!is_object()) {
     return;
   }
@@ -296,13 +302,14 @@ void JsonValue::for_each_object(
   yyjson_val* key;
   while ((key = yyjson_obj_iter_next(&iter))) {
     yyjson_val* val = yyjson_obj_iter_get_val(key);
-    std::string k = JsonValue(key).get_string();
-    callback(k, JsonValue(val));
+    const char* k = yyjson_get_str(key);
+    size_t len = yyjson_get_len(key);
+    callback(kj::StringPtr(k, len), JsonValue(val));
   }
 }
 
-std::vector<std::string> JsonValue::keys() const {
-  std::vector<std::string> result;
+kj::Vector<kj::String> JsonValue::keys() const {
+  kj::Vector<kj::String> result;
   if (!is_object()) {
     return result;
   }
@@ -310,7 +317,9 @@ std::vector<std::string> JsonValue::keys() const {
   yyjson_obj_iter_init(val_, &iter);
   yyjson_val* key;
   while ((key = yyjson_obj_iter_next(&iter))) {
-    result.push_back(JsonValue(key).get_string());
+    const char* k = yyjson_get_str(key);
+    size_t len = yyjson_get_len(key);
+    result.add(kj::heapString(k, len));
   }
   return result;
 }
@@ -320,8 +329,8 @@ std::vector<std::string> JsonValue::keys() const {
 // ============================================================================
 
 struct JsonBuilder::Impl {
-  YyJsonMutDoc doc;           // RAII wrapper for yyjson_mut_doc*
-  YyJsonMutValView current;   // Non-owning view of current value
+  YyJsonMutDoc doc;         // RAII wrapper for yyjson_mut_doc*
+  YyJsonMutValView current; // Non-owning view of current value
   Type type;
   bool is_object; // true for object, false for array
 
@@ -356,91 +365,137 @@ JsonBuilder JsonBuilder::array() {
   return JsonBuilder(Type::Array);
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, const char* value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, const char* value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strcpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_strcpy(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, const std::string& value) {
-  return put(key, value.c_str());
-}
-
-JsonBuilder& JsonBuilder::put(const std::string& key, std::string_view value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, kj::StringPtr value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_strncpy(impl_->doc.get(), impl_->current.get(), key.c_str(), value.data(), value.size());
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val =
+        yyjson_mut_strncpy(impl_->doc.get(), value.cStr(), static_cast<size_t>(value.size()));
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, bool value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, bool value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_bool(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_bool(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, int value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, int value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_int(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_int(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, int64_t value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, int64_t value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_sint(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_sint(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, uint64_t value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, uint64_t value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_uint(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_uint(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, double value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, double value) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_real(impl_->doc.get(), impl_->current.get(), key.c_str(), value);
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_real(impl_->doc.get(), value);
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, std::nullptr_t) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, std::nullptr_t) {
   if (impl_->is_object) {
-    yyjson_mut_obj_add_null(impl_->doc.get(), impl_->current.get(), key.c_str());
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* val_val = yyjson_mut_null(impl_->doc.get());
+    if (key_val && val_val) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, val_val);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<int>& value) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, kj::ArrayPtr<const int> value) {
   if (impl_->is_object) {
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
     yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
-    for (int v : value) {
+    for (auto v : value) {
       yyjson_mut_arr_add_int(impl_->doc.get(), arr, v);
     }
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), arr);
-  }
-  return *this;
-}
-
-JsonBuilder& JsonBuilder::put(const std::string& key, const std::vector<std::string>& value) {
-  if (impl_->is_object) {
-    yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
-    for (const std::string& v : value) {
-      yyjson_mut_arr_add_strcpy(impl_->doc.get(), arr, v.c_str());
+    if (key_val && arr) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, arr);
     }
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), arr);
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put_object(const std::string& key,
-                                     std::function<void(JsonBuilder&)> builder) {
+JsonBuilder& JsonBuilder::put(kj::StringPtr key, kj::ArrayPtr<const kj::StringPtr> value) {
   if (impl_->is_object) {
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
+    yyjson_mut_val* arr = yyjson_mut_arr(impl_->doc.get());
+    for (auto v : value) {
+      yyjson_mut_arr_add_strncpy(impl_->doc.get(), arr, v.cStr(), static_cast<size_t>(v.size()));
+    }
+    if (key_val && arr) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, arr);
+    }
+  }
+  return *this;
+}
+
+JsonBuilder& JsonBuilder::put_object(kj::StringPtr key, kj::Function<void(JsonBuilder&)> builder) {
+  if (impl_->is_object) {
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
     yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc.get());
     // Save current state
     YyJsonMutValView saved_current = impl_->current;
@@ -452,14 +507,17 @@ JsonBuilder& JsonBuilder::put_object(const std::string& key,
     // Restore state and add nested object to parent
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), nested);
+    if (key_val && nested) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, nested);
+    }
   }
   return *this;
 }
 
-JsonBuilder& JsonBuilder::put_array(const std::string& key,
-                                    std::function<void(JsonBuilder&)> builder) {
+JsonBuilder& JsonBuilder::put_array(kj::StringPtr key, kj::Function<void(JsonBuilder&)> builder) {
   if (impl_->is_object) {
+    yyjson_mut_val* key_val =
+        yyjson_mut_strncpy(impl_->doc.get(), key.cStr(), static_cast<size_t>(key.size()));
     yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc.get());
     // Save current state
     YyJsonMutValView saved_current = impl_->current;
@@ -471,7 +529,9 @@ JsonBuilder& JsonBuilder::put_array(const std::string& key,
     // Restore state and add nested array to parent
     impl_->current = saved_current;
     impl_->is_object = saved_is_object;
-    yyjson_mut_obj_add_val(impl_->doc.get(), impl_->current.get(), key.c_str(), nested);
+    if (key_val && nested) {
+      yyjson_mut_obj_add(impl_->current.get(), key_val, nested);
+    }
   }
   return *this;
 }
@@ -483,13 +543,10 @@ JsonBuilder& JsonBuilder::add(const char* value) {
   return *this;
 }
 
-JsonBuilder& JsonBuilder::add(const std::string& value) {
-  return add(value.c_str());
-}
-
-JsonBuilder& JsonBuilder::add(std::string_view value) {
+JsonBuilder& JsonBuilder::add(kj::StringPtr value) {
   if (!impl_->is_object) {
-    yyjson_mut_arr_add_strncpy(impl_->doc.get(), impl_->current.get(), value.data(), value.size());
+    yyjson_mut_arr_add_strncpy(impl_->doc.get(), impl_->current.get(), value.cStr(),
+                               static_cast<size_t>(value.size()));
   }
   return *this;
 }
@@ -536,7 +593,7 @@ JsonBuilder& JsonBuilder::add(std::nullptr_t) {
   return *this;
 }
 
-JsonBuilder& JsonBuilder::add_object(std::function<void(JsonBuilder&)> builder) {
+JsonBuilder& JsonBuilder::add_object(kj::Function<void(JsonBuilder&)> builder) {
   if (!impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_obj(impl_->doc.get());
     // Save current state
@@ -554,7 +611,7 @@ JsonBuilder& JsonBuilder::add_object(std::function<void(JsonBuilder&)> builder) 
   return *this;
 }
 
-JsonBuilder& JsonBuilder::add_array(std::function<void(JsonBuilder&)> builder) {
+JsonBuilder& JsonBuilder::add_array(kj::Function<void(JsonBuilder&)> builder) {
   if (!impl_->is_object) {
     yyjson_mut_val* nested = yyjson_mut_arr(impl_->doc.get());
     // Save current state
@@ -572,12 +629,12 @@ JsonBuilder& JsonBuilder::add_array(std::function<void(JsonBuilder&)> builder) {
   return *this;
 }
 
-std::string JsonBuilder::build(bool pretty) const {
+kj::String JsonBuilder::build(bool pretty) const {
   if (!impl_->doc) {
-    return "";
+    return kj::str(""_kj);
   }
   if (!impl_->current) {
-    return "";
+    return kj::str(""_kj);
   }
   // Set the current value as the document root before writing
   yyjson_mut_doc_set_root(impl_->doc.get(), impl_->current.get());
@@ -586,10 +643,10 @@ std::string JsonBuilder::build(bool pretty) const {
   yyjson_write_err err;
   char* json = yyjson_mut_write_opts(impl_->doc.get(), flags, nullptr, &len, &err);
   if (json == nullptr) {
-    return "";
+    return kj::str(""_kj);
   }
-  std::string result(json, len);
-  free(json); // free memory allocated by yyjson_mut_write_opts
+  kj::String result = kj::heapString(json, len);
+  free(json);
   return result;
 }
 
@@ -599,29 +656,27 @@ std::string JsonBuilder::build(bool pretty) const {
 
 namespace json_utils {
 
-std::string escape_string(std::string_view str) {
+kj::String escape_string(kj::StringPtr str) {
   JsonBuilder builder = JsonBuilder::array();
   builder.add(str);
-  std::string json = builder.build();
-  // Remove surrounding brackets and quotes
-  if (json.size() >= 3 && json.front() == '[' && json.back() == ']') {
-    return json.substr(2, json.size() - 4); // remove [" and "]
+  auto json = builder.build();
+  kj::StringPtr jsonPtr = json;
+  if (jsonPtr.size() >= 3 && jsonPtr[0] == '[' && jsonPtr[jsonPtr.size() - 1] == ']') {
+    auto inner = jsonPtr.slice(2, jsonPtr.size() - 2);
+    return kj::heapString(inner.begin(), inner.size());
   }
-  return json;
+  return kj::heapString(jsonPtr.begin(), jsonPtr.size());
 }
 
-std::string unescape_string(std::string_view str) {
-  auto doc = JsonDocument::parse(std::string(str));
+kj::String unescape_string(kj::StringPtr str) {
+  auto doc = JsonDocument::parse(str);
   return doc.root().get_string();
 }
 
-bool is_valid_json(std::string_view str) {
-  try {
-    JsonDocument::parse(std::string(str));
-    return true;
-  } catch (...) {
-    return false;
-  }
+bool is_valid_json(kj::StringPtr str) {
+  kj::Maybe<kj::Exception> maybeException =
+      kj::runCatchingExceptions([&]() { JsonDocument::parse(str); });
+  return maybeException == kj::none;
 }
 
 } // namespace json_utils

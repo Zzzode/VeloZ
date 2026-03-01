@@ -9,7 +9,6 @@
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/time.h>
-#include <string> // std::string required for OpenSSL external API compatibility
 
 namespace kj {
 class TlsContext;
@@ -18,8 +17,7 @@ class TlsContext;
 namespace veloz::exec {
 
 // OKXAdapter uses KJ async I/O for HTTP operations.
-// std::string is still used for OpenSSL HMAC signature generation (external API requirement).
-// This is an exception to the KJ-first rule per CLAUDE.md guidelines.
+// HMAC signatures use kj::String interface through HmacSha256 wrapper.
 class OKXAdapter final : public ExchangeAdapter {
 public:
   // Constructor requires KJ async I/O context for async HTTP operations
@@ -60,9 +58,9 @@ public:
   // Synchronous versions for backward compatibility (blocks on async)
   kj::Maybe<double> get_current_price(const veloz::common::SymbolId& symbol);
   kj::Maybe<kj::Array<PriceLevel>> get_order_book(const veloz::common::SymbolId& symbol,
-                                                   int depth = 10);
-  kj::Maybe<kj::Array<TradeData>>
-  get_recent_trades(const veloz::common::SymbolId& symbol, int limit = 500);
+                                                  int depth = 10);
+  kj::Maybe<kj::Array<TradeData>> get_recent_trades(const veloz::common::SymbolId& symbol,
+                                                    int limit = 500);
   kj::Maybe<double> get_account_balance(kj::StringPtr asset);
 
   // Configuration
@@ -79,17 +77,16 @@ private:
   kj::Promise<kj::Own<kj::HttpClient>> get_http_client();
 
   // Helper methods
-  // OpenSSL is used for HMAC-SHA256 signature generation - this is required for OKX API
-  // authentication. KJ does not provide HMAC functionality, so we use OpenSSL (external API).
-  std::string build_signature(const std::string& timestamp, const std::string& method,
-                              const std::string& request_path, const std::string& body = "");
+  // Build HMAC signature using KJ string interface via HmacSha256 wrapper
+  kj::String build_signature(kj::StringPtr timestamp, kj::StringPtr method,
+                             kj::StringPtr request_path, kj::StringPtr body = ""_kj);
   kj::String format_symbol(const veloz::common::SymbolId& symbol);
   kj::StringPtr order_side_to_string(OrderSide side);
   kj::StringPtr order_type_to_string(OrderType type);
   OrderStatus parse_order_status(kj::StringPtr status_str);
 
   // Get current timestamp in ISO 8601 format
-  std::string get_timestamp_iso() const;
+  kj::String get_timestamp_iso() const;
 
   // KJ async I/O context
   kj::AsyncIoContext& io_context_;
@@ -100,10 +97,10 @@ private:
   // TLS context for HTTPS connections
   kj::Own<kj::TlsContext> tls_context_;
 
-  // API credentials - std::string for OpenSSL HMAC compatibility
-  std::string api_key_;
-  std::string secret_key_;
-  std::string passphrase_;
+  // API credentials - kj::String for KJ compatibility
+  kj::String api_key_;
+  kj::String secret_key_;
+  kj::String passphrase_;
 
   // Connection status
   bool connected_;

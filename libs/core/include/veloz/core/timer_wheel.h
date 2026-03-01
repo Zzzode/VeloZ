@@ -27,8 +27,8 @@ struct TimerEntry {
   uint64_t id;
   uint64_t expiration_tick;
   TimerCallback callback;
-  TimerEntry* next{nullptr};  // Next entry in list (non-owning)
-  TimerEntry* prev{nullptr};  // Previous entry in list (non-owning)
+  TimerEntry* next{nullptr}; // Next entry in list (non-owning)
+  TimerEntry* prev{nullptr}; // Previous entry in list (non-owning)
 
   TimerEntry(uint64_t id_, uint64_t exp_tick, TimerCallback&& cb)
       : id(id_), expiration_tick(exp_tick), callback(kj::mv(cb)) {}

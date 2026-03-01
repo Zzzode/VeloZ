@@ -4,16 +4,12 @@
 #include "veloz/core/logger.h"
 
 // std library includes with justifications
-#include <algorithm>  // std::sort, std::accumulate - standard algorithms (no KJ equivalent)
-#include <cmath>      // std::abs, std::sqrt, std::min, std::max - standard C++ math (no KJ equivalent)
-#include <format>     // std::format - C++20 formatting (no KJ equivalent)
-#include <functional> // std::function - for recursive lambda
-#include <iomanip>    // std::fixed, std::setprecision - formatting (no KJ equivalent)
-#include <limits>     // std::numeric_limits - numeric limits (no KJ equivalent)
-#include <numeric>    // std::accumulate - standard algorithm (no KJ equivalent)
-#include <random>     // std::random_device, std::mt19937 - KJ has no RNG
-#include <sstream>    // std::ostringstream - string building (no KJ equivalent)
-#include <vector>     // std::vector - used with std::sort (KJ Vector lacks iterator compatibility)
+#include <algorithm> // std::sort - KJ Vector lacks iterator compatibility for std::sort
+#include <cmath>   // std::abs, std::sqrt, std::min, std::max - standard C++ math (no KJ equivalent)
+#include <format>  // std::format - needed for width/precision specifiers (kj::str lacks this)
+#include <limits>  // std::numeric_limits - numeric limits (no KJ equivalent)
+#include <numeric> // std::accumulate - standard algorithm (no KJ equivalent)
+#include <random>  // std::random_device, std::mt19937 - KJ has no RNG
 
 // KJ library includes
 #include <kj/common.h>
@@ -28,18 +24,20 @@ namespace veloz::backtest {
 
 // Helper function to format parameters for logging (kj::TreeMap version)
 static kj::String format_parameters(const kj::TreeMap<kj::String, double>& params) {
-  std::ostringstream oss;
-  oss << "{";
+  kj::Vector<kj::String> parts;
+  parts.add(kj::str("{"));
   bool first = true;
   // kj::TreeMap iteration uses entry with .key and .value
   for (const auto& entry : params) {
-    if (!first)
-      oss << ", ";
-    oss << entry.key.cStr() << "=" << std::fixed << std::setprecision(4) << entry.value;
+    if (!first) {
+      parts.add(kj::str(", "));
+    }
+    // Use std::format for width specifiers - kj::str() doesn't support precision formatting
+    parts.add(kj::str(entry.key, "=", std::format("{:.4f}", entry.value).c_str()));
     first = false;
   }
-  oss << "}";
-  return kj::str(oss.str().c_str());
+  parts.add(kj::str("}"));
+  return kj::strArray(parts, "");
 }
 
 // GridSearchOptimizer implementation
@@ -67,7 +65,7 @@ GridSearchOptimizer::GridSearchOptimizer() : impl_(kj::heap<Impl>()) {}
 GridSearchOptimizer::~GridSearchOptimizer() noexcept {}
 
 bool GridSearchOptimizer::initialize(const BacktestConfig& config) {
-  impl_->logger->info(std::format("Initializing grid search optimizer"));
+  impl_->logger->info("Initializing grid search optimizer");
   impl_->config.strategy_name = kj::str(config.strategy_name);
   impl_->config.symbol = kj::str(config.symbol);
   impl_->config.start_time = config.start_time;
@@ -75,7 +73,10 @@ bool GridSearchOptimizer::initialize(const BacktestConfig& config) {
   impl_->config.initial_balance = config.initial_balance;
   impl_->config.risk_per_trade = config.risk_per_trade;
   impl_->config.max_position_size = config.max_position_size;
-  impl_->config.strategy_parameters = config.strategy_parameters;
+  impl_->config.strategy_parameters.clear();
+  for (const auto& entry : config.strategy_parameters) {
+    impl_->config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+  }
   impl_->config.data_source = kj::str(config.data_source);
   impl_->config.data_type = kj::str(config.data_type);
   impl_->config.time_frame = kj::str(config.time_frame);
@@ -86,12 +87,12 @@ bool GridSearchOptimizer::initialize(const BacktestConfig& config) {
 
 bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) {
   if (impl_->parameter_ranges.size() == 0) {
-    impl_->logger->error(std::format("No parameter ranges defined"));
+    impl_->logger->error("No parameter ranges defined");
     return false;
   }
 
-  impl_->logger->info(std::format("Starting grid search optimization with {} parameters",
-                                  impl_->parameter_ranges.size()));
+  impl_->logger->info(kj::str("Starting grid search optimization with ",
+                              impl_->parameter_ranges.size(), " parameters"));
   impl_->results.clear();
   impl_->best_parameters.clear();
 
@@ -119,12 +120,12 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
     total_combinations *= entry.value.size();
   }
 
-  impl_->logger->info(std::format("Total parameter combinations to test: {}", total_combinations));
+  impl_->logger->info(kj::str("Total parameter combinations to test: ", total_combinations));
 
   // Limit iterations if necessary
   if (total_combinations > static_cast<size_t>(impl_->max_iterations)) {
-    impl_->logger->warn(std::format("Limiting to {} iterations due to max_iterations setting",
-                                    impl_->max_iterations));
+    impl_->logger->warn(kj::str("Limiting to ", impl_->max_iterations,
+                                " iterations due to max_iterations setting"));
   }
 
   // Generate all parameter combinations using recursive iteration
@@ -135,8 +136,8 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
     param_names.add(kj::str(entry.key));
   }
 
-  std::function<void(size_t, kj::TreeMap<kj::String, double>&)> generate_combinations;
-  generate_combinations = [&](size_t index, kj::TreeMap<kj::String, double>& current) {
+  auto generate_combinations = [&](auto&& self, size_t index,
+                                   kj::TreeMap<kj::String, double>& current) -> void {
     if (index >= param_names.size()) {
       // Deep copy current to all_combinations
       kj::TreeMap<kj::String, double> copy;
@@ -152,7 +153,7 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
       for (size_t i = 0; i < values_ref.size(); ++i) {
         double val = values_ref[i];
         current.upsert(kj::str(param_name), val);
-        generate_combinations(index + 1, current);
+        self(self, index + 1, current);
 
         if (all_combinations.size() >= static_cast<size_t>(impl_->max_iterations)) {
           return;
@@ -162,9 +163,9 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
   };
 
   kj::TreeMap<kj::String, double> initial_params;
-  generate_combinations(0, initial_params);
+  generate_combinations(generate_combinations, 0, initial_params);
 
-  impl_->logger->info(std::format("Generated {} parameter combinations", all_combinations.size()));
+  impl_->logger->info(kj::str("Generated ", all_combinations.size(), " parameter combinations"));
 
   // Run backtest for each combination
   BacktestEngine engine;
@@ -183,13 +184,12 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
     test_config.data_source = kj::str(impl_->config.data_source);
     test_config.data_type = kj::str(impl_->config.data_type);
     test_config.time_frame = kj::str(impl_->config.time_frame);
-    // Convert kj::TreeMap to std::map for BacktestConfig compatibility
     for (const auto& entry : parameters) {
-      test_config.strategy_parameters[std::string(entry.key.cStr())] = entry.value;
+      test_config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
     }
 
     impl_->logger->info(
-        std::format("Running backtest with parameters: {}", format_parameters(parameters).cStr()));
+        kj::str("Running backtest with parameters: ", format_parameters(parameters)));
 
     if (engine.initialize(test_config)) {
       engine.set_strategy(strategy.addRef());
@@ -205,12 +205,15 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
         impl_->results.add(kj::mv(result));
 
         completed++;
-        impl_->logger->info(std::format(
-            "Completed {}/{} - Return: {:.2f}%, Sharpe: {:.2f}", completed, all_combinations.size(),
-            impl_->results.back().total_return * 100.0, impl_->results.back().sharpe_ratio));
+        // Use std::format for precision formatting - kj::str() doesn't support {:.2f}
+        auto return_str = std::format("{:.2f}", impl_->results.back().total_return * 100.0);
+        auto sharpe_str = std::format("{:.2f}", impl_->results.back().sharpe_ratio);
+        impl_->logger->info(kj::str("Completed ", completed, "/", all_combinations.size(),
+                                    " - Return: ", return_str.c_str(),
+                                    "%, Sharpe: ", sharpe_str.c_str()));
       } else {
-        impl_->logger->error(std::format("Backtest failed for parameters: {}",
-                                         format_parameters(parameters).cStr()));
+        impl_->logger->error(
+            kj::str("Backtest failed for parameters: ", format_parameters(parameters)));
       }
     }
 
@@ -246,13 +249,15 @@ bool GridSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) 
       impl_->best_parameters.insert(kj::str(entry.key), entry.value);
     }
 
-    impl_->logger->info(std::format("Best parameters found: {} with {}: {:.4f}",
-                                    format_parameters(impl_->best_parameters).cStr(),
-                                    impl_->optimization_target.cStr(), best_value));
+    // Use std::format for precision formatting - kj::str() doesn't support {:.4f}
+    auto best_value_str = std::format("{:.4f}", best_value);
+    impl_->logger->info(
+        kj::str("Best parameters found: ", format_parameters(impl_->best_parameters), " with ",
+                impl_->optimization_target, ": ", best_value_str.c_str()));
   }
 
-  impl_->logger->info(std::format("Grid search optimization completed. Tested {} combinations.",
-                                  impl_->results.size()));
+  impl_->logger->info(kj::str("Grid search optimization completed. Tested ", impl_->results.size(),
+                              " combinations."));
   return true;
 }
 
@@ -440,9 +445,8 @@ struct GeneticAlgorithmOptimizer::Impl {
     test_config.data_source = kj::str(config.data_source);
     test_config.data_type = kj::str(config.data_type);
     test_config.time_frame = kj::str(config.time_frame);
-    // Convert kj::TreeMap to std::map for BacktestConfig compatibility
     for (const auto& entry : ind.parameters) {
-      test_config.strategy_parameters[std::string(entry.key.cStr())] = entry.value;
+      test_config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
     }
 
     if (!engine.initialize(test_config)) {
@@ -488,7 +492,7 @@ struct GeneticAlgorithmOptimizer::Impl {
   }
 
   // Tournament selection
-  Individual& tournament_select(std::vector<Individual>& population) {
+  Individual& tournament_select(kj::Vector<Individual>& population) {
     std::uniform_int_distribution<size_t> dist(0, population.size() - 1);
 
     size_t best_idx = dist(rng);
@@ -593,7 +597,7 @@ GeneticAlgorithmOptimizer::GeneticAlgorithmOptimizer() : impl_(kj::heap<Impl>())
 GeneticAlgorithmOptimizer::~GeneticAlgorithmOptimizer() noexcept {}
 
 bool GeneticAlgorithmOptimizer::initialize(const BacktestConfig& config) {
-  impl_->logger->info(std::format("Initializing genetic algorithm optimizer"));
+  impl_->logger->info("Initializing genetic algorithm optimizer");
   impl_->config.strategy_name = kj::str(config.strategy_name);
   impl_->config.symbol = kj::str(config.symbol);
   impl_->config.start_time = config.start_time;
@@ -601,7 +605,10 @@ bool GeneticAlgorithmOptimizer::initialize(const BacktestConfig& config) {
   impl_->config.initial_balance = config.initial_balance;
   impl_->config.risk_per_trade = config.risk_per_trade;
   impl_->config.max_position_size = config.max_position_size;
-  impl_->config.strategy_parameters = config.strategy_parameters;
+  impl_->config.strategy_parameters.clear();
+  for (const auto& entry : config.strategy_parameters) {
+    impl_->config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+  }
   impl_->config.data_source = kj::str(config.data_source);
   impl_->config.data_type = kj::str(config.data_type);
   impl_->config.time_frame = kj::str(config.time_frame);
@@ -612,29 +619,31 @@ bool GeneticAlgorithmOptimizer::initialize(const BacktestConfig& config) {
 
 bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) {
   if (impl_->parameter_ranges.size() == 0) {
-    impl_->logger->error(std::format("No parameter ranges defined"));
+    impl_->logger->error("No parameter ranges defined");
     return false;
   }
 
-  impl_->logger->info(std::format(
-      "Starting genetic algorithm optimization: pop_size={}, generations={}, mutation_rate={:.2f}",
-      impl_->population_size, impl_->max_iterations, impl_->mutation_rate));
+  // Use std::format for precision formatting - kj::str() doesn't support {:.2f}
+  auto mutation_str = std::format("{:.2f}", impl_->mutation_rate);
+  impl_->logger->info(
+      kj::str("Starting genetic algorithm optimization: pop_size=", impl_->population_size,
+              ", generations=", impl_->max_iterations, ", mutation_rate=", mutation_str.c_str()));
   impl_->results.clear();
   impl_->best_parameters.clear();
 
   BacktestEngine engine;
 
   // Initialize population
-  std::vector<Individual> population;
+  kj::Vector<Individual> population;
   population.reserve(impl_->population_size);
 
   impl_->logger->info(
-      std::format("Initializing population with {} individuals", impl_->population_size));
+      kj::str("Initializing population with ", impl_->population_size, " individuals"));
 
   for (int i = 0; i < impl_->population_size; ++i) {
     Individual ind = impl_->create_random_individual();
     impl_->evaluate_fitness(ind, engine, strategy);
-    population.push_back(kj::mv(ind));
+    population.add(kj::mv(ind));
   }
 
   // Track best individual
@@ -642,7 +651,7 @@ bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> stra
   best_overall.fitness = -std::numeric_limits<double>::infinity();
 
   // Track fitness history for convergence detection
-  std::vector<double> best_fitness_history;
+  kj::Vector<double> best_fitness_history;
 
   // Evolution loop
   for (int generation = 0; generation < impl_->max_iterations; ++generation) {
@@ -656,14 +665,19 @@ bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> stra
       best_overall.result.strategy_name = kj::str(impl_->config.strategy_name);
     }
 
-    best_fitness_history.push_back(population[0].fitness);
+    best_fitness_history.add(population[0].fitness);
 
-    impl_->logger->info(std::format(
-        "Generation {}/{}: Best fitness = {:.4f}, Avg fitness = {:.4f}", generation + 1,
-        impl_->max_iterations, population[0].fitness,
+    // Use std::format for precision formatting - kj::str() doesn't support {:.4f}
+    auto best_str = std::format("{:.4f}", population[0].fitness);
+    // std::accumulate needed for algorithm - no KJ equivalent
+    double avg_fitness =
         std::accumulate(population.begin(), population.end(), 0.0,
                         [](double sum, const Individual& ind) { return sum + ind.fitness; }) /
-            population.size()));
+        population.size();
+    auto avg_str = std::format("{:.4f}", avg_fitness);
+    impl_->logger->info(kj::str("Generation ", generation + 1, "/", impl_->max_iterations,
+                                ": Best fitness = ", best_str.c_str(),
+                                ", Avg fitness = ", avg_str.c_str()));
 
     // Check for convergence
     if (best_fitness_history.size() >= static_cast<size_t>(impl_->convergence_generations)) {
@@ -671,20 +685,23 @@ bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> stra
       double improvement = best_fitness_history.back() - best_fitness_history[start_idx];
 
       if (std::abs(improvement) < impl_->convergence_threshold) {
-        impl_->logger->info(std::format(
-            "Convergence detected at generation {} (improvement {:.6f} < threshold {:.6f})",
-            generation + 1, improvement, impl_->convergence_threshold));
+        // Use std::format for precision formatting - kj::str() doesn't support {:.6f}
+        auto imp_str = std::format("{:.6f}", improvement);
+        auto thresh_str = std::format("{:.6f}", impl_->convergence_threshold);
+        impl_->logger->info(kj::str("Convergence detected at generation ", generation + 1,
+                                    " (improvement ", imp_str.c_str(), " < threshold ",
+                                    thresh_str.c_str(), ")"));
         break;
       }
     }
 
     // Create next generation
-    std::vector<Individual> next_generation;
+    kj::Vector<Individual> next_generation;
     next_generation.reserve(impl_->population_size);
 
     // Elitism: preserve best individuals
     for (int i = 0; i < impl_->elite_count && i < static_cast<int>(population.size()); ++i) {
-      next_generation.push_back(population[i]);
+      next_generation.add(population[i]);
     }
 
     // Fill rest of population with offspring
@@ -712,7 +729,7 @@ bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> stra
       // Evaluate fitness
       impl_->evaluate_fitness(child, engine, strategy);
 
-      next_generation.push_back(kj::mv(child));
+      next_generation.add(kj::mv(child));
     }
 
     population = kj::mv(next_generation);
@@ -757,10 +774,11 @@ bool GeneticAlgorithmOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> stra
     }
   }
 
-  impl_->logger->info(std::format("Genetic algorithm optimization completed. Best {}: {:.4f}",
-                                  impl_->optimization_target.cStr(), best_overall.fitness));
-  impl_->logger->info(
-      std::format("Best parameters: {}", format_parameters(impl_->best_parameters).cStr()));
+  // Use std::format for precision formatting - kj::str() doesn't support {:.4f}
+  auto fitness_str = std::format("{:.4f}", best_overall.fitness);
+  impl_->logger->info(kj::str("Genetic algorithm optimization completed. Best ",
+                              impl_->optimization_target, ": ", fitness_str.c_str()));
+  impl_->logger->info(kj::str("Best parameters: ", format_parameters(impl_->best_parameters)));
 
   return true;
 }
@@ -838,6 +856,851 @@ void GeneticAlgorithmOptimizer::set_convergence_params(double threshold, int gen
 
 void GeneticAlgorithmOptimizer::set_data_source(kj::Rc<IDataSource> data_source) {
   impl_->data_source = kj::mv(data_source);
+}
+
+// ============================================================================
+// RandomSearchOptimizer implementation
+// ============================================================================
+
+struct RandomSearchOptimizer::Impl {
+  BacktestConfig config;
+  kj::TreeMap<kj::String, std::pair<double, double>> parameter_ranges;
+  kj::String optimization_target;
+  int max_iterations;
+  kj::Vector<BacktestResult> results;
+  kj::Vector<kj::TreeMap<kj::String, double>> all_parameters;
+  kj::TreeMap<kj::String, double> best_parameters;
+  kj::Own<veloz::core::Logger> logger;
+  kj::Rc<IDataSource> data_source;
+  kj::Maybe<kj::Function<void(const OptimizationProgress&)>> progress_callback;
+
+  std::mt19937 rng;
+
+  Impl()
+      : optimization_target(kj::str("sharpe")), max_iterations(100),
+        logger(kj::heap<veloz::core::Logger>()) {
+    std::random_device rd;
+    rng.seed(rd());
+  }
+
+  kj::TreeMap<kj::String, double> generate_random_params() {
+    kj::TreeMap<kj::String, double> params;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    for (const auto& entry : parameter_ranges) {
+      double min_val = entry.value.first;
+      double max_val = entry.value.second;
+      params.insert(kj::str(entry.key), min_val + dist(rng) * (max_val - min_val));
+    }
+    return params;
+  }
+};
+
+RandomSearchOptimizer::RandomSearchOptimizer() : impl_(kj::heap<Impl>()) {}
+
+RandomSearchOptimizer::~RandomSearchOptimizer() noexcept {}
+
+bool RandomSearchOptimizer::initialize(const BacktestConfig& config) {
+  impl_->logger->info("Initializing random search optimizer");
+  impl_->config.strategy_name = kj::str(config.strategy_name);
+  impl_->config.symbol = kj::str(config.symbol);
+  impl_->config.start_time = config.start_time;
+  impl_->config.end_time = config.end_time;
+  impl_->config.initial_balance = config.initial_balance;
+  impl_->config.risk_per_trade = config.risk_per_trade;
+  impl_->config.max_position_size = config.max_position_size;
+  impl_->config.strategy_parameters.clear();
+  for (const auto& entry : config.strategy_parameters) {
+    impl_->config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+  }
+  impl_->config.data_source = kj::str(config.data_source);
+  impl_->config.data_type = kj::str(config.data_type);
+  impl_->config.time_frame = kj::str(config.time_frame);
+  impl_->results.clear();
+  impl_->all_parameters.clear();
+  impl_->best_parameters.clear();
+  return true;
+}
+
+bool RandomSearchOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) {
+  if (impl_->parameter_ranges.size() == 0) {
+    impl_->logger->error("No parameter ranges defined");
+    return false;
+  }
+
+  impl_->logger->info(
+      kj::str("Starting random search optimization with ", impl_->max_iterations, " iterations"));
+  impl_->results.clear();
+  impl_->all_parameters.clear();
+  impl_->best_parameters.clear();
+
+  BacktestEngine engine;
+  double best_fitness = -std::numeric_limits<double>::infinity();
+
+  for (int iter = 0; iter < impl_->max_iterations; ++iter) {
+    auto params = impl_->generate_random_params();
+
+    BacktestConfig test_config;
+    test_config.strategy_name = kj::str(impl_->config.strategy_name);
+    test_config.symbol = kj::str(impl_->config.symbol);
+    test_config.start_time = impl_->config.start_time;
+    test_config.end_time = impl_->config.end_time;
+    test_config.initial_balance = impl_->config.initial_balance;
+    test_config.risk_per_trade = impl_->config.risk_per_trade;
+    test_config.max_position_size = impl_->config.max_position_size;
+    test_config.data_source = kj::str(impl_->config.data_source);
+    test_config.data_type = kj::str(impl_->config.data_type);
+    test_config.time_frame = kj::str(impl_->config.time_frame);
+    for (const auto& entry : params) {
+      test_config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+    }
+
+    double fitness = -std::numeric_limits<double>::infinity();
+
+    if (engine.initialize(test_config)) {
+      engine.set_strategy(strategy.addRef());
+      if (impl_->data_source.get() != nullptr) {
+        engine.set_data_source(impl_->data_source.addRef());
+      }
+
+      if (engine.run()) {
+        BacktestResult result = engine.get_result();
+        result.strategy_name = kj::str(impl_->config.strategy_name);
+
+        if (impl_->optimization_target == "sharpe"_kj) {
+          fitness = result.sharpe_ratio;
+        } else if (impl_->optimization_target == "return"_kj) {
+          fitness = result.total_return;
+        } else if (impl_->optimization_target == "win_rate"_kj) {
+          fitness = result.win_rate;
+        } else {
+          fitness = result.sharpe_ratio;
+        }
+
+        impl_->results.add(kj::mv(result));
+
+        // Deep copy params
+        kj::TreeMap<kj::String, double> params_copy;
+        for (const auto& e : params) {
+          params_copy.insert(kj::str(e.key), e.value);
+        }
+        impl_->all_parameters.add(kj::mv(params_copy));
+
+        if (fitness > best_fitness) {
+          best_fitness = fitness;
+          impl_->best_parameters.clear();
+          for (const auto& e : params) {
+            impl_->best_parameters.insert(kj::str(e.key), e.value);
+          }
+        }
+      }
+    }
+
+    engine.reset();
+
+    // Progress callback
+    KJ_IF_SOME(callback, impl_->progress_callback) {
+      OptimizationProgress progress;
+      progress.current_iteration = iter + 1;
+      progress.total_iterations = impl_->max_iterations;
+      progress.best_fitness = best_fitness;
+      progress.current_fitness = fitness;
+      progress.progress_fraction =
+          static_cast<double>(iter + 1) / static_cast<double>(impl_->max_iterations);
+      progress.status = kj::str("Iteration ", iter + 1, "/", impl_->max_iterations);
+      for (const auto& e : params) {
+        progress.current_parameters.insert(kj::str(e.key), e.value);
+      }
+      for (const auto& e : impl_->best_parameters) {
+        progress.best_parameters.insert(kj::str(e.key), e.value);
+      }
+      callback(progress);
+    }
+  }
+
+  auto best_str = std::format("{:.4f}", best_fitness);
+  impl_->logger->info(kj::str("Random search completed. Best ", impl_->optimization_target, ": ",
+                              best_str.c_str()));
+
+  return true;
+}
+
+kj::Vector<BacktestResult> RandomSearchOptimizer::get_results() const {
+  kj::Vector<BacktestResult> results;
+  for (const auto& result : impl_->results) {
+    BacktestResult copy;
+    copy.strategy_name = kj::str(result.strategy_name);
+    copy.symbol = kj::str(result.symbol);
+    copy.start_time = result.start_time;
+    copy.end_time = result.end_time;
+    copy.initial_balance = result.initial_balance;
+    copy.final_balance = result.final_balance;
+    copy.total_return = result.total_return;
+    copy.max_drawdown = result.max_drawdown;
+    copy.sharpe_ratio = result.sharpe_ratio;
+    copy.win_rate = result.win_rate;
+    copy.profit_factor = result.profit_factor;
+    copy.trade_count = result.trade_count;
+    copy.win_count = result.win_count;
+    copy.lose_count = result.lose_count;
+    copy.avg_win = result.avg_win;
+    copy.avg_lose = result.avg_lose;
+    results.add(kj::mv(copy));
+  }
+  return results;
+}
+
+const kj::TreeMap<kj::String, double>& RandomSearchOptimizer::get_best_parameters() const {
+  return impl_->best_parameters;
+}
+
+void RandomSearchOptimizer::set_parameter_ranges(
+    const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) {
+  impl_->parameter_ranges.clear();
+  for (const auto& entry : ranges) {
+    impl_->parameter_ranges.insert(kj::str(entry.key), entry.value);
+  }
+}
+
+void RandomSearchOptimizer::set_optimization_target(kj::StringPtr target) {
+  impl_->optimization_target = kj::str(target);
+}
+
+void RandomSearchOptimizer::set_max_iterations(int iterations) {
+  impl_->max_iterations = iterations;
+}
+
+void RandomSearchOptimizer::set_data_source(kj::Rc<IDataSource> data_source) {
+  impl_->data_source = kj::mv(data_source);
+}
+
+void RandomSearchOptimizer::set_progress_callback(
+    kj::Function<void(const OptimizationProgress&)> callback) {
+  impl_->progress_callback = kj::mv(callback);
+}
+
+kj::Vector<RankedResult> RandomSearchOptimizer::get_ranked_results(int top_n) const {
+  kj::Vector<RankedResult> ranked;
+
+  // Create pairs of (fitness, index) for sorting
+  std::vector<std::pair<double, size_t>> fitness_indices;
+  for (size_t i = 0; i < impl_->results.size(); ++i) {
+    double fitness;
+    if (impl_->optimization_target == "sharpe"_kj) {
+      fitness = impl_->results[i].sharpe_ratio;
+    } else if (impl_->optimization_target == "return"_kj) {
+      fitness = impl_->results[i].total_return;
+    } else if (impl_->optimization_target == "win_rate"_kj) {
+      fitness = impl_->results[i].win_rate;
+    } else {
+      fitness = impl_->results[i].sharpe_ratio;
+    }
+    fitness_indices.push_back({fitness, i});
+  }
+
+  // Sort by fitness descending
+  std::sort(fitness_indices.begin(), fitness_indices.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+
+  // Build ranked results
+  size_t count = (top_n > 0 && static_cast<size_t>(top_n) < fitness_indices.size())
+                     ? static_cast<size_t>(top_n)
+                     : fitness_indices.size();
+
+  for (size_t i = 0; i < count; ++i) {
+    size_t idx = fitness_indices[i].second;
+    RankedResult rr;
+    rr.rank = static_cast<int>(i + 1);
+    rr.fitness = fitness_indices[i].first;
+
+    // Copy parameters
+    if (idx < impl_->all_parameters.size()) {
+      for (const auto& e : impl_->all_parameters[idx]) {
+        rr.parameters.insert(kj::str(e.key), e.value);
+      }
+    }
+
+    // Copy result
+    const auto& result = impl_->results[idx];
+    rr.result.strategy_name = kj::str(result.strategy_name);
+    rr.result.symbol = kj::str(result.symbol);
+    rr.result.start_time = result.start_time;
+    rr.result.end_time = result.end_time;
+    rr.result.initial_balance = result.initial_balance;
+    rr.result.final_balance = result.final_balance;
+    rr.result.total_return = result.total_return;
+    rr.result.max_drawdown = result.max_drawdown;
+    rr.result.sharpe_ratio = result.sharpe_ratio;
+    rr.result.win_rate = result.win_rate;
+    rr.result.profit_factor = result.profit_factor;
+    rr.result.trade_count = result.trade_count;
+    rr.result.win_count = result.win_count;
+    rr.result.lose_count = result.lose_count;
+    rr.result.avg_win = result.avg_win;
+    rr.result.avg_lose = result.avg_lose;
+
+    ranked.add(kj::mv(rr));
+  }
+
+  return ranked;
+}
+
+// ============================================================================
+// BayesianOptimizer implementation
+// ============================================================================
+
+// Simple Gaussian Process implementation for Bayesian optimization
+struct GaussianProcess {
+  std::vector<std::vector<double>> X; // Observed points
+  std::vector<double> y;              // Observed values
+  double length_scale;
+  double noise;
+
+  GaussianProcess() : length_scale(1.0), noise(1e-6) {}
+
+  // RBF (Squared Exponential) kernel
+  double kernel(const std::vector<double>& x1, const std::vector<double>& x2) const {
+    double sq_dist = 0.0;
+    for (size_t i = 0; i < x1.size(); ++i) {
+      double diff = x1[i] - x2[i];
+      sq_dist += diff * diff;
+    }
+    return std::exp(-sq_dist / (2.0 * length_scale * length_scale));
+  }
+
+  // Predict mean and variance at a point
+  std::pair<double, double> predict(const std::vector<double>& x) const {
+    if (X.empty()) {
+      return {0.0, 1.0};
+    }
+
+    size_t n = X.size();
+
+    // Compute K(X, X) + noise * I
+    std::vector<std::vector<double>> K(n, std::vector<double>(n));
+    for (size_t i = 0; i < n; ++i) {
+      for (size_t j = 0; j < n; ++j) {
+        K[i][j] = kernel(X[i], X[j]);
+        if (i == j) {
+          K[i][j] += noise;
+        }
+      }
+    }
+
+    // Compute k(x, X)
+    std::vector<double> k_star(n);
+    for (size_t i = 0; i < n; ++i) {
+      k_star[i] = kernel(x, X[i]);
+    }
+
+    // Simple Cholesky-free approach using matrix inversion approximation
+    // For production, use proper linear algebra library
+
+    // Approximate K^-1 * y using iterative method
+    std::vector<double> alpha(n, 0.0);
+    for (int iter = 0; iter < 100; ++iter) {
+      for (size_t i = 0; i < n; ++i) {
+        double sum = 0.0;
+        for (size_t j = 0; j < n; ++j) {
+          if (i != j) {
+            sum += K[i][j] * alpha[j];
+          }
+        }
+        alpha[i] = (y[i] - sum) / K[i][i];
+      }
+    }
+
+    // Mean prediction
+    double mean = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+      mean += k_star[i] * alpha[i];
+    }
+
+    // Variance prediction (simplified)
+    double k_star_star = kernel(x, x);
+    double var = k_star_star;
+    for (size_t i = 0; i < n; ++i) {
+      var -= k_star[i] * k_star[i] / K[i][i]; // Simplified approximation
+    }
+    var = std::max(1e-6, var);
+
+    return {mean, std::sqrt(var)};
+  }
+
+  void add_observation(const std::vector<double>& x, double value) {
+    X.push_back(x);
+    y.push_back(value);
+  }
+};
+
+struct BayesianOptimizer::Impl {
+  BacktestConfig config;
+  kj::TreeMap<kj::String, std::pair<double, double>> parameter_ranges;
+  kj::Vector<kj::String> param_names;
+  kj::String optimization_target;
+  int max_iterations;
+  int initial_samples;
+  kj::String acquisition_function;
+  double kappa;
+  double xi;
+  kj::Vector<BacktestResult> results;
+  kj::Vector<kj::TreeMap<kj::String, double>> all_parameters;
+  kj::TreeMap<kj::String, double> best_parameters;
+  kj::Own<veloz::core::Logger> logger;
+  kj::Rc<IDataSource> data_source;
+  kj::Maybe<kj::Function<void(const OptimizationProgress&)>> progress_callback;
+
+  GaussianProcess gp;
+  std::mt19937 rng;
+  double best_observed;
+
+  Impl()
+      : optimization_target(kj::str("sharpe")), max_iterations(50), initial_samples(5),
+        acquisition_function(kj::str("ei")), kappa(2.576), xi(0.01),
+        logger(kj::heap<veloz::core::Logger>()),
+        best_observed(-std::numeric_limits<double>::infinity()) {
+    std::random_device rd;
+    rng.seed(rd());
+  }
+
+  std::vector<double> params_to_vector(const kj::TreeMap<kj::String, double>& params) {
+    std::vector<double> vec;
+    for (const auto& name : param_names) {
+      KJ_IF_SOME(val, params.find(name)) {
+        vec.push_back(val);
+      }
+      else {
+        vec.push_back(0.0);
+      }
+    }
+    return vec;
+  }
+
+  kj::TreeMap<kj::String, double> vector_to_params(const std::vector<double>& vec) {
+    kj::TreeMap<kj::String, double> params;
+    for (size_t i = 0; i < param_names.size() && i < vec.size(); ++i) {
+      params.insert(kj::str(param_names[i]), vec[i]);
+    }
+    return params;
+  }
+
+  std::vector<double> normalize_params(const kj::TreeMap<kj::String, double>& params) const {
+    std::vector<double> normalized;
+    for (const auto& name : param_names) {
+      KJ_IF_SOME(val, params.find(name)) {
+        KJ_IF_SOME(range, parameter_ranges.find(name)) {
+          double min_val = range.first;
+          double max_val = range.second;
+          normalized.push_back((val - min_val) / (max_val - min_val));
+        }
+        else {
+          normalized.push_back(val);
+        }
+      }
+      else {
+        normalized.push_back(0.5);
+      }
+    }
+    return normalized;
+  }
+
+  kj::TreeMap<kj::String, double> generate_random_params() {
+    kj::TreeMap<kj::String, double> params;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    for (const auto& entry : parameter_ranges) {
+      double min_val = entry.value.first;
+      double max_val = entry.value.second;
+      params.insert(kj::str(entry.key), min_val + dist(rng) * (max_val - min_val));
+    }
+    return params;
+  }
+
+  // Expected Improvement acquisition function
+  double expected_improvement(const std::vector<double>& x) {
+    auto [mean, std] = gp.predict(x);
+    if (std < 1e-6) {
+      return 0.0;
+    }
+    double z = (mean - best_observed - xi) / std;
+    // Approximate CDF and PDF of standard normal
+    double cdf = 0.5 * (1.0 + std::erf(z / std::sqrt(2.0)));
+    double pdf = std::exp(-0.5 * z * z) / std::sqrt(2.0 * M_PI);
+    return (mean - best_observed - xi) * cdf + std * pdf;
+  }
+
+  // Upper Confidence Bound acquisition function
+  double upper_confidence_bound(const std::vector<double>& x) {
+    auto [mean, std] = gp.predict(x);
+    return mean + kappa * std;
+  }
+
+  // Probability of Improvement acquisition function
+  double probability_of_improvement(const std::vector<double>& x) {
+    auto [mean, std] = gp.predict(x);
+    if (std < 1e-6) {
+      return mean > best_observed ? 1.0 : 0.0;
+    }
+    double z = (mean - best_observed - xi) / std;
+    return 0.5 * (1.0 + std::erf(z / std::sqrt(2.0)));
+  }
+
+  double acquisition(const std::vector<double>& x) {
+    if (acquisition_function == "ucb"_kj) {
+      return upper_confidence_bound(x);
+    } else if (acquisition_function == "pi"_kj) {
+      return probability_of_improvement(x);
+    } else {
+      return expected_improvement(x);
+    }
+  }
+
+  // Find next point to sample by optimizing acquisition function
+  kj::TreeMap<kj::String, double> suggest_next() {
+    // Random search over acquisition function
+    const int n_candidates = 1000;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    double best_acq = -std::numeric_limits<double>::infinity();
+    std::vector<double> best_x;
+
+    for (int i = 0; i < n_candidates; ++i) {
+      std::vector<double> x;
+      for (size_t j = 0; j < param_names.size(); ++j) {
+        x.push_back(dist(rng));
+      }
+
+      double acq = acquisition(x);
+      if (acq > best_acq) {
+        best_acq = acq;
+        best_x = x;
+      }
+    }
+
+    // Convert normalized values back to parameter space
+    kj::TreeMap<kj::String, double> params;
+    for (size_t i = 0; i < param_names.size() && i < best_x.size(); ++i) {
+      KJ_IF_SOME(range, parameter_ranges.find(param_names[i])) {
+        double min_val = range.first;
+        double max_val = range.second;
+        params.insert(kj::str(param_names[i]), min_val + best_x[i] * (max_val - min_val));
+      }
+    }
+
+    return params;
+  }
+};
+
+BayesianOptimizer::BayesianOptimizer() : impl_(kj::heap<Impl>()) {}
+
+BayesianOptimizer::~BayesianOptimizer() noexcept {}
+
+bool BayesianOptimizer::initialize(const BacktestConfig& config) {
+  impl_->logger->info("Initializing Bayesian optimizer");
+  impl_->config.strategy_name = kj::str(config.strategy_name);
+  impl_->config.symbol = kj::str(config.symbol);
+  impl_->config.start_time = config.start_time;
+  impl_->config.end_time = config.end_time;
+  impl_->config.initial_balance = config.initial_balance;
+  impl_->config.risk_per_trade = config.risk_per_trade;
+  impl_->config.max_position_size = config.max_position_size;
+  impl_->config.strategy_parameters.clear();
+  for (const auto& entry : config.strategy_parameters) {
+    impl_->config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+  }
+  impl_->config.data_source = kj::str(config.data_source);
+  impl_->config.data_type = kj::str(config.data_type);
+  impl_->config.time_frame = kj::str(config.time_frame);
+  impl_->results.clear();
+  impl_->all_parameters.clear();
+  impl_->best_parameters.clear();
+  impl_->gp = GaussianProcess();
+  impl_->best_observed = -std::numeric_limits<double>::infinity();
+  return true;
+}
+
+bool BayesianOptimizer::optimize(kj::Rc<veloz::strategy::IStrategy> strategy) {
+  if (impl_->parameter_ranges.size() == 0) {
+    impl_->logger->error("No parameter ranges defined");
+    return false;
+  }
+
+  // Build param_names list
+  impl_->param_names.clear();
+  for (const auto& entry : impl_->parameter_ranges) {
+    impl_->param_names.add(kj::str(entry.key));
+  }
+
+  impl_->logger->info(kj::str("Starting Bayesian optimization with ", impl_->max_iterations,
+                              " iterations (", impl_->initial_samples, " initial samples)"));
+  impl_->results.clear();
+  impl_->all_parameters.clear();
+  impl_->best_parameters.clear();
+  impl_->gp = GaussianProcess();
+  impl_->best_observed = -std::numeric_limits<double>::infinity();
+
+  BacktestEngine engine;
+
+  for (int iter = 0; iter < impl_->max_iterations; ++iter) {
+    kj::TreeMap<kj::String, double> params;
+
+    // Initial random sampling phase
+    if (iter < impl_->initial_samples) {
+      params = impl_->generate_random_params();
+    } else {
+      // Use acquisition function to suggest next point
+      params = impl_->suggest_next();
+    }
+
+    // Run backtest
+    BacktestConfig test_config;
+    test_config.strategy_name = kj::str(impl_->config.strategy_name);
+    test_config.symbol = kj::str(impl_->config.symbol);
+    test_config.start_time = impl_->config.start_time;
+    test_config.end_time = impl_->config.end_time;
+    test_config.initial_balance = impl_->config.initial_balance;
+    test_config.risk_per_trade = impl_->config.risk_per_trade;
+    test_config.max_position_size = impl_->config.max_position_size;
+    test_config.data_source = kj::str(impl_->config.data_source);
+    test_config.data_type = kj::str(impl_->config.data_type);
+    test_config.time_frame = kj::str(impl_->config.time_frame);
+    for (const auto& entry : params) {
+      test_config.strategy_parameters.upsert(kj::str(entry.key), entry.value);
+    }
+
+    double fitness = -std::numeric_limits<double>::infinity();
+
+    if (engine.initialize(test_config)) {
+      engine.set_strategy(strategy.addRef());
+      if (impl_->data_source.get() != nullptr) {
+        engine.set_data_source(impl_->data_source.addRef());
+      }
+
+      if (engine.run()) {
+        BacktestResult result = engine.get_result();
+        result.strategy_name = kj::str(impl_->config.strategy_name);
+
+        if (impl_->optimization_target == "sharpe"_kj) {
+          fitness = result.sharpe_ratio;
+        } else if (impl_->optimization_target == "return"_kj) {
+          fitness = result.total_return;
+        } else if (impl_->optimization_target == "win_rate"_kj) {
+          fitness = result.win_rate;
+        } else {
+          fitness = result.sharpe_ratio;
+        }
+
+        impl_->results.add(kj::mv(result));
+
+        // Store parameters
+        kj::TreeMap<kj::String, double> params_copy;
+        for (const auto& e : params) {
+          params_copy.insert(kj::str(e.key), e.value);
+        }
+        impl_->all_parameters.add(kj::mv(params_copy));
+
+        // Update GP with normalized observation
+        auto normalized = impl_->normalize_params(params);
+        impl_->gp.add_observation(normalized, fitness);
+
+        // Update best
+        if (fitness > impl_->best_observed) {
+          impl_->best_observed = fitness;
+          impl_->best_parameters.clear();
+          for (const auto& e : params) {
+            impl_->best_parameters.insert(kj::str(e.key), e.value);
+          }
+        }
+      }
+    }
+
+    engine.reset();
+
+    // Progress callback
+    KJ_IF_SOME(callback, impl_->progress_callback) {
+      OptimizationProgress progress;
+      progress.current_iteration = iter + 1;
+      progress.total_iterations = impl_->max_iterations;
+      progress.best_fitness = impl_->best_observed;
+      progress.current_fitness = fitness;
+      progress.progress_fraction =
+          static_cast<double>(iter + 1) / static_cast<double>(impl_->max_iterations);
+      progress.status =
+          kj::str(iter < impl_->initial_samples ? "Initial sampling" : "Bayesian optimization",
+                  " - Iteration ", iter + 1, "/", impl_->max_iterations);
+      for (const auto& e : params) {
+        progress.current_parameters.insert(kj::str(e.key), e.value);
+      }
+      for (const auto& e : impl_->best_parameters) {
+        progress.best_parameters.insert(kj::str(e.key), e.value);
+      }
+      callback(progress);
+    }
+
+    auto best_str = std::format("{:.4f}", impl_->best_observed);
+    auto curr_str = std::format("{:.4f}", fitness);
+    impl_->logger->info(kj::str("Iteration ", iter + 1, "/", impl_->max_iterations,
+                                ": current=", curr_str.c_str(), ", best=", best_str.c_str()));
+  }
+
+  auto best_str = std::format("{:.4f}", impl_->best_observed);
+  impl_->logger->info(kj::str("Bayesian optimization completed. Best ", impl_->optimization_target,
+                              ": ", best_str.c_str()));
+
+  return true;
+}
+
+kj::Vector<BacktestResult> BayesianOptimizer::get_results() const {
+  kj::Vector<BacktestResult> results;
+  for (const auto& result : impl_->results) {
+    BacktestResult copy;
+    copy.strategy_name = kj::str(result.strategy_name);
+    copy.symbol = kj::str(result.symbol);
+    copy.start_time = result.start_time;
+    copy.end_time = result.end_time;
+    copy.initial_balance = result.initial_balance;
+    copy.final_balance = result.final_balance;
+    copy.total_return = result.total_return;
+    copy.max_drawdown = result.max_drawdown;
+    copy.sharpe_ratio = result.sharpe_ratio;
+    copy.win_rate = result.win_rate;
+    copy.profit_factor = result.profit_factor;
+    copy.trade_count = result.trade_count;
+    copy.win_count = result.win_count;
+    copy.lose_count = result.lose_count;
+    copy.avg_win = result.avg_win;
+    copy.avg_lose = result.avg_lose;
+    results.add(kj::mv(copy));
+  }
+  return results;
+}
+
+const kj::TreeMap<kj::String, double>& BayesianOptimizer::get_best_parameters() const {
+  return impl_->best_parameters;
+}
+
+void BayesianOptimizer::set_parameter_ranges(
+    const kj::TreeMap<kj::String, std::pair<double, double>>& ranges) {
+  impl_->parameter_ranges.clear();
+  for (const auto& entry : ranges) {
+    impl_->parameter_ranges.insert(kj::str(entry.key), entry.value);
+  }
+}
+
+void BayesianOptimizer::set_optimization_target(kj::StringPtr target) {
+  impl_->optimization_target = kj::str(target);
+}
+
+void BayesianOptimizer::set_max_iterations(int iterations) {
+  impl_->max_iterations = iterations;
+}
+
+void BayesianOptimizer::set_data_source(kj::Rc<IDataSource> data_source) {
+  impl_->data_source = kj::mv(data_source);
+}
+
+void BayesianOptimizer::set_initial_samples(int n_initial) {
+  impl_->initial_samples = std::max(1, n_initial);
+}
+
+void BayesianOptimizer::set_acquisition_function(kj::StringPtr type) {
+  impl_->acquisition_function = kj::str(type);
+}
+
+void BayesianOptimizer::set_exploration_params(double kappa, double xi) {
+  impl_->kappa = kappa;
+  impl_->xi = xi;
+}
+
+void BayesianOptimizer::set_progress_callback(
+    kj::Function<void(const OptimizationProgress&)> callback) {
+  impl_->progress_callback = kj::mv(callback);
+}
+
+kj::Vector<RankedResult> BayesianOptimizer::get_ranked_results(int top_n) const {
+  kj::Vector<RankedResult> ranked;
+
+  std::vector<std::pair<double, size_t>> fitness_indices;
+  for (size_t i = 0; i < impl_->results.size(); ++i) {
+    double fitness;
+    if (impl_->optimization_target == "sharpe"_kj) {
+      fitness = impl_->results[i].sharpe_ratio;
+    } else if (impl_->optimization_target == "return"_kj) {
+      fitness = impl_->results[i].total_return;
+    } else if (impl_->optimization_target == "win_rate"_kj) {
+      fitness = impl_->results[i].win_rate;
+    } else {
+      fitness = impl_->results[i].sharpe_ratio;
+    }
+    fitness_indices.push_back({fitness, i});
+  }
+
+  std::sort(fitness_indices.begin(), fitness_indices.end(),
+            [](const auto& a, const auto& b) { return a.first > b.first; });
+
+  size_t count = (top_n > 0 && static_cast<size_t>(top_n) < fitness_indices.size())
+                     ? static_cast<size_t>(top_n)
+                     : fitness_indices.size();
+
+  for (size_t i = 0; i < count; ++i) {
+    size_t idx = fitness_indices[i].second;
+    RankedResult rr;
+    rr.rank = static_cast<int>(i + 1);
+    rr.fitness = fitness_indices[i].first;
+
+    if (idx < impl_->all_parameters.size()) {
+      for (const auto& e : impl_->all_parameters[idx]) {
+        rr.parameters.insert(kj::str(e.key), e.value);
+      }
+    }
+
+    const auto& result = impl_->results[idx];
+    rr.result.strategy_name = kj::str(result.strategy_name);
+    rr.result.symbol = kj::str(result.symbol);
+    rr.result.start_time = result.start_time;
+    rr.result.end_time = result.end_time;
+    rr.result.initial_balance = result.initial_balance;
+    rr.result.final_balance = result.final_balance;
+    rr.result.total_return = result.total_return;
+    rr.result.max_drawdown = result.max_drawdown;
+    rr.result.sharpe_ratio = result.sharpe_ratio;
+    rr.result.win_rate = result.win_rate;
+    rr.result.profit_factor = result.profit_factor;
+    rr.result.trade_count = result.trade_count;
+    rr.result.win_count = result.win_count;
+    rr.result.lose_count = result.lose_count;
+    rr.result.avg_win = result.avg_win;
+    rr.result.avg_lose = result.avg_lose;
+
+    ranked.add(kj::mv(rr));
+  }
+
+  return ranked;
+}
+
+std::pair<double, double>
+BayesianOptimizer::predict(const kj::TreeMap<kj::String, double>& parameters) const {
+  auto normalized = impl_->normalize_params(parameters);
+  return impl_->gp.predict(normalized);
+}
+
+// ============================================================================
+// OptimizerFactory implementation
+// ============================================================================
+
+kj::Own<IParameterOptimizer> OptimizerFactory::create(OptimizationAlgorithm algorithm) {
+  switch (algorithm) {
+  case OptimizationAlgorithm::GridSearch:
+    return kj::heap<GridSearchOptimizer>();
+  case OptimizationAlgorithm::GeneticAlgorithm:
+    return kj::heap<GeneticAlgorithmOptimizer>();
+  case OptimizationAlgorithm::RandomSearch:
+    return kj::heap<RandomSearchOptimizer>();
+  case OptimizationAlgorithm::BayesianOptimization:
+    return kj::heap<BayesianOptimizer>();
+  default:
+    return kj::heap<GridSearchOptimizer>();
+  }
 }
 
 } // namespace veloz::backtest

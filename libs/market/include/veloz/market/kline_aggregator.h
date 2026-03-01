@@ -10,10 +10,14 @@
 
 #include "veloz/market/market_event.h"
 
+#include <atomic>
+#include <kj/async-io.h>
 #include <kj/common.h>
 #include <kj/function.h>
 #include <kj/map.h>
+#include <kj/mutex.h>
 #include <kj/string.h>
+#include <kj/timer.h>
 #include <kj/vector.h>
 
 namespace veloz::market {
@@ -93,15 +97,15 @@ public:
     size_t max_history_per_interval{1000}; ///< Max candles to keep per interval
     bool emit_on_update{true};             ///< Emit callback on every update
     bool emit_on_close{true};              ///< Emit callback when candle closes
+    bool enable_timer_close{false};        ///< Enable timer-based candle closing
+    int64_t timer_check_interval_ms{1000}; ///< How often to check for candle close (ms)
   };
 
   KlineAggregator();
   explicit KlineAggregator(Config config);
-  ~KlineAggregator() = default;
+  ~KlineAggregator();
 
-  // Non-copyable, non-movable
-  KlineAggregator(const KlineAggregator&) = delete;
-  KlineAggregator& operator=(const KlineAggregator&) = delete;
+  KJ_DISALLOW_COPY_AND_MOVE(KlineAggregator);
 
   /**
    * @brief Enable aggregation for a specific interval
@@ -186,6 +190,42 @@ public:
   void clear_all();
 
   /**
+   * @brief Start timer-based candle closing
+   * @param timer KJ timer for scheduling
+   * @return Promise that completes when timer is stopped
+   *
+   * This enables automatic closing of candles at their scheduled time,
+   * even if no trades are received. Useful for low-volume periods.
+   */
+  kj::Promise<void> start_timer(kj::Timer& timer);
+
+  /**
+   * @brief Stop timer-based candle closing
+   */
+  void stop_timer();
+
+  /**
+   * @brief Check if timer is running
+   */
+  [[nodiscard]] bool is_timer_running() const;
+
+  /**
+   * @brief Force close all open candles at current time
+   * @param current_time_ms Current timestamp in milliseconds
+   *
+   * Useful for graceful shutdown or when switching symbols.
+   */
+  void force_close_all(int64_t current_time_ms);
+
+  /**
+   * @brief Check and close any candles that should have closed by now
+   * @param current_time_ms Current timestamp in milliseconds
+   *
+   * Called automatically by timer, but can also be called manually.
+   */
+  void check_and_close_candles(int64_t current_time_ms);
+
+  /**
    * @brief Get statistics
    */
   [[nodiscard]] int64_t total_trades_processed() const {
@@ -193,6 +233,9 @@ public:
   }
   [[nodiscard]] int64_t total_candles_closed() const {
     return total_candles_closed_;
+  }
+  [[nodiscard]] int64_t timer_close_count() const {
+    return timer_close_count_;
   }
 
 private:
@@ -233,9 +276,13 @@ private:
   // Callback for updates
   kj::Maybe<KlineCallback> callback_;
 
+  // Timer state
+  std::atomic<bool> timer_running_{false};
+
   // Statistics
   int64_t total_trades_{0};
   int64_t total_candles_closed_{0};
+  int64_t timer_close_count_{0};
 };
 
 } // namespace veloz::market

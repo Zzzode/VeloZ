@@ -1,10 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <map>    // std::map - external API compatibility with strategy parameters
-#include <string> // std::string - external API compatibility with strategy parameters
-
 #include <kj/common.h>
+#include <kj/map.h>
 #include <kj/string.h>
 #include <kj/vector.h>
 
@@ -19,8 +17,7 @@ struct BacktestConfig {
   double initial_balance;
   double risk_per_trade;
   double max_position_size;
-  // std::map used for external API compatibility with strategy parameters
-  std::map<std::string, double> strategy_parameters;
+  kj::TreeMap<kj::String, double> strategy_parameters;
   kj::String data_source;
   kj::String data_type;  // "kline", "trade", "book"
   kj::String time_frame; // "1m", "5m", "1h", etc.

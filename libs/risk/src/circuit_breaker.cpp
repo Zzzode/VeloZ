@@ -90,7 +90,7 @@ CircuitState CircuitBreaker::state() const {
 
 bool CircuitBreaker::check_health() {
   auto lock = guarded_.lockExclusive();
-  KJ_IF_SOME (health_check, lock->health_check) {
+  KJ_IF_SOME(health_check, lock->health_check) {
     return health_check();
   }
   return true; // No health check configured, assume healthy
@@ -130,7 +130,7 @@ void CircuitBreaker::transition_state(BreakerState& state, CircuitState new_stat
   stats_.last_state_change_ms.store(current_time_ms());
 
   // Invoke callback if set
-  KJ_IF_SOME (callback, state.on_state_change) {
+  KJ_IF_SOME(callback, state.on_state_change) {
     // Note: callback is called with lock held - keep callbacks fast
     callback(old_state, new_state);
   }

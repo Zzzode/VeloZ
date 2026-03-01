@@ -1,0 +1,48 @@
+{
+  "setupWizard": {
+    "title": "Setup Wizard",
+    "steps": {
+      "welcome": "Welcome",
+      "exchange": "Exchange",
+      "risk": "Risk",
+      "mode": "Mode",
+      "security": "Security",
+      "complete": "Complete"
+    },
+    "security": {
+      "title": "Security Setup",
+      "subtitle": "Protect your account with additional security measures.",
+      "optional": "Optional but Recommended",
+      "optionalDesc": "These security features help protect your account and can be configured later from Settings.",
+      "twoFactor": {
+        "title": "Two-Factor Authentication",
+        "subtitle": "Add an extra layer of security with 2FA",
+        "info": "2FA will be configured after setup. You'll need an authenticator app like Google Authenticator or Authy."
+      },
+      "recoveryEmail": {
+        "title": "Recovery Email",
+        "subtitle": "Receive security alerts and account recovery options",
+        "placeholder": "your@email.com",
+        "error": "Please enter a valid email address"
+      },
+      "backupCodes": {
+        "title": "Backup Codes",
+        "subtitle": "Generate backup codes for account recovery",
+        "info": "Available after enabling 2FA"
+      },
+      "tips": {
+        "title": "Security Best Practices",
+        "tip1": "Use a unique, strong password for your VeloZ account",
+        "tip2": "Enable IP restrictions on your exchange API keys",
+        "tip3": "Never share your API keys or recovery codes",
+        "tip4": "Regularly review your connected devices and sessions"
+      }
+    },
+    "buttons": {
+      "back": "Back",
+      "skip": "Skip",
+      "continue": "Continue",
+      "complete": "Complete"
+    }
+  }
+}

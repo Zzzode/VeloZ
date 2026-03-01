@@ -1,28 +1,38 @@
 #include "veloz/core/event_loop.h"
 
-#include <chrono>
-#include <format>
+// =======================================================================================
+// std Library Usage Justification (see event_loop.h for full documentation)
+// =======================================================================================
+// - std::chrono::steady_clock: Monotonic time for task queue wait time measurement
+// - std::iomanip/std::sstream: String formatting (kj::str() lacks width specifiers)
+// - std::regex: Pattern matching for event tag filters (KJ lacks regex support)
+// =======================================================================================
+
+#include <chrono> // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
+#include <iomanip> // std::setprecision - kj::str() lacks width/precision specifiers
+#include <kj/async-io.h>
 #include <kj/async.h>
 #include <kj/common.h>
 #include <kj/debug.h>
 #include <kj/string.h>
 #include <kj/time.h>
-#include <thread>
+#include <sstream> // std::ostringstream - kj::str() lacks width/precision specifiers
+#include <thread>  // std::this_thread::sleep_for - for startup synchronization only
 
 namespace veloz::core {
 
-std::string_view to_string(EventPriority priority) {
+kj::StringPtr to_string(EventPriority priority) {
   switch (priority) {
   case EventPriority::Low:
-    return "Low";
+    return "Low"_kj;
   case EventPriority::Normal:
-    return "Normal";
+    return "Normal"_kj;
   case EventPriority::High:
-    return "High";
+    return "High"_kj;
   case EventPriority::Critical:
-    return "Critical";
+    return "Critical"_kj;
   }
-  return "Unknown";
+  return "Unknown"_kj;
 }
 
 // TaskSetErrorHandler implementation
@@ -31,11 +41,10 @@ void EventLoop::TaskSetErrorHandler::taskFailed(kj::Exception&& exception) {
   KJ_LOG(ERROR, "Task failed in EventLoop", exception);
 }
 
-// KjAsyncState constructor
+// KjAsyncState constructor - uses kj::setupAsyncIo() for real async I/O
 EventLoop::KjAsyncState::KjAsyncState(EventStats& stats)
-    : event_loop(), error_handler(kj::heap<TaskSetErrorHandler>(stats)),
-      task_set(kj::heap<kj::TaskSet>(*error_handler)),
-      timer(kj::heap<kj::TimerImpl>(kj::systemPreciseMonotonicClock().now())) {}
+    : io_context(kj::setupAsyncIo()), error_handler(kj::heap<TaskSetErrorHandler>(stats)),
+      task_set(kj::heap<kj::TaskSet>(*error_handler)) {}
 
 EventLoop::EventLoop() = default;
 
@@ -43,28 +52,29 @@ EventLoop::~EventLoop() {
   stop();
 }
 
-void EventLoop::post(std::function<void()> task) {
+void EventLoop::post(kj::Function<void()> task) {
   post(kj::mv(task), EventPriority::Normal);
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay) {
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay) {
   post_delayed(kj::mv(task), delay, EventPriority::Normal);
 }
 
-void EventLoop::post(std::function<void()> task, EventPriority priority) {
+void EventLoop::post(kj::Function<void()> task, EventPriority priority) {
   post_with_tags(kj::mv(task), priority, {});
 }
 
-void EventLoop::post_with_tags(std::function<void()> task, std::vector<EventTag> tags) {
+void EventLoop::post_with_tags(kj::Function<void()> task, kj::Vector<EventTag> tags) {
   post_with_tags(kj::mv(task), EventPriority::Normal, kj::mv(tags));
 }
 
-void EventLoop::post_with_tags(std::function<void()> task, EventPriority priority,
-                               std::vector<EventTag> tags) {
-  Task t{.task = kj::mv(task),
-         .priority = priority,
-         .tags = kj::mv(tags),
-         .enqueue_time = std::chrono::steady_clock::now()};
+void EventLoop::post_with_tags(kj::Function<void()> task, EventPriority priority,
+                               kj::Vector<EventTag> tags) {
+  Task t;
+  t.task = kj::mv(task);
+  t.priority = priority;
+  t.tags = kj::mv(tags);
+  t.enqueue_time = std::chrono::steady_clock::now();
   {
     auto lock = queue_state_.lockExclusive();
     lock->tasks.push(kj::mv(t));
@@ -82,23 +92,24 @@ void EventLoop::post_with_tags(std::function<void()> task, EventPriority priorit
   }
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
                              EventPriority priority) {
   post_delayed(kj::mv(task), delay, priority, {});
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                             std::vector<EventTag> tags) {
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
+                             kj::Vector<EventTag> tags) {
   post_delayed(kj::mv(task), delay, EventPriority::Normal, kj::mv(tags));
 }
 
-void EventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                             EventPriority priority, std::vector<EventTag> tags) {
+void EventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
+                             EventPriority priority, kj::Vector<EventTag> tags) {
   auto deadline = std::chrono::steady_clock::now() + delay;
-  Task t{.task = kj::mv(task),
-         .priority = priority,
-         .tags = kj::mv(tags),
-         .enqueue_time = std::chrono::steady_clock::now()};
+  Task t;
+  t.task = kj::mv(task);
+  t.priority = priority;
+  t.tags = kj::mv(tags);
+  t.enqueue_time = std::chrono::steady_clock::now();
   {
     auto lock = queue_state_.lockExclusive();
     lock->delayed_tasks.push({deadline, kj::mv(t)});
@@ -116,36 +127,37 @@ void EventLoop::post_delayed(std::function<void()> task, std::chrono::millisecon
 }
 
 bool EventLoop::should_process_task(const Task& task) {
+  auto tags = task.tags.asPtr();
+
   // Check priority-based filters
   auto lock = filter_state_.lockExclusive();
-  for (const auto& entry : lock->filters) {
+  for (auto& entry : lock->filters) {
     uint64_t id = entry.key;
-    const auto& filter_pair = entry.value;
     if (lock->active_filters.find(id) == kj::none) {
       continue;
     }
-    const auto& [filter, priority_filter] = filter_pair;
-    KJ_IF_SOME(pf, priority_filter) {
+    auto& filter_entry = entry.value;
+    KJ_IF_SOME(pf, filter_entry.priority) {
       if (pf != task.priority) {
         continue;
       }
     }
-    if (filter(task.tags)) {
+    if (filter_entry.filter(tags)) {
       stats_.events_filtered++;
       return false;
     }
   }
 
   // Check tag pattern filters
-  for (const auto& entry : lock->tag_filters) {
+  for (auto& entry : lock->tag_filters) {
     uint64_t id = entry.key;
     const auto& pattern = entry.value;
     if (lock->active_filters.find(id) == kj::none) {
       continue;
     }
-    for (const auto& tag : task.tags) {
+    for (const auto& tag : tags) {
       try {
-        if (std::regex_search(tag, pattern)) {
+        if (std::regex_search(tag.cStr(), pattern)) {
           stats_.events_filtered++;
           return false;
         }
@@ -158,11 +170,12 @@ bool EventLoop::should_process_task(const Task& task) {
   return true;
 }
 
-void EventLoop::route_task(Task& task, std::function<void()> wrapped) {
+void EventLoop::route_task(Task& task, kj::Function<void()> wrapped) {
   auto lock = filter_state_.lockExclusive();
   KJ_IF_SOME(router, lock->router) {
-    router(task.tags, [&task] { task.task(); });
-  } else {
+    router(task.tags.asPtr(), kj::mv(wrapped));
+  }
+  else {
     wrapped();
   }
 }
@@ -183,12 +196,8 @@ void EventLoop::execute_task(Task& task) {
   // Execute task with timing
   auto start = std::chrono::steady_clock::now();
   try {
-    auto lock = filter_state_.lockExclusive();
-    KJ_IF_SOME(router, lock->router) {
-      router(task.tags, [&task] { task.task(); });
-    } else {
-      task.task();
-    }
+    kj::Function<void()> wrapped = kj::mv(task.task);
+    route_task(task, kj::mv(wrapped));
     stats_.events_processed++;
   } catch (...) {
     stats_.events_failed++;
@@ -213,10 +222,9 @@ kj::Promise<void> EventLoop::process_next_task() {
     auto now = std::chrono::steady_clock::now();
 
     while (!lock->delayed_tasks.empty() && lock->delayed_tasks.top().deadline <= now) {
-      Task delayed_task = kj::mv(const_cast<Task&>(lock->delayed_tasks.top().task));
-      lock->delayed_tasks.pop();
-      if (should_process_task(delayed_task)) {
-        lock->tasks.push(kj::mv(delayed_task));
+      DelayedTask delayed_task = lock->delayed_tasks.popValue();
+      if (should_process_task(delayed_task.task)) {
+        lock->tasks.push(kj::mv(delayed_task.task));
       }
     }
   }
@@ -226,8 +234,7 @@ kj::Promise<void> EventLoop::process_next_task() {
   {
     auto lock = queue_state_.lockExclusive();
     if (!lock->tasks.empty()) {
-      Task task = kj::mv(const_cast<Task&>(lock->tasks.top()));
-      lock->tasks.pop();
+      Task task = lock->tasks.popValue();
       if (should_process_task(task)) {
         maybe_task = kj::mv(task);
       }
@@ -261,7 +268,7 @@ kj::Promise<void> EventLoop::schedule_delayed_tasks() {
     auto delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
     if (delay_ms > 0 && kj_state_ != nullptr) {
       auto kj_delay = delay_ms * kj::MILLISECONDS;
-      return kj_state_->timer->afterDelay(kj_delay);
+      return kj_state_->timer().afterDelay(kj_delay);
     }
   }
 
@@ -276,15 +283,16 @@ void EventLoop::run() {
 
   stop_requested_.store(false);
 
-  // Create KJ async infrastructure on the stack
-  // Note: WaitScope must be destroyed before EventLoop, so we manage them carefully
+  // Create KJ async infrastructure on the stack using setupAsyncIo()
+  // This provides real OS-level async I/O with proper timer support
   KjAsyncState kj_state(stats_);
-  kj::WaitScope wait_scope(kj_state.event_loop);
+  kj::WaitScope& wait_scope = kj_state.io_context.waitScope;
 
   // Store pointer to state for timer access (cleared before destruction)
   kj_state_ = &kj_state;
 
-  // Main event loop using KJ primitives
+  // Main event loop using KJ async primitives
+  // Uses proper promise-based waiting instead of polling
   while (!stop_requested_.load()) {
     // Process all pending tasks
     bool has_tasks = true;
@@ -295,10 +303,9 @@ void EventLoop::run() {
 
         // Move ready delayed tasks to the main queue
         while (!lock->delayed_tasks.empty() && lock->delayed_tasks.top().deadline <= now) {
-          Task delayed_task = kj::mv(const_cast<Task&>(lock->delayed_tasks.top().task));
-          lock->delayed_tasks.pop();
-          if (should_process_task(delayed_task)) {
-            lock->tasks.push(kj::mv(delayed_task));
+          DelayedTask delayed_task = lock->delayed_tasks.popValue();
+          if (should_process_task(delayed_task.task)) {
+            lock->tasks.push(kj::mv(delayed_task.task));
           }
         }
 
@@ -310,8 +317,7 @@ void EventLoop::run() {
         {
           auto lock = queue_state_.lockExclusive();
           if (!lock->tasks.empty()) {
-            Task task = kj::mv(const_cast<Task&>(lock->tasks.top()));
-            lock->tasks.pop();
+            Task task = lock->tasks.popValue();
             if (should_process_task(task)) {
               maybe_task = kj::mv(task);
             }
@@ -348,37 +354,31 @@ void EventLoop::run() {
       *lock = kj::mv(paf.fulfiller);
     }
 
+    // Determine wait duration - use delayed task deadline or default poll interval
+    kj::Duration kj_delay;
     KJ_IF_SOME(delay, wait_time) {
-      // Wait with timeout using KJ timer
-      auto kj_delay = delay.count() * kj::MILLISECONDS;
-      auto timeout_promise = kj_state.timer->afterDelay(kj_delay);
-      auto wake_promise = kj::mv(paf.promise);
+      kj_delay = delay.count() * kj::MILLISECONDS;
+    }
+    else {
+      // No delayed tasks - use a longer default interval since we have
+      // proper cross-thread wake-up via the fulfiller
+      kj_delay = 100 * kj::MILLISECONDS;
+    }
 
-      // Use exclusiveJoin to wait for either wake-up or timeout
-      auto combined = wake_promise.exclusiveJoin(kj::mv(timeout_promise));
+    // Create timeout promise using KJ timer from setupAsyncIo()
+    // This is a real OS-level timer that works without manual advancement
+    auto timeout_promise = kj_state_->timer().afterDelay(kj_delay);
+    auto wake_promise = kj::mv(paf.promise);
 
-      // Update timer and poll
-      kj_state.timer->advanceTo(kj::systemPreciseMonotonicClock().now());
+    // Use exclusiveJoin to wait for either wake-up or timeout
+    // This is the KJ-idiomatic way to wait without busy-polling
+    auto combined = wake_promise.exclusiveJoin(kj::mv(timeout_promise));
 
-      // Poll the event loop to check for completion
-      if (!stop_requested_.load()) {
-        // Run the event loop briefly
-        kj_state.event_loop.run(1);
-      }
-    } else {
-      // No delayed tasks, wait indefinitely for wake-up
-      // Poll briefly to allow cross-thread wake-up
-      kj_state.event_loop.run(1);
-
-      // Small sleep to avoid busy-waiting when no tasks
-      {
-        auto lock = queue_state_.lockExclusive();
-        if (lock->tasks.empty() && lock->delayed_tasks.empty() && !stop_requested_.load()) {
-          // Release lock and sleep briefly
-          lock.release();
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-      }
+    // Wait on the combined promise using KJ's event loop
+    // With setupAsyncIo(), wait() properly blocks on OS-level I/O
+    // and wakes up when either the timer fires or the fulfiller is triggered
+    if (!stop_requested_.load()) {
+      combined.wait(wait_scope);
     }
 
     // Clear the wake fulfiller
@@ -419,52 +419,47 @@ size_t EventLoop::pending_tasks() const {
 size_t EventLoop::pending_tasks_by_priority(EventPriority priority) const {
   auto lock = queue_state_.lockExclusive();
   size_t count = 0;
-  // Note: We can't efficiently count by priority in a priority_queue without iterating
+  // Note: We can't efficiently count by priority in a priority queue without iterating
   // This is O(n) but acceptable for status queries
-  auto temp_tasks = lock->tasks;
-  while (!temp_tasks.empty()) {
-    if (temp_tasks.top().priority == priority) {
+  // Use underlying data() to iterate without copying (PriorityQueue is move-only)
+  const auto& tasks_data = lock->tasks.data();
+  for (const auto& task : tasks_data) {
+    if (task.priority == priority) {
       count++;
     }
-    temp_tasks.pop();
   }
   return count;
 }
 
-std::string EventLoop::stats_to_string() const {
-  return std::format(R"((
-EventLoop Statistics:
-  Total Events: {}
-  Delayed Events: {}
-  Events Processed: {}
-  Events Failed: {}
-  Events Filtered: {}
-  By Priority:
-    Low: {}
-    Normal: {}
-    High: {}
-    Critical: {}
-  Processing Time: {:.3f} ms
-  Max Processing Time: {:.3f} ms
-  Avg Queue Wait Time: {:.3f} ms
-  Max Queue Wait Time: {:.3f} ms
-)",
-                     stats_.total_events.load(), stats_.total_delayed_events.load(),
-                     stats_.events_processed.load(), stats_.events_failed.load(),
-                     stats_.events_filtered.load(), stats_.events_by_priority[0].load(),
-                     stats_.events_by_priority[1].load(), stats_.events_by_priority[2].load(),
-                     stats_.events_by_priority[3].load(), stats_.processing_time_ns.load() / 1e6,
-                     stats_.max_processing_time_ns.load() / 1e6,
-                     stats_.events_processed.load() > 0
-                         ? (stats_.queue_wait_time_ns.load() / 1e6) / stats_.events_processed.load()
-                         : 0.0,
-                     stats_.max_queue_wait_time_ns.load() / 1e6);
+kj::String EventLoop::stats_to_string() const {
+  std::ostringstream oss;
+  oss << std::fixed;
+  oss << "(\nEventLoop Statistics:\n";
+  oss << "  Total Events: " << stats_.total_events.load() << "\n";
+  oss << "  Delayed Events: " << stats_.total_delayed_events.load() << "\n";
+  oss << "  Events Processed: " << stats_.events_processed.load() << "\n";
+  oss << "  Events Failed: " << stats_.events_failed.load() << "\n";
+  oss << "  Events Filtered: " << stats_.events_filtered.load() << "\n";
+  oss << "  By Priority:\n";
+  oss << "    Low: " << stats_.events_by_priority[0].load() << "\n";
+  oss << "    Normal: " << stats_.events_by_priority[1].load() << "\n";
+  oss << "    High: " << stats_.events_by_priority[2].load() << "\n";
+  oss << "    Critical: " << stats_.events_by_priority[3].load() << "\n";
+  oss << std::setprecision(3);
+  oss << "  Processing Time: " << stats_.processing_time_ns.load() / 1e6 << " ms\n";
+  oss << "  Max Processing Time: " << stats_.max_processing_time_ns.load() / 1e6 << " ms\n";
+  double avg_wait = stats_.events_processed.load() > 0
+                        ? (stats_.queue_wait_time_ns.load() / 1e6) / stats_.events_processed.load()
+                        : 0.0;
+  oss << "  Avg Queue Wait Time: " << avg_wait << " ms\n";
+  oss << "  Max Queue Wait Time: " << stats_.max_queue_wait_time_ns.load() / 1e6 << " ms\n)";
+  return kj::str(oss.str().c_str());
 }
 
 uint64_t EventLoop::add_filter(EventFilter filter, kj::Maybe<EventPriority> priority) {
   auto lock = filter_state_.lockExclusive();
   uint64_t id = lock->next_filter_id++;
-  lock->filters.insert(id, {kj::mv(filter), priority});
+  lock->filters.insert(id, FilterState::FilterEntry{kj::mv(filter), priority});
   lock->active_filters.insert(id);
   return id;
 }
@@ -481,22 +476,22 @@ void EventLoop::clear_filters() {
   auto lock = filter_state_.lockExclusive();
   // KJ containers don't have clear(), recreate empty containers
   lock->active_filters = kj::HashSet<uint64_t>();
-  lock->filters = kj::HashMap<uint64_t, std::pair<EventFilter, kj::Maybe<EventPriority>>>();
+  lock->filters = kj::HashMap<uint64_t, FilterState::FilterEntry>();
   lock->tag_filters = kj::HashMap<uint64_t, std::regex>();
 }
 
-uint64_t EventLoop::add_tag_filter(const std::string& tag_pattern) {
+uint64_t EventLoop::add_tag_filter(kj::StringPtr tag_pattern) {
   auto lock = filter_state_.lockExclusive();
   uint64_t id = lock->next_filter_id++;
   try {
-    lock->tag_filters.insert(id, std::regex(tag_pattern));
+    lock->tag_filters.insert(id, std::regex(tag_pattern.cStr()));
     lock->active_filters.insert(id);
   } catch (const std::regex_error& e) {
     // Remove ID if regex creation failed
     KJ_IF_SOME(entry, lock->active_filters.find(id)) {
       lock->active_filters.erase(entry);
     }
-    throw std::runtime_error(std::format("Invalid tag pattern '{}': {}", tag_pattern, e.what()));
+    KJ_FAIL_REQUIRE("Invalid tag pattern", tag_pattern.cStr(), e.what());
   }
   return id;
 }

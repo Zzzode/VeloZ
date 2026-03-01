@@ -4,6 +4,9 @@
 
 #include <fstream>
 #include <kj/common.h>
+#include <kj/debug.h>
+#include <kj/exception.h>
+#include <kj/filesystem.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
 
@@ -22,205 +25,220 @@ Config::Value json_to_value(const JsonValue& j) {
     return j.get_string();
   } else if (j.is_array()) {
     if (j.size() == 0) {
-      return std::vector<std::string>{};
+      return kj::heapArray<kj::String>(0);
     }
     const auto& first = j[0];
     if (first.is_bool()) {
-      std::vector<bool> result;
-      j.for_each_array([&result](const JsonValue& val) { result.push_back(val.get_bool()); });
-      return result;
+      auto builder = kj::heapArrayBuilder<bool>(j.size());
+      j.for_each_array([&builder](const JsonValue& val) { builder.add(val.get_bool()); });
+      return builder.finish();
     } else if (first.is_int()) {
-      std::vector<int64_t> result;
-      j.for_each_array([&result](const JsonValue& val) { result.push_back(val.get_int()); });
-      return result;
+      auto builder = kj::heapArrayBuilder<int64_t>(j.size());
+      j.for_each_array([&builder](const JsonValue& val) { builder.add(val.get_int()); });
+      return builder.finish();
     } else if (first.is_real()) {
-      std::vector<double> result;
-      j.for_each_array([&result](const JsonValue& val) { result.push_back(val.get_double()); });
-      return result;
+      auto builder = kj::heapArrayBuilder<double>(j.size());
+      j.for_each_array([&builder](const JsonValue& val) { builder.add(val.get_double()); });
+      return builder.finish();
     } else if (first.is_string()) {
-      std::vector<std::string> result;
-      j.for_each_array([&result](const JsonValue& val) { result.push_back(val.get_string()); });
-      return result;
+      auto builder = kj::heapArrayBuilder<kj::String>(j.size());
+      j.for_each_array([&builder](const JsonValue& val) { builder.add(val.get_string()); });
+      return builder.finish();
     }
   }
-  throw ConfigException("Unsupported JSON type");
+  KJ_FAIL_REQUIRE("Unsupported JSON type");
 }
 
-JsonBuilder value_to_json_builder(const Config::Value& v) {
-  return std::visit(
-      [](auto&& arg) -> JsonBuilder {
-        auto builder = JsonBuilder::object();
-        if constexpr (std::is_same_v<decltype(arg), bool>) {
-          builder.put("value", arg);
-        } else if constexpr (std::is_same_v<decltype(arg), int64_t>) {
-          builder.put("value", arg);
-        } else if constexpr (std::is_same_v<decltype(arg), double>) {
-          builder.put("value", arg);
-        } else if constexpr (std::is_same_v<decltype(arg), std::string>) {
-          builder.put("value", arg);
-        } else if constexpr (std::is_same_v<decltype(arg), std::vector<bool>>) {
-          builder.put_array("value", [&arg](JsonBuilder& b) {
-            for (const auto& item : arg)
-              b.add(item);
-          });
-        } else if constexpr (std::is_same_v<decltype(arg), std::vector<int64_t>>) {
-          builder.put_array("value", [&arg](JsonBuilder& b) {
-            for (const auto& item : arg)
-              b.add(item);
-          });
-        } else if constexpr (std::is_same_v<decltype(arg), std::vector<double>>) {
-          builder.put_array("value", [&arg](JsonBuilder& b) {
-            for (const auto& item : arg)
-              b.add(item);
-          });
-        } else if constexpr (std::is_same_v<decltype(arg), std::vector<std::string>>) {
-          builder.put_array("value", [&arg](JsonBuilder& b) {
-            for (const auto& item : arg)
-              b.add(item);
-          });
-        }
-        return builder;
-      },
-      v);
+Config::Value clone_value(const Config::Value& v) {
+  KJ_SWITCH_ONEOF(v) {
+    KJ_CASE_ONEOF(b, bool) {
+      return b;
+    }
+    KJ_CASE_ONEOF(i, int64_t) {
+      return i;
+    }
+    KJ_CASE_ONEOF(d, double) {
+      return d;
+    }
+    KJ_CASE_ONEOF(s, kj::String) {
+      return kj::heapString(s.cStr(), s.size());
+    }
+    KJ_CASE_ONEOF(a, kj::Array<bool>) {
+      auto builder = kj::heapArrayBuilder<bool>(a.size());
+      for (auto item : a) {
+        builder.add(item);
+      }
+      return builder.finish();
+    }
+    KJ_CASE_ONEOF(a, kj::Array<int64_t>) {
+      auto builder = kj::heapArrayBuilder<int64_t>(a.size());
+      for (auto item : a) {
+        builder.add(item);
+      }
+      return builder.finish();
+    }
+    KJ_CASE_ONEOF(a, kj::Array<double>) {
+      auto builder = kj::heapArrayBuilder<double>(a.size());
+      for (auto item : a) {
+        builder.add(item);
+      }
+      return builder.finish();
+    }
+    KJ_CASE_ONEOF(a, kj::Array<kj::String>) {
+      auto builder = kj::heapArrayBuilder<kj::String>(a.size());
+      for (const auto& item : a) {
+        builder.add(kj::heapString(item.cStr(), item.size()));
+      }
+      return builder.finish();
+    }
+  }
+  KJ_UNREACHABLE;
 }
 
 } // namespace
 
-Config::Config(const std::filesystem::path& file_path) {
+Config::Config(const kj::Path& file_path) {
   load_from_file(file_path);
 }
 
-Config::Config(std::string_view json_content) {
+Config::Config(kj::StringPtr json_content) {
   load_from_string(json_content);
 }
 
-bool Config::load_from_file(const std::filesystem::path& file_path) {
-  try {
-    auto doc = JsonDocument::parse_file(std::string(file_path));
-    auto root = doc.root();
+bool Config::load_from_file(const kj::Path& file_path) {
+  bool success = false;
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto path_str = file_path.toString();
+               auto doc = JsonDocument::parse_file(file_path);
+               auto root = doc.root();
 
-    config_.clear();
-    root.for_each_object([this](const std::string& key, const JsonValue& value) {
-      config_[key] = json_to_value(value);
-    });
-    return true;
-  } catch (...) {
+               config_.clear();
+               root.for_each_object([this](kj::StringPtr key, const JsonValue& value) {
+                 config_.upsert(kj::str(key), json_to_value(value));
+               });
+               success = true;
+             })) {
+    (void)exception;
     return false;
   }
+  return success;
 }
 
-bool Config::load_from_string(std::string_view json_content) {
-  try {
-    auto doc = JsonDocument::parse(std::string(json_content));
-    auto root = doc.root();
+bool Config::load_from_string(kj::StringPtr json_content) {
+  bool success = false;
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto doc = JsonDocument::parse(json_content);
+               auto root = doc.root();
 
-    config_.clear();
-    root.for_each_object([this](const std::string& key, const JsonValue& value) {
-      config_[key] = json_to_value(value);
-    });
-    return true;
-  } catch (...) {
+               config_.clear();
+               root.for_each_object([this](kj::StringPtr key, const JsonValue& value) {
+                 config_.upsert(kj::str(key), json_to_value(value));
+               });
+               success = true;
+             })) {
+    (void)exception;
     return false;
   }
+  return success;
 }
 
-bool Config::save_to_file(const std::filesystem::path& file_path) const {
-  try {
-    auto builder = JsonBuilder::object();
-    for (const auto& [key, value] : config_) {
-      auto nested = value_to_json_builder(value);
-      // Build the nested value and add to main builder
-      // Since JsonBuilder::put_array takes a function, we need to work around this
-      // For now, let's use a simpler approach
-      // Actually, let's create the JSON string differently
-    }
-    std::string json_str = builder.build();
-
-    std::ofstream ofs(file_path);
-    if (!ofs.is_open()) {
-      throw ConfigException("Failed to open file for writing: " + file_path.string());
-    }
-    ofs << json_str;
-    return true;
-  } catch (...) {
+bool Config::save_to_file(const kj::Path& file_path) const {
+  bool success = false;
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
+               auto path_str = file_path.toString();
+               std::ofstream ofs(path_str.cStr());
+               KJ_REQUIRE(ofs.is_open(), "Failed to open file for writing", path_str.cStr());
+               auto s = to_string();
+               ofs << s.cStr();
+               success = true;
+             })) {
+    (void)exception;
     return false;
   }
+  return success;
 }
 
-std::string Config::to_string() const {
+kj::String Config::to_string() const {
   auto builder = JsonBuilder::object();
-  for (const auto& [key, value] : config_) {
-    // Use a helper function to add values to builder
-    std::visit(
-        [&builder, &key](auto&& arg) {
-          if constexpr (std::is_same_v<decltype(arg), bool>) {
-            builder.put(key, arg);
-          } else if constexpr (std::is_same_v<decltype(arg), int64_t>) {
-            builder.put(key, arg);
-          } else if constexpr (std::is_same_v<decltype(arg), double>) {
-            builder.put(key, arg);
-          } else if constexpr (std::is_same_v<decltype(arg), std::string>) {
-            builder.put(key, arg);
-          } else if constexpr (std::is_same_v<decltype(arg), std::vector<bool>>) {
-            builder.put_array(key, [&arg](JsonBuilder& b) {
-              for (const auto& item : arg)
-                b.add(item);
-            });
-          } else if constexpr (std::is_same_v<decltype(arg), std::vector<int64_t>>) {
-            builder.put_array(key, [&arg](JsonBuilder& b) {
-              for (const auto& item : arg)
-                b.add(item);
-            });
-          } else if constexpr (std::is_same_v<decltype(arg), std::vector<double>>) {
-            builder.put_array(key, [&arg](JsonBuilder& b) {
-              for (const auto& item : arg)
-                b.add(item);
-            });
-          } else if constexpr (std::is_same_v<decltype(arg), std::vector<std::string>>) {
-            builder.put_array(key, [&arg](JsonBuilder& b) {
-              for (const auto& item : arg)
-                b.add(item);
-            });
+  for (const auto& entry : config_) {
+    kj::StringPtr key = entry.key;
+    const auto& value = entry.value;
+    KJ_SWITCH_ONEOF(value) {
+      KJ_CASE_ONEOF(b, bool) {
+        builder.put(key, b);
+      }
+      KJ_CASE_ONEOF(i, int64_t) {
+        builder.put(key, i);
+      }
+      KJ_CASE_ONEOF(d, double) {
+        builder.put(key, d);
+      }
+      KJ_CASE_ONEOF(s, kj::String) {
+        builder.put(key, s);
+      }
+      KJ_CASE_ONEOF(a, kj::Array<bool>) {
+        builder.put_array(key, [&a](JsonBuilder& b) {
+          for (auto item : a) {
+            b.add(item);
           }
-        },
-        value);
+        });
+      }
+      KJ_CASE_ONEOF(a, kj::Array<int64_t>) {
+        builder.put_array(key, [&a](JsonBuilder& b) {
+          for (auto item : a) {
+            b.add(item);
+          }
+        });
+      }
+      KJ_CASE_ONEOF(a, kj::Array<double>) {
+        builder.put_array(key, [&a](JsonBuilder& b) {
+          for (auto item : a) {
+            b.add(item);
+          }
+        });
+      }
+      KJ_CASE_ONEOF(a, kj::Array<kj::String>) {
+        builder.put_array(key, [&a](JsonBuilder& b) {
+          for (const auto& item : a) {
+            b.add(item);
+          }
+        });
+      }
+    }
   }
   return builder.build();
 }
 
-bool Config::has_key(std::string_view key) const {
-  return config_.contains(std::string(key));
+bool Config::has_key(kj::StringPtr key) const {
+  return config_.find(key) != kj::none;
 }
 
-void Config::set(std::string_view key, Value value) {
-  config_[std::string(key)] = kj::mv(value);
+void Config::set(kj::StringPtr key, Value value) {
+  config_.upsert(kj::str(key), kj::mv(value));
 }
 
-void Config::remove(std::string_view key) {
-  config_.erase(std::string(key));
+void Config::remove(kj::StringPtr key) {
+  config_.erase(key);
 }
 
-kj::Maybe<Config> Config::get_section(std::string_view /* key */) const {
+kj::Maybe<Config> Config::get_section(kj::StringPtr /* key */) const {
   return kj::none;
 }
 
-void Config::set_section(std::string_view /* key */, const Config& /* config */) {
-  // This can be extended to support nested configuration
-}
+void Config::set_section(kj::StringPtr /* key */, const Config& /* config */) {}
 
 void Config::merge(const Config& other) {
-  for (const auto& [key, value] : other.config_) {
-    config_[key] = value;
+  for (const auto& entry : other.config_) {
+    config_.upsert(kj::heapString(entry.key.cStr(), entry.key.size()), clone_value(entry.value));
   }
 }
 
-std::vector<std::string> Config::keys() const {
-  std::vector<std::string> result;
-  result.reserve(config_.size());
-  for (const auto& [key, value] : config_) {
-    result.push_back(key);
+kj::Array<kj::String> Config::keys() const {
+  auto builder = kj::heapArrayBuilder<kj::String>(config_.size());
+  for (const auto& entry : config_) {
+    builder.add(kj::heapString(entry.key.cStr(), entry.key.size()));
   }
-  return result;
+  return builder.finish();
 }
 
 // Thread-safe global configuration using KJ MutexGuarded (no bare pointers)
@@ -232,7 +250,7 @@ static kj::MutexGuarded<GlobalConfigState> g_global_config;
 Config& global_config() {
   auto lock = g_global_config.lockExclusive();
   KJ_IF_SOME(config, lock->config) {
-    return *config;  // Dereference kj::Own<Config> to get Config reference
+    return *config; // Dereference kj::Own<Config> to get Config reference
   }
   // Create new config and store it
   auto newConfig = kj::heap<Config>();
@@ -241,11 +259,11 @@ Config& global_config() {
   return ref;
 }
 
-bool load_global_config(const std::filesystem::path& file_path) {
+bool load_global_config(const kj::Path& file_path) {
   return global_config().load_from_file(file_path);
 }
 
-bool load_global_config(std::string_view json_content) {
+bool load_global_config(kj::StringPtr json_content) {
   return global_config().load_from_string(json_content);
 }
 

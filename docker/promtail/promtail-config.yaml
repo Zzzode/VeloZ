@@ -1,0 +1,83 @@
+# Promtail Configuration for VeloZ
+# See: https://grafana.com/docs/loki/latest/clients/promtail/configuration/
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # VeloZ Gateway logs
+  - job_name: veloz-gateway
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: veloz-gateway
+          service: gateway
+          __path__: /var/log/veloz/*.log
+
+  # VeloZ Engine logs (if separate)
+  - job_name: veloz-engine
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: veloz-engine
+          service: engine
+          __path__: /var/log/veloz/engine*.log
+
+  # System logs (optional)
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system
+          __path__: /var/log/host/syslog
+
+  # Docker container logs via journal (if using systemd)
+  # - job_name: journal
+  #   journal:
+  #     max_age: 12h
+  #     labels:
+  #       job: systemd-journal
+  #   relabel_configs:
+  #     - source_labels: ['__journal__systemd_unit']
+  #       target_label: 'unit'
+
+# Pipeline stages for log processing
+  - job_name: veloz-json
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: veloz-structured
+          service: gateway
+          __path__: /var/log/veloz/*.json
+    pipeline_stages:
+      # Parse JSON logs
+      - json:
+          expressions:
+            level: level
+            message: message
+            timestamp: timestamp
+            component: component
+            trace_id: trace_id
+            span_id: span_id
+      # Extract labels from parsed JSON
+      - labels:
+          level:
+          component:
+      # Set timestamp from log entry
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      # Output the message field
+      - output:
+          source: message

@@ -1,0 +1,272 @@
+# VeloZ Helm Chart Values
+# Default configuration values for the VeloZ trading engine
+
+# Global settings
+global:
+  # Environment: dev, staging, production
+  environment: dev
+  # Image pull secrets for private registries
+  imagePullSecrets: []
+
+# Engine configuration
+engine:
+  # Number of replicas (use 1 for trading to avoid duplicate orders)
+  replicaCount: 1
+
+  image:
+    repository: veloz-engine
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "2"
+
+  # Probes
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  startupProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 8080
+    failureThreshold: 30
+    periodSeconds: 10
+
+  # Environment variables
+  env:
+    VELOZ_PRESET: "dev"
+    VELOZ_HOST: "0.0.0.0"
+    VELOZ_PORT: "8080"
+    VELOZ_MARKET_SOURCE: "binance_rest"
+    VELOZ_MARKET_SYMBOL: "BTCUSDT"
+    VELOZ_EXECUTION_MODE: "sim_engine"
+    VELOZ_BINANCE_BASE_URL: "https://api.binance.com"
+    VELOZ_BINANCE_TRADE_BASE_URL: "https://testnet.binance.vision"
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+  # Pod annotations
+  podAnnotations: {}
+
+  # Pod security context
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+
+  # Container security context
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Secrets configuration
+secrets:
+  # Use external secrets (e.g., HashiCorp Vault)
+  useExternal: false
+  # External secrets provider (vault, aws-secrets-manager, etc.)
+  externalProvider: "vault"
+  # Vault configuration
+  vault:
+    address: "http://vault:8200"
+    path: "secret/data/veloz"
+    role: "veloz"
+
+  # Inline secrets (only for development, use external in production)
+  inline:
+    binanceApiKey: ""
+    binanceApiSecret: ""
+
+# Database configuration
+database:
+  # Use external database
+  external: false
+  # Database URL (if external)
+  url: ""
+  # PostgreSQL subchart configuration (if not external)
+  postgresql:
+    enabled: false
+    auth:
+      database: veloz
+      username: veloz
+      existingSecret: veloz-db-credentials
+
+# Redis configuration (for caching/rate limiting)
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: veloz-redis-credentials
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: veloz.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: veloz-tls
+      hosts:
+        - veloz.example.com
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+  # Custom metrics (requires metrics-server and custom metrics adapter)
+  customMetrics: []
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: veloz
+        - podSelector:
+            matchLabels:
+              app: veloz-engine
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+
+# Service Account
+serviceAccount:
+  create: true
+  name: veloz
+  annotations: {}
+
+# RBAC
+rbac:
+  create: true
+
+# Prometheus monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    honorLabels: false
+    metricRelabelings: []
+    relabelings: []
+  prometheusRule:
+    enabled: true
+    labels: {}
+    # Additional custom rules can be added here
+    rules: []
+
+# Logging
+logging:
+  level: INFO
+  format: json
+
+# Persistence (for logs and state)
+persistence:
+  enabled: false
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# High Availability Configuration
+# When enabled, uses StatefulSet instead of Deployment
+ha:
+  enabled: false
+  # Number of replicas (minimum 2 for HA)
+  replicas: 2
+  # Leader election configuration
+  leaderElection:
+    enabled: true
+    # Lease duration in seconds
+    leaseDuration: 15
+    # Renew deadline in seconds
+    renewDeadline: 10
+    # Retry period in seconds
+    retryPeriod: 2
+  # Persistence for HA (required for WAL replication)
+  persistence:
+    storageClass: ""
+    # Size for data volume
+    dataSize: 10Gi
+    # Size for WAL volume
+    walSize: 5Gi
+  # Replication settings
+  replication:
+    # Replication mode: sync or async
+    mode: sync
+    # Port for replication traffic
+    port: 8081
+  # Failover settings
+  failover:
+    # Automatic failover enabled
+    enabled: true
+    # Health check interval in seconds
+    healthCheckInterval: 5
+    # Number of failed health checks before failover
+    failureThreshold: 3

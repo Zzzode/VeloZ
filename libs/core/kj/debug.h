@@ -847,7 +847,7 @@ template <typename T> struct DebugExpression {
 
   // Handle comparison operations by constructing a DebugComparison value.
 #define DEFINE_OPERATOR(OP)                                                                        \
-  template <typename U> DebugComparison<T, U> operator OP(U&& other) {                             \
+  template <typename U> DebugComparison<T, U> operator OP(U && other) {                            \
     bool result = value OP other;                                                                  \
     return {kj::fwd<T>(value), kj::fwd<U>(other), " " #OP " "_kj, result};                         \
   }

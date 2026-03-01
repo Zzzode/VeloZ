@@ -1,11 +1,11 @@
 #include "kj/test.h"
 #include "veloz/core/config_manager.h"
 
-#include <filesystem>
 #include <fstream>
+#include <kj/filesystem.h> // kj::Path and kj::newDiskFilesystem for filesystem operations
 #include <kj/memory.h>
 #include <kj/string.h>
-#include <string> // Kept for ConfigItem<std::string> template parameter
+#include <string>
 
 using namespace veloz::core;
 
@@ -19,8 +19,8 @@ KJ_TEST("ConfigItem: Builder") {
   auto item =
       ConfigItem<int>::Builder("test_item", "Test item").default_value(42).required(false).build();
 
-  KJ_EXPECT(std::string(item->key()) == "test_item");
-  KJ_EXPECT(std::string(item->description()) == "Test item");
+  KJ_EXPECT(item->key() == "test_item"_kj);
+  KJ_EXPECT(item->description() == "Test item"_kj);
   KJ_EXPECT(!item->is_required());
   KJ_EXPECT(item->has_default());
   KJ_EXPECT(item->is_set());
@@ -32,7 +32,8 @@ KJ_TEST("ConfigItem: Get value") {
   auto maybe_value = item->get();
   KJ_IF_SOME(value, maybe_value) {
     KJ_EXPECT(value == 100);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("value not found");
   }
   KJ_EXPECT(item->value() == 100);
@@ -69,7 +70,8 @@ KJ_TEST("ConfigItem: To string") {
   auto int_item = ConfigItem<int>::Builder("int", "Int").default_value(42).build();
   KJ_EXPECT(int_item->to_string() == "42");
 
-  auto string_item = ConfigItem<std::string>::Builder("str", "Str").default_value("hello").build();
+  auto string_item =
+      ConfigItem<kj::String>::Builder("str", "Str").default_value(kj::str("hello")).build();
   KJ_EXPECT(string_item->to_string() == "\"hello\"");
 
   auto bool_item = ConfigItem<bool>::Builder("bool", "Bool").default_value(true).build();
@@ -84,8 +86,12 @@ KJ_TEST("ConfigItem: To string") {
 }
 
 KJ_TEST("ConfigItem: Array") {
-  auto array_item = ConfigItem<std::vector<int>>::Builder("array", "Array")
-                        .default_value(std::vector<int>{1, 2, 3})
+  kj::Vector<int> default_array;
+  default_array.add(1);
+  default_array.add(2);
+  default_array.add(3);
+  auto array_item = ConfigItem<kj::Vector<int>>::Builder("array", "Array")
+                        .default_value(kj::mv(default_array))
                         .build();
 
   auto maybe_value = array_item->get();
@@ -94,12 +100,13 @@ KJ_TEST("ConfigItem: Array") {
     KJ_EXPECT(value[0] == 1);
     KJ_EXPECT(value[1] == 2);
     KJ_EXPECT(value[2] == 3);
-  } else {
+  }
+  else {
     KJ_FAIL_EXPECT("array value not found");
   }
 
-  std::string array_str = array_item->to_string();
-  KJ_EXPECT(array_str.find("[") != std::string::npos);
+  kj::String array_str = array_item->to_string();
+  KJ_EXPECT(array_str.asPtr().findFirst('[') != kj::none);
 }
 
 KJ_TEST("ConfigItem: Callback") {
@@ -140,7 +147,8 @@ KJ_TEST("ConfigGroup: Add item") {
   ConfigGroup group("test_group", "Test group");
 
   auto item1 = ConfigItem<int>::Builder("item1", "Item 1").default_value(1).build();
-  auto item2 = ConfigItem<std::string>::Builder("item2", "Item 2").default_value("test").build();
+  auto item2 =
+      ConfigItem<kj::String>::Builder("item2", "Item 2").default_value(kj::str("test")).build();
 
   group.add_item(kj::mv(item1));
   group.add_item(kj::mv(item2));
@@ -149,27 +157,27 @@ KJ_TEST("ConfigGroup: Add item") {
   KJ_EXPECT(found_item1 != nullptr);
   KJ_EXPECT(found_item1->value() == 1);
 
-  auto* found_item2 = group.get_item<std::string>("item2");
+  auto* found_item2 = group.get_item<kj::String>("item2");
   KJ_EXPECT(found_item2 != nullptr);
-  KJ_EXPECT(found_item2->value() == "test");
+  KJ_EXPECT(found_item2->value().asPtr() == "test"_kj);
 }
 
 KJ_TEST("ConfigGroup: Subgroups") {
   ConfigGroup root("root", "Root group");
   // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-  auto sub1 = std::make_unique<ConfigGroup>("sub1", "Subgroup 1");
-  auto sub2 = std::make_unique<ConfigGroup>("sub2", "Subgroup 2");
+  auto sub1 = kj::heap<ConfigGroup>("sub1", "Subgroup 1");
+  auto sub2 = kj::heap<ConfigGroup>("sub2", "Subgroup 2");
 
   root.add_group(kj::mv(sub1));
   root.add_group(kj::mv(sub2));
 
   auto* found_sub1 = root.get_group("sub1");
   KJ_EXPECT(found_sub1 != nullptr);
-  KJ_EXPECT(std::string(found_sub1->name()) == "sub1");
+  KJ_EXPECT(found_sub1->name() == "sub1");
 
   auto* found_sub2 = root.get_group("sub2");
   KJ_EXPECT(found_sub2 != nullptr);
-  KJ_EXPECT(std::string(found_sub2->name()) == "sub2");
+  KJ_EXPECT(found_sub2->name() == "sub2");
 }
 
 KJ_TEST("ConfigGroup: Validate") {
@@ -197,7 +205,7 @@ KJ_TEST("ConfigGroup: Get items") {
   ConfigGroup group("test", "Test");
 
   auto item1 = ConfigItem<int>::Builder("item1", "1").default_value(1).build();
-  auto item2 = ConfigItem<std::string>::Builder("item2", "2").default_value("test").build();
+  auto item2 = ConfigItem<kj::String>::Builder("item2", "2").default_value(kj::str("test")).build();
 
   group.add_item(kj::mv(item1));
   group.add_item(kj::mv(item2));
@@ -214,11 +222,14 @@ KJ_TEST("ConfigManager: Basic") {
   ConfigManager manager("test");
   auto* root = manager.root_group();
   KJ_EXPECT(root != nullptr);
-  KJ_EXPECT(std::string(root->name()) == "root");
+  KJ_EXPECT(root->name() == "root");
 }
 
 KJ_TEST("ConfigManager: Load from JSON file") {
-  std::filesystem::create_directories("test_configs");
+  // Create directory using KJ filesystem API
+  auto fs = kj::newDiskFilesystem();
+  auto& root = fs->getCurrent();
+  root.openSubdir(kj::Path{"test_configs"}, kj::WriteMode::CREATE | kj::WriteMode::CREATE_PARENT);
 
   std::ofstream ofs("test_configs/config.json");
   ofs << R"({
@@ -230,15 +241,15 @@ KJ_TEST("ConfigManager: Load from JSON file") {
   ofs.close();
 
   ConfigManager manager("test");
-  KJ_EXPECT(manager.load_from_json("test_configs/config.json"));
+  KJ_EXPECT(manager.load_from_json(kj::Path::parse("test_configs/config.json")));
 }
 
 KJ_TEST("ConfigManager: Load from JSON string") {
-  std::string json = R"({
+  kj::StringPtr json = R"({
     "value1": 42,
     "value2": "hello",
     "value3": false
-  })";
+  })"_kj;
 
   ConfigManager manager("test");
   KJ_EXPECT(manager.load_from_json_string(json));
@@ -252,7 +263,7 @@ KJ_TEST("ConfigManager: Find item") {
 
   auto* item = manager.find_item("test_item");
   KJ_EXPECT(item != nullptr);
-  KJ_EXPECT(std::string(item->key()) == "test_item");
+  KJ_EXPECT(item->key() == "test_item");
 
   auto* typed_item = manager.find_item<int>("test_item");
   KJ_EXPECT(typed_item != nullptr);
@@ -264,18 +275,22 @@ KJ_TEST("ConfigManager: Save to JSON file") {
   auto* root = manager.root_group();
 
   root->add_item(ConfigItem<int>::Builder("int_val", "Int").default_value(42).build());
-  root->add_item(ConfigItem<std::string>::Builder("str_val", "Str").default_value("test").build());
+  root->add_item(
+      ConfigItem<kj::String>::Builder("str_val", "Str").default_value(kj::str("test")).build());
   root->add_item(ConfigItem<bool>::Builder("bool_val", "Bool").default_value(true).build());
 
-  KJ_EXPECT(manager.save_to_json("test_configs/saved.json"));
-  KJ_EXPECT(std::filesystem::exists("test_configs/saved.json"));
+  KJ_EXPECT(manager.save_to_json(kj::Path::parse("test_configs/saved.json")));
+
+  // Verify file exists using KJ filesystem API
+  auto fs = kj::newDiskFilesystem();
+  auto& root_dir = fs->getCurrent();
+  KJ_EXPECT(root_dir.exists(kj::Path{"test_configs", "saved.json"}));
 
   // Verify content
-  std::ifstream ifs("test_configs/saved.json");
-  std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-  KJ_EXPECT(content.find("\"int_val\"") != std::string::npos);
-  KJ_EXPECT(content.find("\"str_val\"") != std::string::npos);
-  KJ_EXPECT(content.find("\"bool_val\"") != std::string::npos);
+  auto content = root_dir.openFile(kj::Path::parse("test_configs/saved.json"))->readAllText();
+  KJ_EXPECT(content.contains("\"int_val\""_kj));
+  KJ_EXPECT(content.contains("\"str_val\""_kj));
+  KJ_EXPECT(content.contains("\"bool_val\""_kj));
 }
 
 KJ_TEST("ConfigManager: Nested groups") {
@@ -283,16 +298,16 @@ KJ_TEST("ConfigManager: Nested groups") {
   auto* root = manager.root_group();
 
   // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-  auto db_group = std::make_unique<ConfigGroup>("database", "Database config");
+  auto db_group = kj::heap<ConfigGroup>("database", "Database config");
   db_group->add_item(
-      ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
+      ConfigItem<kj::String>::Builder("host", "Host").default_value(kj::str("localhost")).build());
   db_group->add_item(ConfigItem<int>::Builder("port", "Port").default_value(5432).build());
 
   root->add_group(kj::mv(db_group));
 
-  auto* host_item = manager.find_item<std::string>("database.host");
+  auto* host_item = manager.find_item<kj::String>("database.host");
   KJ_EXPECT(host_item != nullptr);
-  KJ_EXPECT(host_item->value() == "localhost");
+  KJ_EXPECT(host_item->value().asPtr() == "localhost"_kj);
 
   auto* port_item = manager.find_item<int>("database.port");
   KJ_EXPECT(port_item != nullptr);
@@ -333,8 +348,13 @@ KJ_TEST("ConfigManager: Validation") {
 KJ_TEST("ConfigManager: Set config file") {
   ConfigManager manager("test");
 
-  manager.set_config_file("test_configs/my_config.json");
-  KJ_EXPECT(manager.config_file() == "test_configs/my_config.json");
+  manager.set_config_file(kj::Path::parse("test_configs/my_config.json"));
+  KJ_IF_SOME(path, manager.config_file()) {
+    KJ_EXPECT(path.toString() == "test_configs/my_config.json");
+  }
+  else {
+    KJ_FAIL_EXPECT("config_file should be set");
+  }
 }
 
 KJ_TEST("ConfigManager: Hot reload") {
@@ -358,38 +378,45 @@ KJ_TEST("ConfigManager: Full config cycle") {
 
   // Create database config group
   // Uses std::make_unique for polymorphic ownership pattern (kj::Own lacks release())
-  auto db_group = std::make_unique<ConfigGroup>("database", "Database settings");
+  auto db_group = kj::heap<ConfigGroup>("database", "Database settings");
   db_group->add_item(
-      ConfigItem<std::string>::Builder("host", "Host").default_value("localhost").build());
+      ConfigItem<kj::String>::Builder("host", "Host").default_value(kj::str("localhost")).build());
   db_group->add_item(ConfigItem<int>::Builder("port", "Port")
                          .default_value(5432)
                          .validator([](const int& v) { return v > 0 && v < 65536; })
                          .build());
 
   // Create server config group
-  auto server_group = std::make_unique<ConfigGroup>("server", "Server settings");
+  auto server_group = kj::heap<ConfigGroup>("server", "Server settings");
   server_group->add_item(
       ConfigItem<int>::Builder("port", "Server port").default_value(8080).build());
+  kj::Vector<kj::String> default_allowed_hosts;
+  default_allowed_hosts.add(kj::str("localhost"));
+  default_allowed_hosts.add(kj::str("127.0.0.1"));
   server_group->add_item(
-      ConfigItem<std::vector<std::string>>::Builder("allowed_hosts", "Allowed hosts")
-          .default_value(std::vector<std::string>{"localhost", "127.0.0.1"})
+      ConfigItem<kj::Vector<kj::String>>::Builder("allowed_hosts", "Allowed hosts")
+          .default_value(kj::mv(default_allowed_hosts))
           .build());
 
   root->add_group(kj::mv(db_group));
   root->add_group(kj::mv(server_group));
 
   // Save config
-  KJ_EXPECT(manager.save_to_json("test_configs/full_config.json"));
-  KJ_EXPECT(std::filesystem::exists("test_configs/full_config.json"));
+  KJ_EXPECT(manager.save_to_json(kj::Path::parse("test_configs/full_config.json")));
+
+  // Verify file exists using KJ filesystem API
+  auto fs = kj::newDiskFilesystem();
+  auto& root_dir = fs->getCurrent();
+  KJ_EXPECT(root_dir.exists(kj::Path{"test_configs", "full_config.json"}));
 
   // Create new manager and load
   ConfigManager manager2("test2");
-  KJ_EXPECT(manager2.load_from_json("test_configs/full_config.json"));
+  KJ_EXPECT(manager2.load_from_json(kj::Path::parse("test_configs/full_config.json")));
 
   // Verify loaded values
-  auto* db_host = manager2.find_item<std::string>("database.host");
+  auto* db_host = manager2.find_item<kj::String>("database.host");
   KJ_EXPECT(db_host != nullptr);
-  KJ_EXPECT(db_host->value() == "localhost");
+  KJ_EXPECT(db_host->value().asPtr() == "localhost"_kj);
 
   auto* db_port = manager2.find_item<int>("database.port");
   KJ_EXPECT(db_port != nullptr);
@@ -399,7 +426,7 @@ KJ_TEST("ConfigManager: Full config cycle") {
   KJ_EXPECT(server_port != nullptr);
   KJ_EXPECT(server_port->value() == 8080);
 
-  auto* allowed_hosts = manager2.find_item<std::vector<std::string>>("server.allowed_hosts");
+  auto* allowed_hosts = manager2.find_item<kj::Vector<kj::String>>("server.allowed_hosts");
   KJ_EXPECT(allowed_hosts != nullptr);
   KJ_EXPECT(allowed_hosts->value().size() == 2);
 }
@@ -413,12 +440,12 @@ KJ_TEST("ConfigItemType: Traits") {
   KJ_EXPECT(ConfigTypeTraits<int>::type == ConfigItemType::Int);
   KJ_EXPECT(ConfigTypeTraits<int64_t>::type == ConfigItemType::Int64);
   KJ_EXPECT(ConfigTypeTraits<double>::type == ConfigItemType::Double);
-  KJ_EXPECT(ConfigTypeTraits<std::string>::type == ConfigItemType::String);
-  KJ_EXPECT(ConfigTypeTraits<std::vector<bool>>::type == ConfigItemType::BoolArray);
-  KJ_EXPECT(ConfigTypeTraits<std::vector<int>>::type == ConfigItemType::IntArray);
-  KJ_EXPECT(ConfigTypeTraits<std::vector<int64_t>>::type == ConfigItemType::Int64Array);
-  KJ_EXPECT(ConfigTypeTraits<std::vector<double>>::type == ConfigItemType::DoubleArray);
-  KJ_EXPECT(ConfigTypeTraits<std::vector<std::string>>::type == ConfigItemType::StringArray);
+  KJ_EXPECT(ConfigTypeTraits<kj::String>::type == ConfigItemType::String);
+  KJ_EXPECT(ConfigTypeTraits<kj::Vector<bool>>::type == ConfigItemType::BoolArray);
+  KJ_EXPECT(ConfigTypeTraits<kj::Vector<int>>::type == ConfigItemType::IntArray);
+  KJ_EXPECT(ConfigTypeTraits<kj::Vector<int64_t>>::type == ConfigItemType::Int64Array);
+  KJ_EXPECT(ConfigTypeTraits<kj::Vector<double>>::type == ConfigItemType::DoubleArray);
+  KJ_EXPECT(ConfigTypeTraits<kj::Vector<kj::String>>::type == ConfigItemType::StringArray);
 }
 
 // ============================================================================
@@ -429,11 +456,9 @@ KJ_TEST("ConfigManager: Unset item") {
   ConfigManager manager("test");
   auto item = ConfigItem<int>::Builder("test", "Test").build();
 
-  // Item not set, should throw std::runtime_error
+  // Item not set, should throw kj::Exception
   bool threw = false;
-  try {
-    (void)item->value();
-  } catch (const std::runtime_error&) {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() { (void)item->value(); })) {
     threw = true;
   }
   KJ_EXPECT(threw);
@@ -442,9 +467,9 @@ KJ_TEST("ConfigManager: Unset item") {
 KJ_TEST("ConfigManager: Invalid JSON") {
   ConfigManager manager("test");
 
-  KJ_EXPECT(!manager.load_from_json_string("{ invalid json }"));
-  KJ_EXPECT(!manager.load_from_json("test_configs/nonexistent.json"));
-  KJ_EXPECT(!manager.load_from_yaml("test_configs/config.yaml"));
+  KJ_EXPECT(!manager.load_from_json_string("{ invalid json }"_kj));
+  KJ_EXPECT(!manager.load_from_json(kj::Path::parse("test_configs/nonexistent.json")));
+  KJ_EXPECT(!manager.load_from_yaml(kj::Path::parse("test_configs/config.yaml")));
 }
 
 // ============================================================================
@@ -452,13 +477,16 @@ KJ_TEST("ConfigManager: Invalid JSON") {
 // ============================================================================
 
 KJ_TEST("ConfigManager: Cleanup") {
-  // Clean up test config files
-  try {
-    std::filesystem::remove_all("test_configs");
-  } catch (...) {
+  // Clean up test config files using KJ filesystem API
+  auto fs = kj::newDiskFilesystem();
+  auto& root_dir = fs->getCurrent();
+
+  KJ_IF_SOME(exception,
+             kj::runCatchingExceptions([&]() { root_dir.remove(kj::Path{"test_configs"}); })) {
+    // Directory might not exist or removal failed, ignore
   }
 
-  KJ_EXPECT(!std::filesystem::exists("test_configs"));
+  KJ_EXPECT(!root_dir.exists(kj::Path{"test_configs"}));
 }
 
 } // namespace

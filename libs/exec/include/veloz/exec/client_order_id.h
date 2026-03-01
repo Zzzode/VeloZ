@@ -13,9 +13,9 @@ namespace veloz::exec {
  * named fields for better readability and KJ-style API design.
  */
 struct ParsedClientOrderId {
-  kj::String strategy;     ///< Strategy identifier
-  std::int64_t timestamp;  ///< Unix timestamp in seconds
-  kj::String unique;       ///< Unique component (sequence-random or empty)
+  kj::String strategy;    ///< Strategy identifier
+  std::int64_t timestamp; ///< Unix timestamp in seconds
+  kj::String unique;      ///< Unique component (sequence-random or empty)
 };
 
 class ClientOrderIdGenerator final {

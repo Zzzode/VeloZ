@@ -81,6 +81,10 @@ target_compile_features(kj PUBLIC cxx_std_23)
 
 if(UNIX AND NOT ANDROID)
   target_link_libraries(kj PUBLIC pthread)
+  # KJ uses dladdr() for proper stack trace symbolization on PIE binaries
+  # This is needed to convert runtime addresses to file offsets for llvm-symbolizer
+  target_compile_definitions(kj PUBLIC KJ_HAS_LIBDL)
+  target_link_libraries(kj PUBLIC ${CMAKE_DL_LIBS})
 endif()
 
 include(CheckCXXSourceCompiles)

@@ -57,10 +57,10 @@ kj::String order_state_json(const veloz::oms::OrderState& st) {
   if (st.side.size() > 0) {
     parts.add(kj::str(",\"side\":\"", escape_json(st.side), "\""));
   }
-  KJ_IF_SOME (order_qty, st.order_qty) {
+  KJ_IF_SOME(order_qty, st.order_qty) {
     parts.add(kj::str(",\"order_qty\":", order_qty));
   }
-  KJ_IF_SOME (limit_price, st.limit_price) {
+  KJ_IF_SOME(limit_price, st.limit_price) {
     parts.add(kj::str(",\"limit_price\":", limit_price));
   }
   parts.add(kj::str(",\"executed_qty\":", st.executed_qty, ",\"avg_price\":", st.avg_price));
@@ -135,10 +135,10 @@ void EventEmitter::emit_order_update(kj::StringPtr client_order_id, kj::StringPt
   if (side.size() > 0) {
     parts.add(kj::str(",\"side\":\"", escape_json(side), "\""));
   }
-  KJ_IF_SOME (q, qty) {
+  KJ_IF_SOME(q, qty) {
     parts.add(kj::str(",\"qty\":", q));
   }
-  KJ_IF_SOME (p, price) {
+  KJ_IF_SOME(p, price) {
     parts.add(kj::str(",\"price\":", p));
   }
   if (reason.size() > 0) {
@@ -198,6 +198,125 @@ void EventEmitter::emit_account(std::int64_t ts_ns, const kj::Vector<Balance>& b
 void EventEmitter::emit_error(kj::StringPtr message, std::int64_t ts_ns) {
   kj::String json = kj::str("{\"type\":\"error\",\"ts_ns\":", ts_ns, ",\"message\":\"",
                             escape_json(message), "\"}");
+  emit_line(json);
+}
+
+void EventEmitter::emit_market_event(const veloz::market::MarketEvent& event) {
+  // Convert venue enum to string
+  kj::StringPtr venue_str = "unknown"_kj;
+  switch (event.venue) {
+  case veloz::common::Venue::Binance:
+    venue_str = "binance"_kj;
+    break;
+  case veloz::common::Venue::Okx:
+    venue_str = "okx"_kj;
+    break;
+  case veloz::common::Venue::Bybit:
+    venue_str = "bybit"_kj;
+    break;
+  default:
+    break;
+  }
+
+  // Dispatch based on event type and data
+  if (event.data.is<veloz::market::TradeData>()) {
+    const auto& trade = event.data.get<veloz::market::TradeData>();
+    emit_trade(event.symbol.value, venue_str, trade.price, trade.qty, trade.is_buyer_maker,
+               trade.trade_id, event.ts_exchange_ns);
+  } else if (event.data.is<veloz::market::BookData>()) {
+    const auto& book = event.data.get<veloz::market::BookData>();
+    if (event.type == veloz::market::MarketEventType::BookTop && book.bids.size() > 0 &&
+        book.asks.size() > 0) {
+      emit_book_top(event.symbol.value, venue_str, book.bids[0].price, book.bids[0].qty,
+                    book.asks[0].price, book.asks[0].qty, event.ts_exchange_ns);
+    } else if (event.type == veloz::market::MarketEventType::BookDelta) {
+      emit_book_delta(event.symbol.value, venue_str, book.bids, book.asks, book.sequence,
+                      event.ts_exchange_ns);
+    }
+  } else if (event.data.is<veloz::market::KlineData>()) {
+    const auto& kline = event.data.get<veloz::market::KlineData>();
+    emit_kline(event.symbol.value, venue_str, kline.open, kline.high, kline.low, kline.close,
+               kline.volume, kline.start_time, kline.close_time, event.ts_exchange_ns);
+  }
+}
+
+void EventEmitter::emit_trade(kj::StringPtr symbol, kj::StringPtr venue, double price, double qty,
+                              bool is_buyer_maker, std::int64_t trade_id, std::int64_t ts_ns) {
+  kj::String json =
+      kj::str("{\"type\":\"trade\",\"symbol\":\"", escape_json(symbol), "\",\"venue\":\"",
+              escape_json(venue), "\",\"price\":", price, ",\"qty\":", qty,
+              ",\"is_buyer_maker\":", is_buyer_maker ? "true" : "false", ",\"trade_id\":", trade_id,
+              ",\"ts_ns\":", ts_ns, "}");
+  emit_line(json);
+}
+
+void EventEmitter::emit_book_top(kj::StringPtr symbol, kj::StringPtr venue, double bid_price,
+                                 double bid_qty, double ask_price, double ask_qty,
+                                 std::int64_t ts_ns) {
+  kj::String json =
+      kj::str("{\"type\":\"book_top\",\"symbol\":\"", escape_json(symbol), "\",\"venue\":\"",
+              escape_json(venue), "\",\"bid_price\":", bid_price, ",\"bid_qty\":", bid_qty,
+              ",\"ask_price\":", ask_price, ",\"ask_qty\":", ask_qty, ",\"ts_ns\":", ts_ns, "}");
+  emit_line(json);
+}
+
+void EventEmitter::emit_book_delta(kj::StringPtr symbol, kj::StringPtr venue,
+                                   const kj::Vector<veloz::market::BookLevel>& bids,
+                                   const kj::Vector<veloz::market::BookLevel>& asks,
+                                   std::int64_t sequence, std::int64_t ts_ns) {
+  kj::Vector<kj::String> parts;
+  parts.add(kj::str("{\"type\":\"book_delta\",\"symbol\":\"", escape_json(symbol),
+                    "\",\"venue\":\"", escape_json(venue), "\",\"sequence\":", sequence,
+                    ",\"bids\":["));
+
+  for (size_t i = 0; i < bids.size(); ++i) {
+    if (i > 0) {
+      parts.add(kj::str(","));
+    }
+    parts.add(kj::str("[", bids[i].price, ",", bids[i].qty, "]"));
+  }
+  parts.add(kj::str("],\"asks\":["));
+
+  for (size_t i = 0; i < asks.size(); ++i) {
+    if (i > 0) {
+      parts.add(kj::str(","));
+    }
+    parts.add(kj::str("[", asks[i].price, ",", asks[i].qty, "]"));
+  }
+  parts.add(kj::str("],\"ts_ns\":", ts_ns, "}"));
+
+  // Concatenate all parts
+  size_t total_len = 0;
+  for (auto& p : parts) {
+    total_len += p.size();
+  }
+  kj::Vector<char> result;
+  result.reserve(total_len + 1);
+  for (auto& p : parts) {
+    for (char c : p) {
+      result.add(c);
+    }
+  }
+  result.add('\0');
+  emit_line(kj::String(result.releaseAsArray()));
+}
+
+void EventEmitter::emit_kline(kj::StringPtr symbol, kj::StringPtr venue, double open, double high,
+                              double low, double close, double volume, std::int64_t start_time,
+                              std::int64_t close_time, std::int64_t ts_ns) {
+  kj::String json =
+      kj::str("{\"type\":\"kline\",\"symbol\":\"", escape_json(symbol), "\",\"venue\":\"",
+              escape_json(venue), "\",\"open\":", open, ",\"high\":", high, ",\"low\":", low,
+              ",\"close\":", close, ",\"volume\":", volume, ",\"start_time\":", start_time,
+              ",\"close_time\":", close_time, ",\"ts_ns\":", ts_ns, "}");
+  emit_line(json);
+}
+
+void EventEmitter::emit_subscription_status(kj::StringPtr symbol, kj::StringPtr event_type,
+                                            kj::StringPtr status, std::int64_t ts_ns) {
+  kj::String json = kj::str("{\"type\":\"subscription_status\",\"symbol\":\"", escape_json(symbol),
+                            "\",\"event_type\":\"", escape_json(event_type), "\",\"status\":\"",
+                            escape_json(status), "\",\"ts_ns\":", ts_ns, "}");
   emit_line(json);
 }
 

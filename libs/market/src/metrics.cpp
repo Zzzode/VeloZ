@@ -1,5 +1,7 @@
 #include "veloz/market/metrics.h"
 
+#include "veloz/core/metrics.h"
+
 #include <cmath> // std::ceil - standard C++ math function (no KJ equivalent)
 
 namespace veloz::market {
@@ -23,6 +25,8 @@ void MarketMetrics::record_drop() {
 
 void MarketMetrics::record_reconnect() {
   ++reconnect_count_;
+  // Increment global reconnect count metric
+  veloz::core::counter_inc("veloz_reconnect_count");
 }
 
 void MarketMetrics::record_gap(int64_t expected_seq, int64_t actual_seq) {

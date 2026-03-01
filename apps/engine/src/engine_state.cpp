@@ -13,7 +13,7 @@ namespace {
 // Helper to extract value from kj::Maybe with a default
 template <typename T> T maybe_or(const kj::Maybe<T>& maybe, T default_value) {
   T result = default_value;
-  KJ_IF_SOME (val, maybe) {
+  KJ_IF_SOME(val, maybe) {
     result = val;
   }
   return result;
@@ -43,14 +43,14 @@ kj::Vector<Balance> EngineState::snapshot_balances() const {
   kj::Vector<Balance> snapshot;
   auto lock = balances_.lockShared();
 
-  KJ_IF_SOME (usdt, lock->find("USDT"_kj)) {
+  KJ_IF_SOME(usdt, lock->find("USDT"_kj)) {
     Balance b;
     b.asset = kj::str(usdt.asset);
     b.free = usdt.free;
     b.locked = usdt.locked;
     snapshot.add(kj::mv(b));
   }
-  KJ_IF_SOME (btc, lock->find("BTC"_kj)) {
+  KJ_IF_SOME(btc, lock->find("BTC"_kj)) {
     Balance b;
     b.asset = kj::str(btc.asset);
     b.free = btc.free;
@@ -87,9 +87,10 @@ bool EngineState::reserve_for_order(const veloz::exec::PlaceOrderRequest& reques
   auto lock = balances_.lockExclusive();
 
   // Ensure USDT balance exists
-  KJ_IF_SOME (usdt, lock->find("USDT"_kj)) {
+  KJ_IF_SOME(usdt, lock->find("USDT"_kj)) {
     (void)usdt; // exists
-  } else {
+  }
+  else {
     Balance usdt;
     usdt.asset = kj::str("USDT");
     usdt.free = 0.0;
@@ -98,9 +99,10 @@ bool EngineState::reserve_for_order(const veloz::exec::PlaceOrderRequest& reques
   }
 
   // Ensure BTC balance exists
-  KJ_IF_SOME (btc, lock->find("BTC"_kj)) {
+  KJ_IF_SOME(btc, lock->find("BTC"_kj)) {
     (void)btc; // exists
-  } else {
+  }
+  else {
     Balance btc;
     btc.asset = kj::str("BTC");
     btc.free = 0.0;
@@ -114,8 +116,8 @@ bool EngineState::reserve_for_order(const veloz::exec::PlaceOrderRequest& reques
     if (usdt.free + 1e-12 < notional) {
       reason = kj::str("insufficient_funds");
       order_store_.note_order_params(request);
-      order_store_.apply_order_update(request.client_order_id, request.symbol.value.c_str(), "BUY", "",
-                                      "REJECTED", reason.cStr(), ts_ns);
+      order_store_.apply_order_update(request.client_order_id, request.symbol.value, "BUY", "",
+                                      "REJECTED", reason, ts_ns);
       return false;
     }
     usdt.free -= notional;
@@ -127,8 +129,8 @@ bool EngineState::reserve_for_order(const veloz::exec::PlaceOrderRequest& reques
   if (btc.free + 1e-12 < request.qty) {
     reason = kj::str("insufficient_funds");
     order_store_.note_order_params(request);
-    order_store_.apply_order_update(request.client_order_id, request.symbol.value.c_str(), "SELL", "",
-                                    "REJECTED", reason.cStr(), ts_ns);
+    order_store_.apply_order_update(request.client_order_id, request.symbol.value, "SELL", "",
+                                    "REJECTED", reason, ts_ns);
     return false;
   }
   btc.free -= request.qty;
@@ -144,7 +146,7 @@ OrderDecision EngineState::place_order(const veloz::exec::PlaceOrderRequest& req
   if (!risk.allowed) {
     decision.accepted = false;
     decision.reason = kj::str(risk.reason.cStr());
-    order_store_.apply_order_update(request.client_order_id, request.symbol.value.c_str(),
+    order_store_.apply_order_update(request.client_order_id, request.symbol.value,
                                     (request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY",
                                     "", "REJECTED", risk.reason.cStr(), ts_ns);
     return decision;
@@ -153,7 +155,7 @@ OrderDecision EngineState::place_order(const veloz::exec::PlaceOrderRequest& req
   if (has_duplicate(kj::StringPtr(request.client_order_id.cStr()))) {
     decision.accepted = false;
     decision.reason = kj::str("duplicate_client_order_id");
-    order_store_.apply_order_update(request.client_order_id, request.symbol.value.c_str(),
+    order_store_.apply_order_update(request.client_order_id, request.symbol.value,
                                     (request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY",
                                     "", "REJECTED", decision.reason.cStr(), ts_ns);
     return decision;
@@ -171,9 +173,9 @@ OrderDecision EngineState::place_order(const veloz::exec::PlaceOrderRequest& req
     counter = *lock;
   }
   decision.venue_order_id = kj::str("sim-", counter);
-  order_store_.apply_order_update(request.client_order_id, request.symbol.value.c_str(),
+  order_store_.apply_order_update(request.client_order_id, request.symbol.value,
                                   (request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY",
-                                  decision.venue_order_id.cStr(), "ACCEPTED", "", ts_ns);
+                                  decision.venue_order_id, "ACCEPTED", "", ts_ns);
 
   PendingOrder po;
   // Copy request fields manually since PlaceOrderRequest contains non-copyable kj::String
@@ -221,7 +223,7 @@ CancelDecision EngineState::cancel_order(kj::StringPtr client_order_id, std::int
   PendingOrder cancelled;
   {
     auto lock = pending_.lockExclusive();
-    KJ_IF_SOME (po, lock->find(client_order_id)) {
+    KJ_IF_SOME(po, lock->find(client_order_id)) {
       // Copy fields since we need to use it after erasing
       cancelled.request.symbol = po.request.symbol;
       cancelled.request.side = po.request.side;
@@ -242,7 +244,7 @@ CancelDecision EngineState::cancel_order(kj::StringPtr client_order_id, std::int
 
   if (decision.found) {
     order_store_.apply_order_update(
-        cancelled.request.client_order_id, cancelled.request.symbol.value.c_str(),
+        cancelled.request.client_order_id, cancelled.request.symbol.value,
         (cancelled.request.side == veloz::exec::OrderSide::Sell) ? "SELL" : "BUY", "", "CANCELLED",
         "", ts_ns);
     release_on_cancel(cancelled);
@@ -252,8 +254,8 @@ CancelDecision EngineState::cancel_order(kj::StringPtr client_order_id, std::int
   }
 
   decision.reason = kj::str("unknown_order");
-  order_store_.apply_order_update(client_order_id, "", "", "", "REJECTED",
-                                  decision.reason.cStr(), ts_ns);
+  order_store_.apply_order_update(client_order_id, "", "", "", "REJECTED", decision.reason.cStr(),
+                                  ts_ns);
   return decision;
 }
 
@@ -261,9 +263,10 @@ void EngineState::release_on_cancel(const PendingOrder& po) {
   auto lock = balances_.lockExclusive();
 
   // Ensure USDT balance exists
-  KJ_IF_SOME (usdt, lock->find("USDT"_kj)) {
+  KJ_IF_SOME(usdt, lock->find("USDT"_kj)) {
     (void)usdt;
-  } else {
+  }
+  else {
     Balance usdt;
     usdt.asset = kj::str("USDT");
     usdt.free = 0.0;
@@ -272,9 +275,10 @@ void EngineState::release_on_cancel(const PendingOrder& po) {
   }
 
   // Ensure BTC balance exists
-  KJ_IF_SOME (btc, lock->find("BTC"_kj)) {
+  KJ_IF_SOME(btc, lock->find("BTC"_kj)) {
     (void)btc;
-  } else {
+  }
+  else {
     Balance btc;
     btc.asset = kj::str("BTC");
     btc.free = 0.0;
@@ -294,14 +298,15 @@ void EngineState::release_on_cancel(const PendingOrder& po) {
 }
 
 void EngineState::apply_fill(const PendingOrder& po, double fill_price, std::int64_t ts_ns) {
-  order_store_.apply_fill(po.request.client_order_id, po.request.symbol.value.c_str(), po.request.qty,
+  order_store_.apply_fill(po.request.client_order_id, po.request.symbol.value, po.request.qty,
                           fill_price, ts_ns);
   auto lock = balances_.lockExclusive();
 
   // Ensure USDT balance exists
-  KJ_IF_SOME (usdt, lock->find("USDT"_kj)) {
+  KJ_IF_SOME(usdt, lock->find("USDT"_kj)) {
     (void)usdt;
-  } else {
+  }
+  else {
     Balance usdt;
     usdt.asset = kj::str("USDT");
     usdt.free = 0.0;
@@ -310,9 +315,10 @@ void EngineState::apply_fill(const PendingOrder& po, double fill_price, std::int
   }
 
   // Ensure BTC balance exists
-  KJ_IF_SOME (btc, lock->find("BTC"_kj)) {
+  KJ_IF_SOME(btc, lock->find("BTC"_kj)) {
     (void)btc;
-  } else {
+  }
+  else {
     Balance btc;
     btc.asset = kj::str("BTC");
     btc.free = 0.0;
@@ -350,7 +356,7 @@ kj::Vector<PendingOrder> EngineState::collect_due_fills(std::int64_t now_ns) {
 
   // Now remove and collect
   for (auto& key : keys_to_remove) {
-    KJ_IF_SOME (po, lock->find(key)) {
+    KJ_IF_SOME(po, lock->find(key)) {
       PendingOrder copy;
       copy.request.symbol = po.request.symbol;
       copy.request.side = po.request.side;

@@ -21,24 +21,21 @@
 #pragma once
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
-#include <format>
-#include <functional> // std::function used for custom deleter in std::unique_ptr
+#include <cstdio>
 #include <kj/arena.h>
 #include <kj/common.h>
+#include <kj/debug.h> // KJ_FAIL_REQUIRE for exception handling
 #include <kj/function.h>
 #include <kj/map.h>
 #include <kj/memory.h>
 #include <kj/mutex.h>
+#include <kj/string-tree.h>
 #include <kj/string.h>
-#include <memory> // std::unique_ptr used for custom deleter support in create()
+#include <kj/vector.h>
 #include <new>
-#include <sstream>
-#include <stdexcept>
-#include <string> // std::string used for MemoryAllocationSite::name and report generation
-#include <thread>
-#include <vector> // std::vector used for internal block management
+#include <type_traits>
+#include <utility>
 
 namespace veloz::core {
 
@@ -114,7 +111,7 @@ public:
     preallocate_blocks(initial_blocks);
   }
 
-  ~FixedSizeMemoryPool() override {
+  ~FixedSizeMemoryPool() noexcept override {
     reset();
   }
 
@@ -134,7 +131,7 @@ public:
     // Try to get from free list
     if (!lock->free_list.empty()) {
       void* ptr = lock->free_list.back();
-      lock->free_list.pop_back();
+      lock->free_list.removeLast();
       return ptr;
     }
 
@@ -142,11 +139,11 @@ public:
     if (max_blocks_ == 0 || lock->blocks.size() < max_blocks_) {
       allocate_block_unlocked(*lock);
       void* ptr = lock->free_list.back();
-      lock->free_list.pop_back();
+      lock->free_list.removeLast();
       return ptr;
     }
 
-    throw std::bad_alloc();
+    KJ_FAIL_REQUIRE("Memory pool exhausted: no free blocks available", max_blocks_);
   }
 
   /**
@@ -159,7 +156,7 @@ public:
     }
 
     auto lock = guarded_.lockExclusive();
-    lock->free_list.push_back(ptr);
+    lock->free_list.add(ptr);
     ++(lock->deallocation_count);
   }
 
@@ -167,10 +164,9 @@ public:
    * @brief Create an object using pool
    * @tparam Args Constructor argument types
    * @param args Constructor arguments
-   * @return Pointer to new object with custom deleter
+   * @return Owned pointer to new object
    */
-  template <typename... Args>
-  [[nodiscard]] std::unique_ptr<T, std::function<void(T*)>> create(Args&&... args) {
+  template <typename... Args> [[nodiscard]] kj::Own<T> create(Args&&... args) {
     void* ptr = allocate();
     T* obj = new (ptr) T(std::forward<Args>(args)...);
     auto lock = guarded_.lockExclusive();
@@ -179,7 +175,7 @@ public:
     if (lock->total_allocated_bytes > lock->peak_allocated_bytes) {
       lock->peak_allocated_bytes = lock->total_allocated_bytes;
     }
-    return std::unique_ptr<T, std::function<void(T*)>>(obj, [this](T* p) { destroy(p); });
+    return kj::Own<T>(obj, disposer_);
   }
 
   /**
@@ -250,15 +246,27 @@ public:
 
     while (lock->blocks.size() > needed_blocks) {
       ::operator delete(lock->blocks.back());
-      lock->blocks.pop_back();
+      lock->blocks.removeLast();
     }
   }
 
 private:
+  class PoolObjectDisposer final : public kj::Disposer {
+  public:
+    explicit PoolObjectDisposer(FixedSizeMemoryPool& pool) : pool_(&pool) {}
+
+  private:
+    void disposeImpl(void* pointer) const override {
+      pool_->destroy(static_cast<T*>(pointer));
+    }
+
+    FixedSizeMemoryPool* pool_;
+  };
+
   // Internal state for FixedSizeMemoryPool
   struct PoolState {
-    std::vector<void*> blocks;    // Allocated memory blocks
-    std::vector<void*> free_list; // Free slots
+    kj::Vector<void*> blocks;    // Allocated memory blocks
+    kj::Vector<void*> free_list; // Free slots
     size_t total_allocated_bytes{0};
     size_t peak_allocated_bytes{0};
     uint64_t allocation_count{0};
@@ -268,12 +276,12 @@ private:
   // Internal unlocked version - caller must hold the lock
   void allocate_block_unlocked(PoolState& state) {
     void* block = ::operator new(BlockSize * sizeof(T), std::align_val_t{alignof(T)});
-    state.blocks.push_back(block);
+    state.blocks.add(block);
 
     // Add all slots in block to free list
     char* bytes = static_cast<char*>(block);
     for (size_t i = 0; i < BlockSize; ++i) {
-      state.free_list.push_back(bytes + i * sizeof(T));
+      state.free_list.add(bytes + i * sizeof(T));
     }
   }
 
@@ -292,6 +300,7 @@ private:
 
   kj::MutexGuarded<PoolState> guarded_;
   const size_t max_blocks_;
+  PoolObjectDisposer disposer_{*this};
 };
 
 /**
@@ -391,8 +400,7 @@ struct MemoryAllocationSite {
   size_t object_count{0};
 
   MemoryAllocationSite() : name(kj::str("")) {}
-  explicit MemoryAllocationSite(kj::StringPtr site_name)
-      : name(kj::str(site_name)) {}
+  explicit MemoryAllocationSite(kj::StringPtr site_name) : name(kj::str(site_name)) {}
 };
 
 /**
@@ -420,7 +428,7 @@ public:
     auto lock = guarded_.lockExclusive();
     auto& site = lock->sites.findOrCreate(site_name, [&]() {
       return kj::HashMap<kj::String, MemoryAllocationSite>::Entry{kj::str(site_name),
-                                                                   MemoryAllocationSite(site_name)};
+                                                                  MemoryAllocationSite(site_name)};
     });
     site.current_bytes += size;
     site.peak_bytes = kj::max(site.peak_bytes, site.current_bytes);
@@ -457,7 +465,8 @@ public:
    * @param site_name Name of allocation site
    * @return Statistics wrapped in kj::Maybe, kj::none if not found
    */
-  [[nodiscard]] kj::Maybe<const MemoryAllocationSite&> get_site_stats(kj::StringPtr site_name) const {
+  [[nodiscard]] kj::Maybe<const MemoryAllocationSite&>
+  get_site_stats(kj::StringPtr site_name) const {
     auto lock = guarded_.lockExclusive();
     return lock->sites.find(site_name);
   }
@@ -522,7 +531,7 @@ public:
    * @brief Generate a memory usage report
    * @return Formatted report string
    */
-  [[nodiscard]] std::string generate_report() const {
+  [[nodiscard]] kj::String generate_report() const {
     auto lock = guarded_.lockExclusive();
 
     // Copy data before lock goes out of scope
@@ -532,43 +541,74 @@ public:
     const uint64_t total_deallocation_count = lock->total_deallocation_count;
     const size_t active_sites_count = lock->sites.size();
 
-    std::ostringstream oss;
-    oss << "Memory Usage Report\n";
-    oss << "==================\n";
-    oss << std::format("Total Allocated: {} bytes ({:.2f} MB)\n", total_allocated_bytes,
-                       total_allocated_bytes / 1024.0 / 1024.0);
-    oss << std::format("Peak Allocated: {} bytes ({:.2f} MB)\n", peak_allocated_bytes,
-                       peak_allocated_bytes / 1024.0 / 1024.0);
-    oss << std::format("Total Allocations: {}\n", total_allocation_count);
-    oss << std::format("Total Deallocations: {}\n", total_deallocation_count);
-    oss << std::format("Active Sites: {}\n\n", active_sites_count);
+    auto makeSpaces = [](size_t count) -> kj::String {
+      kj::String spaces = kj::heapString(count);
+      for (size_t i = 0; i < count; ++i) {
+        spaces.begin()[i] = ' ';
+      }
+      return spaces;
+    };
 
-    oss << "Top Sites by Peak Usage:\n";
+    auto formatMb = [](size_t bytes) -> kj::String {
+      char buf[64];
+      const double mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
+      const int n = std::snprintf(buf, sizeof(buf), "%.2f", mb);
+      if (n <= 0) {
+        return kj::str("0.00");
+      }
+      const size_t len = static_cast<size_t>(kj::min(n, static_cast<int>(sizeof(buf) - 1)));
+      return kj::heapString(buf, len);
+    };
 
-    // Collect site stats while lock is held - kj::HashMap iteration
+    auto padRight = [&](kj::StringPtr s, size_t width) -> kj::StringTree {
+      if (s.size() >= width) {
+        return kj::strTree(s);
+      }
+      return kj::strTree(s, makeSpaces(width - s.size()));
+    };
+
+    auto padLeft = [&](kj::StringPtr s, size_t width) -> kj::StringTree {
+      if (s.size() >= width) {
+        return kj::strTree(s);
+      }
+      return kj::strTree(makeSpaces(width - s.size()), s);
+    };
+
     struct SiteInfo {
-      std::string name;
+      kj::String name;
       size_t peak_bytes;
       size_t allocation_count;
       size_t object_count;
     };
-    std::vector<SiteInfo> site_infos;
+
+    kj::Vector<SiteInfo> site_infos;
+    site_infos.reserve(lock->sites.size());
     for (const auto& entry : lock->sites) {
-      site_infos.push_back(SiteInfo{
-          std::string(entry.key.cStr()), entry.value.peak_bytes, entry.value.allocation_count,
-          entry.value.object_count});
+      SiteInfo info{kj::str(entry.key), entry.value.peak_bytes, entry.value.allocation_count,
+                    entry.value.object_count};
+      site_infos.add(kj::mv(info));
     }
     std::sort(site_infos.begin(), site_infos.end(),
-              [](const auto& a, const auto& b) { return a.peak_bytes > b.peak_bytes; });
+              [](const SiteInfo& a, const SiteInfo& b) { return a.peak_bytes > b.peak_bytes; });
+
+    kj::StringTree tree = kj::strTree(
+        "Memory Usage Report\n", "==================\n", "Total Allocated: ", total_allocated_bytes,
+        " bytes (", formatMb(total_allocated_bytes), " MB)\n",
+        "Peak Allocated: ", peak_allocated_bytes, " bytes (", formatMb(peak_allocated_bytes),
+        " MB)\n", "Total Allocations: ", total_allocation_count, "\n",
+        "Total Deallocations: ", total_deallocation_count, "\n",
+        "Active Sites: ", active_sites_count, "\n\n", "Top Sites by Peak Usage:\n");
 
     const size_t count = kj::min(site_infos.size(), size_t(10));
     for (size_t i = 0; i < count; ++i) {
       const auto& info = site_infos[i];
-      oss << std::format("  {:<30} {:>12} bytes ({:>6} allocs, {:>6} objects)\n", info.name,
-                         info.peak_bytes, info.allocation_count, info.object_count);
+      tree = kj::strTree(kj::mv(tree), "  ", padRight(info.name, 30), " ",
+                         padLeft(kj::str(info.peak_bytes), 12), " bytes (",
+                         padLeft(kj::str(info.allocation_count), 6), " allocs, ",
+                         padLeft(kj::str(info.object_count), 6), " objects)\n");
     }
 
-    return oss.str();
+    return tree.flatten();
   }
 
   /**

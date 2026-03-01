@@ -1,0 +1,41 @@
+---
+# Staging environment variables
+
+environment: staging
+veloz_namespace: veloz-staging
+veloz_release_name: veloz
+veloz_image_tag: "{{ lookup('env', 'VELOZ_IMAGE_TAG') | default('staging', true) }}"
+veloz_replica_count: 2
+
+# Deployment settings
+deployment_strategy: blue-green
+keep_previous_deployment: true
+health_check_retries: 30
+health_check_delay: 10
+
+# Helm values overrides
+helm_values:
+  global:
+    environment: staging
+  engine:
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "2"
+  monitoring:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  networkPolicy:
+    enabled: true
+
+# AWS settings
+aws_region: us-east-1
+eks_cluster_name: veloz-staging
+
+# Secrets
+secrets:
+  vault_path: "secret/data/veloz/staging"

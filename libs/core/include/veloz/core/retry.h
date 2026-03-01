@@ -5,9 +5,9 @@
 
 #include <chrono>
 #include <cmath>
-#include <functional>
 #include <kj/common.h>
 #include <kj/debug.h>
+#include <kj/exception.h>
 #include <kj/function.h>
 #include <kj/string.h>
 #include <random>
@@ -17,17 +17,34 @@ namespace veloz::core {
 
 /**
  * @brief Configuration for retry behavior
+ *
+ * Note: The should_retry predicate uses kj::Exception instead of std::exception
+ * to integrate with KJ's exception handling infrastructure.
+ *
+ * This struct is move-only because kj::Function is not copyable.
  */
 struct RetryConfig {
-  int max_attempts = 3;                                    // Maximum number of retry attempts
-  std::chrono::milliseconds initial_delay{100};            // Initial delay before first retry
-  std::chrono::milliseconds max_delay{30000};              // Maximum delay between retries
-  double backoff_multiplier = 2.0;                         // Exponential backoff multiplier
-  double jitter_factor = 0.1;                              // Random jitter factor (0.0 - 1.0)
-  bool retry_on_timeout = true;                            // Retry on timeout errors
-  bool retry_on_network_error = true;                      // Retry on network errors
-  bool retry_on_rate_limit = true;                         // Retry on rate limit errors
-  std::function<bool(const std::exception&)> should_retry; // Custom retry predicate
+  int max_attempts = 3;                         // Maximum number of retry attempts
+  std::chrono::milliseconds initial_delay{100}; // Initial delay before first retry
+  std::chrono::milliseconds max_delay{30000};   // Maximum delay between retries
+  double backoff_multiplier = 2.0;              // Exponential backoff multiplier
+  double jitter_factor = 0.1;                   // Random jitter factor (0.0 - 1.0)
+  bool retry_on_timeout = true;                 // Retry on timeout errors
+  bool retry_on_network_error = true;           // Retry on network errors
+  bool retry_on_rate_limit = true;              // Retry on rate limit errors
+  kj::Maybe<kj::Function<bool(const kj::Exception&)>>
+      should_retry; // Custom retry predicate (KJ-based)
+
+  // Default constructor
+  RetryConfig() = default;
+
+  // Move operations
+  RetryConfig(RetryConfig&&) = default;
+  RetryConfig& operator=(RetryConfig&&) = default;
+
+  // Disable copy operations (kj::Function is not copyable)
+  RetryConfig(const RetryConfig&) = delete;
+  RetryConfig& operator=(const RetryConfig&) = delete;
 };
 
 /**
@@ -49,7 +66,11 @@ template <typename T> struct RetryResult {
  */
 class RetryHandler final {
 public:
-  explicit RetryHandler(RetryConfig config = {}) : config_(kj::mv(config)) {}
+  // Default constructor with default config
+  RetryHandler() : config_() {}
+
+  // Move constructor for custom config
+  explicit RetryHandler(RetryConfig&& config) : config_(kj::mv(config)) {}
 
   /**
    * @brief Execute a function with retry logic
@@ -108,9 +129,16 @@ public:
         result.last_error = kj::str(e.what());
         record_failure(operation_name, "circuit_breaker");
         throw;
-      } catch (const std::exception& e) {
-        result.last_error = kj::str(e.what());
-        if (config_.should_retry && config_.should_retry(e)) {
+      } catch (...) {
+        // Catch any other exception and convert to kj::Exception
+        auto kjException = kj::getCaughtExceptionAsKj();
+        result.last_error = kj::str(kjException.getDescription());
+        // Use KJ_IF_SOME pattern for kj::Maybe<kj::Function>
+        bool should_retry_result = false;
+        KJ_IF_SOME(retry_fn, config_.should_retry) {
+          should_retry_result = retry_fn(kjException);
+        }
+        if (should_retry_result) {
           if (attempt < config_.max_attempts - 1) {
             auto delay = calculate_delay(attempt);
             result.total_delay += delay;
@@ -120,13 +148,13 @@ public:
           }
         }
         record_failure(operation_name, "unknown");
-        throw;
+        kj::throwFatalException(kj::mv(kjException));
       }
     }
 
     // Should not reach here, but if we do, throw retry exhausted
     throw RetryExhaustedException(
-        kj::str("Retry exhausted after ", result.attempts, " attempts: ", result.last_error).cStr(),
+        kj::str("Retry exhausted after ", result.attempts, " attempts: ", result.last_error),
         result.attempts);
   }
 
@@ -182,9 +210,16 @@ public:
         result.last_error = kj::str(e.what());
         record_failure(operation_name, "circuit_breaker");
         throw;
-      } catch (const std::exception& e) {
-        result.last_error = kj::str(e.what());
-        if (config_.should_retry && config_.should_retry(e)) {
+      } catch (...) {
+        // Catch any other exception and convert to kj::Exception
+        auto kjException = kj::getCaughtExceptionAsKj();
+        result.last_error = kj::str(kjException.getDescription());
+        // Use KJ_IF_SOME pattern for kj::Maybe<kj::Function>
+        bool should_retry_result = false;
+        KJ_IF_SOME(retry_fn, config_.should_retry) {
+          should_retry_result = retry_fn(kjException);
+        }
+        if (should_retry_result) {
           if (attempt < config_.max_attempts - 1) {
             auto delay = calculate_delay(attempt);
             result.total_delay += delay;
@@ -194,12 +229,12 @@ public:
           }
         }
         record_failure(operation_name, "unknown");
-        throw;
+        kj::throwFatalException(kj::mv(kjException));
       }
     }
 
     throw RetryExhaustedException(
-        kj::str("Retry exhausted after ", result.attempts, " attempts: ", result.last_error).cStr(),
+        kj::str("Retry exhausted after ", result.attempts, " attempts: ", result.last_error),
         result.attempts);
   }
 

@@ -1,0 +1,136 @@
+# Prometheus Alert Rules for VeloZ Gateway
+# File: config/prometheus/alerts.yml
+
+groups:
+  - name: veloz_gateway
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: GatewayHighErrorRate
+        expr: |
+          (
+            sum(rate(veloz_gateway_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(veloz_gateway_requests_total[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "High error rate on Gateway"
+          description: "Error rate is {{ $value | humanizePercentage }} for 5 minutes. Threshold is 1%."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-errors"
+
+      # High P99 latency
+      - alert: GatewayHighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(veloz_gateway_request_duration_seconds_bucket[5m])) by (le, instance)
+          ) > 0.005
+        for: 5m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "High P99 latency on Gateway"
+          description: "P99 latency is {{ $value | humanizeDuration }} for 5 minutes. Threshold is 5ms."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-performance"
+
+      # Memory leak detection
+      - alert: GatewayMemoryLeak
+        expr: |
+          (
+            process_resident_memory_bytes{job="veloz_gateway"}
+            -
+            process_resident_memory_bytes{job="veloz_gateway"} offset 1h
+          ) > 52428800
+        for: 10m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Possible memory leak in Gateway"
+          description: "Memory increased by >50MB in 1 hour. Current: {{ $value | humanize1024 }}B"
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-memory"
+
+      # Authentication failure spike
+      - alert: GatewayAuthFailures
+        expr: |
+          (
+            sum(rate(veloz_gateway_auth_failures_total[5m]))
+            /
+            sum(rate(veloz_gateway_auth_attempts_total[5m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Auth failure rate is {{ $value | humanizePercentage }}. Threshold is 10%."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-auth"
+
+      # Health check failure
+      - alert: GatewayHealthCheckFailed
+        expr: up{job="veloz_gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "Gateway health check failed"
+          description: "Gateway is down for >1 minute. Immediate intervention required."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-health"
+
+      # High CPU usage
+      - alert: GatewayHighCPU
+        expr: |
+          rate(process_cpu_seconds_total{job="veloz_gateway"}[5m]) > 0.8
+        for: 30m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "High CPU usage on Gateway"
+          description: "CPU usage is {{ $value | humanizePercentage }} for 30 minutes."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-performance"
+
+      # SSE connection drop rate
+      - alert: GatewaySSEConnectionDrops
+        expr: |
+          rate(veloz_gateway_sse_connections_closed_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "High SSE connection drop rate"
+          description: "{{ $value }} SSE connections/second are being dropped."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-sse"
+
+      # Order processing errors
+      - alert: GatewayOrderErrors
+        expr: |
+          rate(veloz_gateway_order_errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Order processing errors detected"
+          description: "{{ $value }} order errors/second detected."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-orders"
+
+      # Slow health check response
+      - alert: GatewaySlowHealthCheck
+        expr: |
+          veloz_gateway_health_check_duration_seconds > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Slow health check response"
+          description: "Health check taking {{ $value | humanizeDuration }}. Threshold is 100ms."
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-health"

@@ -251,6 +251,31 @@ Emitted when an error occurs.
 | `REJECTED` | Order rejected |
 | `EXPIRED` | Order expired |
 
+## Event Types from Engine Protocol
+
+The SSE stream forwards all engine events. In addition to the events documented above, the following event types from the engine protocol are also available via SSE:
+
+- `order_received` - When ORDER command is received
+- `cancel_received` - When CANCEL command is received
+- `query_received` - When QUERY command is received
+- `strategy_command_received` - When STRATEGY command is received
+- `strategy_loaded` - When a strategy is loaded
+- `strategy_started` - When a strategy starts
+- `strategy_stopped` - When a strategy stops
+- `strategy_paused` - When a strategy is paused
+- `strategy_resumed` - When a paused strategy is resumed
+- `strategy_unloaded` - When a strategy is unloaded
+- `strategy_list` - List of strategies
+- `strategy_status` - Single strategy status
+- `strategy_status_all` - All strategies status
+- `strategy_params_updated` - When strategy parameters are updated
+- `strategy_metrics` - Strategy metrics for specific strategy
+- `strategy_metrics_summary` - Strategy metrics summary
+- `engine_started` - Engine startup event
+- `engine_stopped` - Engine shutdown event
+
+For detailed field specifications of these events, see [Engine Protocol](engine_protocol.md).
+
 ## Keep-Alive
 
 The server sends a keep-alive message every 10 seconds when no events occur:
@@ -354,5 +379,6 @@ curl -N http://127.0.0.1:8080/api/stream | \
 
 ## Related
 
-- [HTTP API Reference](http-api.md) - REST API endpoints
-- [Engine Protocol](engine-protocol.md) - Engine stdio command format
+- [HTTP API Reference](http_api.md) - REST API endpoints
+- [Engine Protocol](engine_protocol.md) - Engine stdio command format
+- [Backtest API](backtest_api.md) - Backtest configuration and reporting

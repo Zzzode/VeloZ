@@ -1,9 +1,10 @@
 #include "veloz/core/optimized_event_loop.h"
 
+#include <kj/async-io.h>
 #include <kj/async.h>
 #include <kj/debug.h>
 #include <kj/time.h>
-#include <thread>
+#include <thread> // std::this_thread::sleep_for - for startup synchronization only
 
 namespace veloz::core {
 
@@ -13,11 +14,11 @@ OptimizedEventLoop::~OptimizedEventLoop() {
   stop();
 }
 
-void OptimizedEventLoop::post(std::function<void()> task) {
+void OptimizedEventLoop::post(kj::Function<void()> task) {
   post(kj::mv(task), EventPriority::Normal);
 }
 
-void OptimizedEventLoop::post(std::function<void()> task, EventPriority priority) {
+void OptimizedEventLoop::post(kj::Function<void()> task, EventPriority priority) {
   QueuedTask qt{
       .task = kj::mv(task), .priority = priority, .enqueue_time = std::chrono::steady_clock::now()};
 
@@ -38,11 +39,11 @@ void OptimizedEventLoop::post(std::function<void()> task, EventPriority priority
   }
 }
 
-void OptimizedEventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay) {
+void OptimizedEventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay) {
   post_delayed(kj::mv(task), delay, EventPriority::Normal);
 }
 
-void OptimizedEventLoop::post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+void OptimizedEventLoop::post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
                                       EventPriority priority) {
   // Capture priority and enqueue time for the delayed task
   auto enqueue_time = std::chrono::steady_clock::now();
@@ -81,13 +82,14 @@ void OptimizedEventLoop::execute_task(QueuedTask& task) {
     // Retry if another thread updated it
   }
 
-  // Execute task with timing
+  // Execute task with timing using KJ exception handling
   auto start = std::chrono::steady_clock::now();
-  try {
-    task.task();
-    stats_.events_processed++;
-  } catch (...) {
+  KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() { task.task(); })) {
     stats_.events_failed++;
+    KJ_LOG(WARNING, "Task execution failed", exception.getDescription());
+  }
+  else {
+    stats_.events_processed++;
   }
   auto end = std::chrono::steady_clock::now();
 
@@ -115,7 +117,8 @@ size_t OptimizedEventLoop::drain_queue() {
 
       execute_task(task);
       processed++;
-    } else {
+    }
+    else {
       break;
     }
   }
@@ -159,9 +162,11 @@ void OptimizedEventLoop::run() {
   stop_requested_.store(false);
   last_tick_time_ = std::chrono::steady_clock::now();
 
-  // Create KJ event loop for cross-thread wake-up
-  kj::EventLoop kj_event_loop;
-  kj::WaitScope wait_scope(kj_event_loop);
+  // Create KJ async I/O infrastructure using setupAsyncIo()
+  // This provides real OS-level async I/O with proper timer support
+  kj::AsyncIoContext io_context = kj::setupAsyncIo();
+  kj::WaitScope& wait_scope = io_context.waitScope;
+  kj::Timer& timer = io_context.provider->getTimer();
 
   while (!stop_requested_.load()) {
     // Process timers first (may add tasks to the queue)
@@ -176,13 +181,16 @@ void OptimizedEventLoop::run() {
       uint64_t next_tick = timer_wheel_.next_timer_tick();
       uint64_t current_tick = timer_wheel_.current_tick();
 
-      std::chrono::milliseconds wait_time(1); // Default 1ms poll interval
+      kj::Duration kj_delay = 100 * kj::MILLISECONDS; // Default poll interval
 
       if (next_tick != UINT64_MAX && next_tick > current_tick) {
         uint64_t delay = next_tick - current_tick;
-        if (delay < 1000) {
-          wait_time = std::chrono::milliseconds(delay);
-        }
+        // Cap the delay to avoid waiting too long
+        kj_delay = kj::min(delay * kj::MILLISECONDS, 100 * kj::MILLISECONDS);
+      } else if (pending_delayed_.load(std::memory_order_relaxed) > 0) {
+        // If there are pending delayed tasks but next_tick is not set correctly,
+        // use a short poll interval to ensure timely execution
+        kj_delay = 10 * kj::MILLISECONDS;
       }
 
       // Set up cross-thread wake-up
@@ -192,9 +200,20 @@ void OptimizedEventLoop::run() {
         *lock = kj::mv(paf.fulfiller);
       }
 
-      // Brief sleep to avoid busy-waiting
-      // In a production system, we'd use proper OS-level wake-up mechanisms
-      std::this_thread::sleep_for(kj::min(wait_time, std::chrono::milliseconds(1)));
+      // Create timeout promise using KJ timer from setupAsyncIo()
+      // This is a real OS-level timer that works without manual advancement
+      auto timeout_promise = timer.afterDelay(kj_delay);
+      auto wake_promise = kj::mv(paf.promise);
+
+      // Use exclusiveJoin to wait for either wake-up or timeout
+      // This is the KJ-idiomatic way to wait without busy-polling
+      auto combined = wake_promise.exclusiveJoin(kj::mv(timeout_promise));
+
+      // Wait on the combined promise using KJ's event loop
+      // With setupAsyncIo(), wait() properly blocks on OS-level I/O
+      if (!stop_requested_.load()) {
+        combined.wait(wait_scope);
+      }
 
       // Clear the wake fulfiller
       {

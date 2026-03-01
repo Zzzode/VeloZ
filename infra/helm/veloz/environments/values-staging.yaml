@@ -1,0 +1,105 @@
+# Staging environment values
+# Usage: helm install veloz ./veloz -f environments/values-staging.yaml
+
+global:
+  environment: staging
+
+engine:
+  replicaCount: 2
+
+  image:
+    tag: staging
+    pullPolicy: Always
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "2"
+
+  env:
+    VELOZ_PRESET: "release"
+    VELOZ_EXECUTION_MODE: "binance_testnet_spot"
+    VELOZ_BINANCE_TRADE_BASE_URL: "https://testnet.binance.vision"
+
+# Use Vault for secrets
+secrets:
+  useExternal: true
+  externalProvider: vault
+  vault:
+    address: "http://vault.vault:8200"
+    path: "secret/data/veloz/staging"
+    role: "veloz-staging"
+
+# PostgreSQL for staging
+database:
+  external: false
+  postgresql:
+    enabled: true
+    auth:
+      database: veloz_staging
+      username: veloz
+      existingSecret: veloz-db-credentials
+
+# Redis for caching
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: veloz-redis-credentials
+
+# Ingress enabled
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+  hosts:
+    - host: veloz-staging.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: veloz-staging-tls
+      hosts:
+        - veloz-staging.example.com
+
+# Autoscaling enabled
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# PDB enabled
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network policy enabled
+networkPolicy:
+  enabled: true
+
+# Full monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+  prometheusRule:
+    enabled: true
+
+logging:
+  level: INFO
+  format: json
+
+# Persistence enabled
+persistence:
+  enabled: true
+  storageClass: "standard"
+  size: 20Gi

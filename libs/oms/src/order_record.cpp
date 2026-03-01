@@ -75,8 +75,8 @@ void OrderStore::note_order_params(const veloz::exec::PlaceOrderRequest& request
                                                       OrderState{}};
   });
   st.client_order_id = kj::heapString(request.client_order_id);
-  if (!request.symbol.value.empty()) {
-    st.symbol = kj::heapString(request.symbol.value.c_str());
+  if (request.symbol.value.size() > 0) {
+    st.symbol = kj::heapString(request.symbol.value);
   }
   st.side = kj::heapString(side_to_string(request.side));
   if (request.qty > 0.0) {
@@ -258,7 +258,7 @@ void OrderStore::apply_execution_report(const veloz::exec::ExecutionReport& repo
                                                       OrderState{}};
   });
   st.client_order_id = kj::heapString(report.client_order_id);
-  st.symbol = kj::heapString(report.symbol.value.c_str());
+  st.symbol = kj::heapString(report.symbol.value);
   if (report.last_fill_qty > 0.0) {
     const double new_cum = st.executed_qty + report.last_fill_qty;
     const double notional =

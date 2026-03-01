@@ -1,0 +1,95 @@
+# Chaos Mesh: Stress Chaos Experiments
+# Tests system behavior under resource exhaustion
+
+---
+# CPU Stress: High CPU usage
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: veloz-cpu-stress
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: cpu-stress
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  stressors:
+    cpu:
+      workers: 2
+      load: 80
+  duration: "120s"
+---
+# Memory Stress: High memory usage
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: veloz-memory-stress
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: memory-stress
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  stressors:
+    memory:
+      workers: 2
+      size: "512MB"
+  duration: "120s"
+---
+# Combined Stress: CPU + Memory
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: veloz-combined-stress
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: combined-stress
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-engine
+  stressors:
+    cpu:
+      workers: 1
+      load: 50
+    memory:
+      workers: 1
+      size: "256MB"
+  duration: "180s"
+---
+# IO Stress: Disk I/O pressure
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: veloz-io-latency
+  namespace: veloz
+  labels:
+    app: veloz
+    experiment: io-latency
+spec:
+  action: latency
+  mode: all
+  selector:
+    namespaces:
+      - veloz
+    labelSelectors:
+      app: veloz-gateway
+  volumePath: /var/log/veloz
+  path: "*"
+  delay: "100ms"
+  percent: 50
+  duration: "60s"

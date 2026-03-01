@@ -6,10 +6,11 @@ void OrderRouter::register_adapter(veloz::common::Venue venue, kj::Own<ExchangeA
   // kj::Own<T> cannot be null by design - it's a non-null pointer wrapper
   // If someone tries to pass a null-constructed Own, that's a usage error
   auto lock = guarded_.lockExclusive();
-  lock->adapters.upsert(venue, kj::mv(adapter), [](kj::Own<ExchangeAdapter>& existing,
-                                                   kj::Own<ExchangeAdapter>&& replacement) {
-    existing = kj::mv(replacement);
-  });
+  lock->adapters.upsert(
+      venue, kj::mv(adapter),
+      [](kj::Own<ExchangeAdapter>& existing, kj::Own<ExchangeAdapter>&& replacement) {
+        existing = kj::mv(replacement);
+      });
 }
 
 void OrderRouter::unregister_adapter(veloz::common::Venue venue) {

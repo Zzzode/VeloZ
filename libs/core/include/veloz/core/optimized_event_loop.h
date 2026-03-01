@@ -8,6 +8,7 @@
 #include <chrono>
 #include <kj/async.h>
 #include <kj/common.h>
+#include <kj/function.h>
 #include <kj/mutex.h>
 #include <kj/timer.h>
 
@@ -35,10 +36,10 @@ public:
   OptimizedEventLoop& operator=(const OptimizedEventLoop&) = delete;
 
   // Basic task posting (lock-free, can be called from any thread)
-  void post(std::function<void()> task);
-  void post(std::function<void()> task, EventPriority priority);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+  void post(kj::Function<void()> task);
+  void post(kj::Function<void()> task, EventPriority priority);
+  void post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay);
+  void post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
                     EventPriority priority);
 
   // Event loop control
@@ -86,7 +87,7 @@ public:
 private:
   // Task wrapper for the lock-free queue
   struct QueuedTask {
-    std::function<void()> task;
+    kj::Function<void()> task;
     EventPriority priority;
     std::chrono::steady_clock::time_point enqueue_time;
   };

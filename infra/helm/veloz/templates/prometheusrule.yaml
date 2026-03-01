@@ -1,0 +1,68 @@
+{{- if and .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "veloz.fullname" . }}
+  labels:
+    {{- include "veloz.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: veloz.rules
+      rules:
+        # Engine availability
+        - alert: VelozEngineDown
+          expr: up{job="{{ include "veloz.fullname" . }}"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "VeloZ engine is down"
+            description: "VeloZ engine {{ "{{" }} $labels.instance {{ "}}" }} has been down for more than 1 minute"
+
+        # High latency
+        - alert: VelozHighLatency
+          expr: histogram_quantile(0.99, sum(rate(veloz_request_duration_seconds_bucket{job="{{ include "veloz.fullname" . }}"}[5m])) by (le)) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "VeloZ high latency detected"
+            description: "99th percentile latency is above 1 second"
+
+        # High error rate
+        - alert: VelozHighErrorRate
+          expr: sum(rate(veloz_errors_total{job="{{ include "veloz.fullname" . }}"}[5m])) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "VeloZ high error rate"
+            description: "Error rate is above 0.1 per second"
+
+        # Memory usage
+        - alert: VelozHighMemoryUsage
+          expr: container_memory_usage_bytes{pod=~"{{ include "veloz.fullname" . }}.*"} / container_spec_memory_limit_bytes{pod=~"{{ include "veloz.fullname" . }}.*"} > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "VeloZ high memory usage"
+            description: "Memory usage is above 90%"
+
+        # Pod restarts
+        - alert: VelozPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{pod=~"{{ include "veloz.fullname" . }}.*"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "VeloZ pod restarting frequently"
+            description: "Pod has restarted more than 3 times in the last hour"
+
+        {{- with .Values.monitoring.prometheusRule.rules }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

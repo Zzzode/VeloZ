@@ -9,7 +9,6 @@
 #include <kj/memory.h>
 #include <kj/string.h>
 #include <kj/time.h>
-#include <string> // std::string required for OpenSSL external API compatibility
 
 namespace kj {
 class TlsContext;
@@ -18,8 +17,7 @@ class TlsContext;
 namespace veloz::exec {
 
 // CoinbaseAdapter uses KJ async I/O for HTTP operations.
-// std::string is still used for OpenSSL HMAC signature generation (external API requirement).
-// This is an exception to the KJ-first rule per CLAUDE.md guidelines.
+// HMAC signatures use kj::String interface through HmacSha256 wrapper.
 // Note: Coinbase Advanced Trade API uses JWT authentication (different from HMAC).
 class CoinbaseAdapter final : public ExchangeAdapter {
 public:
@@ -62,9 +60,9 @@ public:
   // Synchronous versions for backward compatibility (blocks on async)
   kj::Maybe<double> get_current_price(const veloz::common::SymbolId& symbol);
   kj::Maybe<kj::Array<PriceLevel>> get_order_book(const veloz::common::SymbolId& symbol,
-                                                   int depth = 10);
-  kj::Maybe<kj::Array<TradeData>>
-  get_recent_trades(const veloz::common::SymbolId& symbol, int limit = 500);
+                                                  int depth = 10);
+  kj::Maybe<kj::Array<TradeData>> get_recent_trades(const veloz::common::SymbolId& symbol,
+                                                    int limit = 500);
   kj::Maybe<double> get_account_balance(kj::StringPtr asset);
 
   // Configuration
@@ -82,7 +80,7 @@ private:
 
   // Helper methods
   // Build JWT token for Coinbase Advanced Trade API authentication
-  std::string build_jwt_token(const std::string& method, const std::string& request_path);
+  kj::String build_jwt_token(kj::StringPtr method, kj::StringPtr request_path);
   kj::String format_symbol(const veloz::common::SymbolId& symbol);
   kj::StringPtr order_side_to_string(OrderSide side);
   kj::StringPtr order_type_to_string(OrderType type);
@@ -100,9 +98,9 @@ private:
   // TLS context for HTTPS connections
   kj::Own<kj::TlsContext> tls_context_;
 
-  // API credentials - std::string for JWT generation
-  std::string api_key_;
-  std::string api_secret_;
+  // API credentials - kj::String for KJ compatibility
+  kj::String api_key_;
+  kj::String api_secret_;
 
   // Connection status
   bool connected_;

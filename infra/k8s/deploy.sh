@@ -1,10 +1,15 @@
 #!/bin/bash
 # VeloZ Kubernetes Deployment Script
+# Supports both raw manifests and Helm deployments
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NAMESPACE="veloz"
+HELM_DIR="${SCRIPT_DIR}/../helm/veloz"
+NAMESPACE="${VELOZ_NAMESPACE:-veloz}"
+ENVIRONMENT="${VELOZ_ENVIRONMENT:-dev}"
+USE_HELM="${VELOZ_USE_HELM:-false}"
+RELEASE_NAME="veloz"
 
 # Colors for output
 RED='\033[0;31m'
@@ -164,16 +169,99 @@ function cleanup() {
 # Main execution
 trap cleanup INT TERM
 
+function deploy_helm() {
+    log "Deploying VeloZ using Helm to ${ENVIRONMENT} environment"
+
+    if ! command -v helm &> /dev/null; then
+        log_error "helm not found. Please install Helm 3."
+        exit 1
+    fi
+
+    # Determine values file
+    local values_file=""
+    case "$ENVIRONMENT" in
+        staging)
+            values_file="-f ${HELM_DIR}/values-staging.yaml"
+            ;;
+        production)
+            values_file="-f ${HELM_DIR}/values-production.yaml"
+            ;;
+    esac
+
+    # Update dependencies
+    log "Updating Helm dependencies..."
+    helm dependency update "$HELM_DIR" 2>/dev/null || true
+
+    # Check if release exists
+    if helm status "$RELEASE_NAME" -n "$NAMESPACE" &>/dev/null; then
+        log "Upgrading existing Helm release..."
+        # shellcheck disable=SC2086
+        helm upgrade "$RELEASE_NAME" "$HELM_DIR" \
+            --namespace "$NAMESPACE" \
+            $values_file \
+            --wait \
+            --timeout 5m
+    else
+        log "Installing new Helm release..."
+        # shellcheck disable=SC2086
+        helm install "$RELEASE_NAME" "$HELM_DIR" \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            $values_file \
+            --wait \
+            --timeout 5m
+    fi
+
+    log "Helm deployment complete!"
+}
+
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
     echo "Usage: $0 [options]"
     echo ""
     echo "Options:"
-    echo "  -h, --help  Show this help message and exit"
+    echo "  -h, --help       Show this help message and exit"
+    echo "  --helm           Use Helm for deployment"
+    echo "  --env ENV        Target environment: dev, staging, production"
+    echo "  --namespace NS   Kubernetes namespace"
     echo ""
-    echo "Deploys the VeloZ Trading Engine to Kubernetes."
-    echo "Configures: Deployment, Service, Ingress, Namespace, and Secrets."
+    echo "Environment Variables:"
+    echo "  VELOZ_USE_HELM       Use Helm for deployment (true/false)"
+    echo "  VELOZ_ENVIRONMENT    Target environment"
+    echo "  VELOZ_NAMESPACE      Kubernetes namespace"
+    echo ""
+    echo "Examples:"
+    echo "  $0                           # Deploy using manifests"
+    echo "  $0 --helm                    # Deploy using Helm"
+    echo "  $0 --helm --env production   # Deploy to production with Helm"
     echo ""
     exit 0
 fi
 
-main "$@"
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --helm)
+            USE_HELM="true"
+            shift
+            ;;
+        --env)
+            ENVIRONMENT="$2"
+            shift 2
+            ;;
+        --namespace)
+            NAMESPACE="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ "$USE_HELM" == "true" ]; then
+    check_kubectl
+    check_context
+    deploy_helm
+else
+    main "$@"
+fi

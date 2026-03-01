@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Add cmake module path for custom modules
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # Set CMAKE_POLICY_VERSION_MINIMUM to suppress capnproto warnings
 # Cap'n Proto requires CMake 3.5+ but uses older patterns
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
@@ -13,6 +16,10 @@ option(VELOZ_ENABLE_WERROR "Treat warnings as errors" OFF)
 option(VELOZ_BUILD_TESTS "Build tests" ON)
 option(VELOZ_BUILD_BACKTEST "Build backtest module" ON)
 option(VELOZ_BUILD_WEBSOCKET "Build WebSocket market data module (uses KJ async I/O)" ON)
+
+if(APPLE)
+    add_link_options(-Wl,-no_warn_duplicate_libraries)
+endif()
 
 # Find OpenSSL for TLS support (required by WebSocket module)
 find_package(OpenSSL 1.1.0 REQUIRED)
@@ -25,21 +32,11 @@ endif()
 # Enable testing early so BUILD_TESTING is set for all subdirectories
 if(VELOZ_BUILD_TESTS)
     enable_testing()
+    include(VeloZTestTimeouts)
 endif()
 
-# GoogleTest setup
-if(VELOZ_BUILD_TESTS)
-    include(FetchContent)
-    FetchContent_Declare(
-        googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
-    )
-    # For Windows: Prevent overriding parent project's compiler/linker settings
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
-    include(GoogleTest)
-endif()
+# KJ Test framework is provided by libs/core/kj/CMakeLists.txt
+# All tests use KJ Test (kj::TestRunner) instead of GoogleTest
 
 add_subdirectory(libs/common)
 add_subdirectory(libs/core)
@@ -52,3 +49,16 @@ if(VELOZ_BUILD_BACKTEST)
     add_subdirectory(libs/backtest)
 endif()
 add_subdirectory(apps/engine)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/gateway/CMakeLists.txt")
+    add_subdirectory(apps/gateway)
+endif()
+
+# Integration tests
+if(VELOZ_BUILD_TESTS AND VELOZ_BUILD_BACKTEST)
+    add_subdirectory(tests/integration)
+endif()
+
+# Load tests
+if(VELOZ_BUILD_TESTS)
+    add_subdirectory(tests/load)
+endif()

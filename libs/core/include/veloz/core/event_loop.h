@@ -1,9 +1,11 @@
 #pragma once
 
+#include "veloz/core/priority_queue.h" // KJ-native priority queue implementation
+
 #include <atomic>
-#include <chrono>
+#include <chrono> // std::chrono::steady_clock - KJ time types don't provide steady_clock equivalent
 #include <cstdint>
-#include <functional> // std::function used for task callbacks, EventFilter, EventRouter
+#include <kj/async-io.h>
 #include <kj/async.h>
 #include <kj/common.h>
 #include <kj/function.h>
@@ -14,10 +16,7 @@
 #include <kj/table.h>
 #include <kj/timer.h>
 #include <kj/vector.h>
-#include <queue>
-#include <regex>
-#include <string> // std::string used for EventTag
-#include <vector> // std::vector used for EventTag containers
+#include <regex> // std::regex - KJ does not provide regex functionality
 
 namespace veloz::core {
 
@@ -37,33 +36,33 @@ enum class EventPriority : uint8_t {
 /**
  * @brief Convert EventPriority to string
  */
-[[nodiscard]] std::string_view to_string(EventPriority priority);
+[[nodiscard]] kj::StringPtr to_string(EventPriority priority);
 
 /**
  * @brief Event tag for filtering and routing
  *
  * Events can be tagged with strings to enable filtering and routing
  * based on event types, categories, or sources.
- * Note: Using std::string for STL container compatibility (priority_queue)
+ *
+ * @note EventTag is a kj::String. The std::priority_queue compatibility note applies to the
+ *       Task container in this file, not to EventTag itself.
  */
-using EventTag = std::string;
+using EventTag = kj::String;
 
 /**
  * @brief Event filter predicate
  *
  * A filter function that returns true if an event should be processed.
  * The filter receives the event tags and can decide based on them.
- * Note: Using std::function for STL container compatibility
  */
-using EventFilter = std::function<bool(const std::vector<EventTag>&)>;
+using EventFilter = kj::Function<bool(kj::ArrayPtr<const EventTag>)>;
 
 /**
  * @brief Event routing function
  *
  * Routes an event to a specific handler based on its tags.
- * Note: Using std::function for STL container compatibility
  */
-using EventRouter = std::function<void(const std::vector<EventTag>&, std::function<void()>)>;
+using EventRouter = kj::Function<void(kj::ArrayPtr<const EventTag>, kj::Function<void()>)>;
 
 /**
  * @brief Event statistics
@@ -107,20 +106,19 @@ public:
   EventLoop& operator=(const EventLoop&) = delete;
 
   // Basic task posting
-  void post(std::function<void()> task);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay);
+  void post(kj::Function<void()> task);
+  void post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay);
 
   // Priority-based task posting
-  void post(std::function<void()> task, EventPriority priority);
-  void post_with_tags(std::function<void()> task, std::vector<EventTag> tags);
-  void post_with_tags(std::function<void()> task, EventPriority priority,
-                      std::vector<EventTag> tags);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
+  void post(kj::Function<void()> task, EventPriority priority);
+  void post_with_tags(kj::Function<void()> task, kj::Vector<EventTag> tags);
+  void post_with_tags(kj::Function<void()> task, EventPriority priority, kj::Vector<EventTag> tags);
+  void post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
                     EventPriority priority);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                    std::vector<EventTag> tags);
-  void post_delayed(std::function<void()> task, std::chrono::milliseconds delay,
-                    EventPriority priority, std::vector<EventTag> tags);
+  void post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
+                    kj::Vector<EventTag> tags);
+  void post_delayed(kj::Function<void()> task, std::chrono::milliseconds delay,
+                    EventPriority priority, kj::Vector<EventTag> tags);
 
   // Event loop control
   void run();
@@ -138,7 +136,7 @@ public:
   void reset_stats() {
     stats_.reset();
   }
-  [[nodiscard]] std::string stats_to_string() const;
+  [[nodiscard]] kj::String stats_to_string() const;
 
   // Filtering
   /**
@@ -159,7 +157,7 @@ public:
    * @param tag_pattern Regex pattern for tag matching
    * @return Filter ID for removal
    */
-  [[nodiscard]] uint64_t add_tag_filter(const std::string& tag_pattern);
+  [[nodiscard]] uint64_t add_tag_filter(kj::StringPtr tag_pattern);
   void remove_tag_filter(uint64_t filter_id);
 
   // Event routing
@@ -171,17 +169,20 @@ public:
   void clear_router();
 
 private:
+  /**
+   * @brief Internal task representation for the priority queue
+   */
   struct Task {
-    std::function<void()> task;
-    EventPriority priority;
-    std::vector<EventTag> tags;
-    std::chrono::steady_clock::time_point enqueue_time;
+    kj::Function<void()> task;
+    EventPriority priority = EventPriority::Normal;
+    kj::Vector<EventTag> tags;
+    std::chrono::steady_clock::time_point enqueue_time; // steady_clock: monotonic time
 
     bool operator>(const Task& other) const {
       if (priority != other.priority) {
-        return static_cast<uint8_t>(priority) < static_cast<uint8_t>(other.priority);
+        return static_cast<uint8_t>(priority) > static_cast<uint8_t>(other.priority);
       }
-      return enqueue_time > other.enqueue_time;
+      return enqueue_time < other.enqueue_time;
     }
   };
 
@@ -196,7 +197,7 @@ private:
   // Task execution
   void execute_task(Task& task);
   bool should_process_task(const Task& task);
-  void route_task(Task& task, std::function<void()> wrapped);
+  void route_task(Task& task, kj::Function<void()> wrapped);
 
   // KJ TaskSet error handler for async task failures
   class TaskSetErrorHandler : public kj::TaskSet::ErrorHandler {
@@ -212,18 +213,35 @@ private:
   kj::Promise<void> process_next_task();
   kj::Promise<void> schedule_delayed_tasks();
 
-  // Queue state (protected by KJ mutex for thread-safe access)
+  /**
+   * @brief Queue state (protected by KJ mutex for thread-safe access)
+   *
+   * @note Uses veloz::core::PriorityQueue (KJ-native implementation) for priority-based
+   *       task scheduling. Priority queues are essential for executing higher-priority events
+   *       (e.g., Critical) before lower-priority ones (e.g., Low).
+   */
   struct QueueState {
-    std::priority_queue<Task, std::vector<Task>, std::greater<>> tasks;
-    std::priority_queue<DelayedTask, std::vector<DelayedTask>, std::greater<>> delayed_tasks;
+    PriorityQueue<Task> tasks;
+    PriorityQueue<DelayedTask> delayed_tasks;
   };
 
-  // Filter state (protected by KJ mutex)
+  /**
+   * @brief Filter state (protected by KJ mutex)
+   *
+   * @note Uses std::regex for tag pattern matching because KJ does not provide
+   *       regex functionality. Tag filtering requires pattern matching capabilities.
+   * @note Uses kj::HashMap and kj::HashSet for filter storage (KJ equivalents available).
+   */
   struct FilterState {
+    struct FilterEntry {
+      EventFilter filter;
+      kj::Maybe<EventPriority> priority;
+    };
+
     kj::HashSet<uint64_t> active_filters;
     uint64_t next_filter_id = 0;
-    kj::HashMap<uint64_t, std::pair<EventFilter, kj::Maybe<EventPriority>>> filters;
-    kj::HashMap<uint64_t, std::regex> tag_filters;
+    kj::HashMap<uint64_t, FilterEntry> filters;
+    kj::HashMap<uint64_t, std::regex> tag_filters; // std::regex required: KJ has no regex
     kj::Maybe<EventRouter> router;
   };
 
@@ -235,13 +253,18 @@ private:
   kj::MutexGuarded<FilterState> filter_state_;
 
   // KJ event loop infrastructure (created on stack in run(), pointer stored for timer access)
+  // Uses kj::setupAsyncIo() for real async I/O with OS-level timer support
   struct KjAsyncState {
-    kj::EventLoop event_loop;
+    kj::AsyncIoContext io_context;
     kj::Own<TaskSetErrorHandler> error_handler;
     kj::Own<kj::TaskSet> task_set;
-    kj::Own<kj::TimerImpl> timer;
 
     explicit KjAsyncState(EventStats& stats);
+
+    // Access timer from io_context
+    kj::Timer& timer() {
+      return io_context.provider->getTimer();
+    }
   };
   KjAsyncState* kj_state_ = nullptr; // Non-owning pointer to stack-allocated state
 

@@ -116,11 +116,22 @@ public:
   void cleanup_old_files();
 
 private:
+  // State protected by mutex (defined first for use in method signatures)
+  struct State {
+    uint64_t sequence{0};
+    uint64_t entries_since_checkpoint{0};
+    WalStats stats;
+    bool healthy{true};
+  };
+
   // Internal write method
   uint64_t write_entry(WalEntryType type, kj::ArrayPtr<const kj::byte> payload);
 
   // Open or create current WAL file
   void open_current_file();
+
+  // Open current WAL file (internal version, assumes lock is already held)
+  void open_current_file_locked(State& state);
 
   // Close current WAL file
   void close_current_file();
@@ -165,6 +176,7 @@ private:
   void deserialize_order_new(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
   void deserialize_order_update(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
   void deserialize_order_fill(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
+  void deserialize_order_cancel(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
   void deserialize_checkpoint(kj::ArrayPtr<const kj::byte> payload, OrderStore& store) const;
 
   // Configuration
@@ -178,13 +190,7 @@ private:
   uint64_t current_file_size_{0};
   uint64_t current_file_start_sequence_{0};
 
-  // State protected by mutex
-  struct State {
-    uint64_t sequence{0};
-    uint64_t entries_since_checkpoint{0};
-    WalStats stats;
-    bool healthy{true};
-  };
+  // Mutex-guarded state
   kj::MutexGuarded<State> state_;
 };
 

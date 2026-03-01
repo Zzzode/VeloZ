@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#1a1a2e"/>
+
+  <!-- V shape (trading chart pattern) -->
+  <path d="M128 160 L256 352 L384 160" stroke="#4ade80" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Upward arrow (growth indicator) -->
+  <path d="M384 160 L384 96" stroke="#4ade80" stroke-width="48" stroke-linecap="round"/>
+  <path d="M340 140 L384 96 L428 140" stroke="#4ade80" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Horizontal line (support level) -->
+  <line x1="96" y1="416" x2="416" y2="416" stroke="#6366f1" stroke-width="24" stroke-linecap="round" opacity="0.6"/>
+</svg>

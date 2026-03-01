@@ -1,0 +1,222 @@
+{
+  "dashboard": {
+    "title": "VeloZ Gateway Dashboard",
+    "uid": "veloz-gateway",
+    "tags": ["veloz", "gateway"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(rate(veloz_gateway_requests_total[1m]))",
+            "legendFormat": "Requests/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "title": "Error Rate",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 0, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(rate(veloz_gateway_requests_total{status=~\"5..\"}[5m])) / sum(rate(veloz_gateway_requests_total[5m])) * 100",
+            "legendFormat": "Error %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 5,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.5},
+                {"color": "red", "value": 1}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Health Status",
+        "type": "stat",
+        "gridPos": {"x": 16, "y": 0, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "up{job=\"veloz_gateway\"}",
+            "legendFormat": "Gateway"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "0": {"text": "DOWN", "color": "red"},
+                  "1": {"text": "UP", "color": "green"}
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "title": "P50 Latency",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 4, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(veloz_gateway_request_duration_seconds_bucket[5m])) by (le)) * 1000000",
+            "legendFormat": "P50"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "\u00b5s"
+          }
+        }
+      },
+      {
+        "title": "P99 Latency",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 4, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(veloz_gateway_request_duration_seconds_bucket[5m])) by (le)) * 1000",
+            "legendFormat": "P99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "CPU Usage",
+        "type": "timeseries",
+        "gridPos": {"x": 16, "y": 4, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total{job=\"veloz_gateway\"}[1m]) * 100",
+            "legendFormat": "CPU %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "max": 100
+          }
+        }
+      },
+      {
+        "title": "Memory Usage",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes{job=\"veloz_gateway\"} / 1024 / 1024",
+            "legendFormat": "Memory MB"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MB",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 200},
+                {"color": "red", "value": 500}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "SSE Connections",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "veloz_gateway_sse_connections",
+            "legendFormat": "Active SSE"
+          }
+        ]
+      },
+      {
+        "title": "Order Processing Rate",
+        "type": "timeseries",
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(rate(veloz_gateway_order_submitted_total[1m]))",
+            "legendFormat": "Submitted"
+          },
+          {
+            "expr": "sum(rate(veloz_gateway_order_filled_total[1m]))",
+            "legendFormat": "Filled"
+          },
+          {
+            "expr": "sum(rate(veloz_gateway_order_cancelled_total[1m]))",
+            "legendFormat": "Cancelled"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "title": "Authentication Failures",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 4},
+        "targets": [
+          {
+            "expr": "rate(veloz_gateway_auth_failures_total[5m])",
+            "legendFormat": "Auth Failures/sec"
+          }
+        ]
+      },
+      {
+        "title": "Request Duration Heatmap",
+        "type": "heatmap",
+        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(rate(veloz_gateway_request_duration_seconds_bucket[5m])) by (le)",
+            "format": "heatmap",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      }
+    ],
+    "schemaVersion": 38,
+    "version": 1
+  }
+}

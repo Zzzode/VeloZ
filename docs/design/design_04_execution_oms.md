@@ -57,3 +57,52 @@ Strategies only depend on these interfaces, not exchange SDKs.
 - Routing: route by venue/market type, enforce capability constraints (IOC/FOK/GTX)
 - Receipt ordering: accept out-of-order updates and reconcile via sequence/time
 - WAL: persist every order and receipt before applying to in-memory state
+
+### 3.2.6 Advanced Risk Components (Implemented)
+
+#### Portfolio Risk Management (`libs/risk/portfolio_risk.h`)
+Portfolio-level risk monitoring and management:
+- Correlation tracking between positions across multiple symbols
+- Portfolio-level leverage and margin usage calculation
+- Multi-asset position netting and hedging recognition
+- Portfolio VaR (Value at Risk) aggregation
+- Cross-exchange position tracking
+
+#### VaR Models (`libs/risk/var_models.h`)
+Value at Risk calculation engines:
+- Historical simulation VaR
+- Parametric VaR (variance-covariance method)
+- Monte Carlo simulation VaR
+- Conditional VaR (Expected Shortfall)
+- Confidence intervals: 95%, 99%, 99.9%
+- Time horizons: 1-day, 10-day scaling
+
+#### Stress Testing Framework (`libs/risk/stress_testing.h`)
+Scenario-based stress testing for risk assessment:
+- Historical scenario replay (e.g., 2020 COVID crash, 2022 crypto winter)
+- Hypothetical stress scenarios (extreme volatility, liquidity crisis)
+- Sensitivity analysis (Greeks for derivatives)
+- Reverse stress testing (find breaking point scenarios)
+- Automated stress test scheduling and reporting
+
+#### Scenario Analysis (`libs/risk/scenario_analysis.h`)
+What-if analysis for trading decisions:
+- Position impact analysis under user-defined scenarios
+- P&L distribution under various market conditions
+- Margin requirement projections
+- Liquidation risk assessment
+
+#### Dynamic Thresholds (`libs/risk/dynamic_threshold.h`)
+Adaptive risk thresholds based on market conditions:
+- Volatility-adjusted position limits
+- Market regime detection (trending, ranging, volatile)
+- Dynamic leverage adjustment
+- Real-time threshold calibration
+
+#### Circuit Breaker Enhancements (`libs/risk/circuit_breaker.h`)
+Multi-level circuit breaker with granular control:
+- Per-strategy circuit breakers
+- Per-symbol circuit breakers
+- Portfolio-level circuit breakers
+- Graduated response (warn, throttle, halt)
+- Automatic recovery with cooldown periods

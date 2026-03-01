@@ -1,7 +1,9 @@
 ## Build outputs
 /build/
+build/dev
 /cmake-build-*/
 /out/
+/.test_output/
 
 ## CMake
 /CMakeFiles/
@@ -47,7 +49,23 @@ dist/
 ## Test artifacts (WAL files, reports, etc.)
 *.wal
 test_*.html
+tests/*/results/
+*_test_report.json
+*_load_test*.json
+
+## Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage_html/
+.coverage
 
 ## Temporary files
 CHANGELOG.md
 
+## Trae
+.trae
+veloz_keychain.json
+apps/ui/playwright-report/
+apps/ui/test-results/

@@ -1,0 +1,188 @@
+# VeloZ Optimized Docker Image
+# Security-hardened, minimal footprint production image
+#
+# Build: docker build -f docker/Dockerfile.optimized -t veloz:latest .
+# Scan:  trivy image veloz:latest
+# Sign:  cosign sign veloz:latest
+
+# =============================================================================
+# Stage 1: Build dependencies (cached layer)
+# =============================================================================
+FROM ubuntu:22.04 AS deps
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cmake=3.22.* \
+    ninja-build \
+    clang-16 \
+    lld-16 \
+    libssl-dev \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Set compiler environment
+ENV CC=clang-16
+ENV CXX=clang++-16
+ENV LDFLAGS="-fuse-ld=lld-16"
+
+# =============================================================================
+# Stage 2: Build the application
+# =============================================================================
+FROM deps AS builder
+
+WORKDIR /src
+
+# Copy only files needed for dependency resolution first (better caching)
+COPY CMakeLists.txt CMakePresets.json ./
+COPY cmake/ cmake/
+COPY libs/ libs/
+COPY apps/ apps/
+
+# Build release version with optimizations
+RUN cmake --preset release \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+    && cmake --build --preset release-all -j$(nproc) \
+    && strip --strip-unneeded /src/build/release/apps/engine/veloz_engine
+
+# =============================================================================
+# Stage 3: Python dependencies
+# =============================================================================
+FROM python:3.11-slim AS python-deps
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies (if any requirements.txt exists)
+COPY apps/gateway/requirements.txt* /tmp/
+RUN if [ -f /tmp/requirements.txt ]; then \
+        pip install --no-cache-dir -r /tmp/requirements.txt; \
+    fi
+
+# =============================================================================
+# Stage 4: Minimal runtime image
+# =============================================================================
+FROM ubuntu:22.04 AS runtime
+
+# Labels for container metadata
+LABEL org.opencontainers.image.title="VeloZ Trading Engine"
+LABEL org.opencontainers.image.description="High-performance crypto trading system"
+LABEL org.opencontainers.image.vendor="VeloZ"
+LABEL org.opencontainers.image.version="1.0.0"
+LABEL org.opencontainers.image.source="https://github.com/veloz/veloz"
+LABEL org.opencontainers.image.licenses="Proprietary"
+
+# Security labels
+LABEL security.privileged="false"
+LABEL security.capabilities.drop="ALL"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install only essential runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    python3-minimal \
+    ca-certificates \
+    curl \
+    dumb-init \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && rm -rf /var/cache/apt/archives/*
+
+# Create non-root user with specific UID/GID for security
+RUN groupadd -r -g 1000 veloz \
+    && useradd -r -u 1000 -g veloz -s /sbin/nologin -c "VeloZ Service" veloz
+
+# Create application directories with proper permissions
+RUN mkdir -p /opt/veloz/bin /opt/veloz/gateway /opt/veloz/ui \
+    /var/lib/veloz /var/log/veloz /var/run/veloz \
+    && chown -R veloz:veloz /opt/veloz /var/lib/veloz /var/log/veloz /var/run/veloz
+
+# Copy built artifacts
+COPY --from=builder --chown=veloz:veloz /src/build/release/apps/engine/veloz_engine /opt/veloz/bin/
+COPY --from=builder --chown=veloz:veloz /src/apps/gateway/*.py /opt/veloz/gateway/
+COPY --from=builder --chown=veloz:veloz /src/apps/ui/ /opt/veloz/ui/
+
+# Set file permissions (read-only where possible)
+RUN chmod 500 /opt/veloz/bin/veloz_engine \
+    && chmod 400 /opt/veloz/gateway/*.py \
+    && chmod -R 555 /opt/veloz/ui
+
+# Security: Remove unnecessary files and packages
+RUN rm -rf /usr/share/doc /usr/share/man /usr/share/info \
+    && find /var/log -type f -delete
+
+# Switch to non-root user
+USER veloz:veloz
+WORKDIR /opt/veloz
+
+# Environment variables
+ENV VELOZ_HOST=0.0.0.0 \
+    VELOZ_PORT=8080 \
+    VELOZ_PRESET=release \
+    VELOZ_MARKET_SOURCE=sim \
+    VELOZ_EXECUTION_MODE=sim_engine \
+    VELOZ_PRODUCTION_MODE=true \
+    PATH="/opt/veloz/bin:$PATH"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:${VELOZ_PORT}/health || exit 1
+
+# Expose port
+EXPOSE 8080
+
+# Use dumb-init as PID 1 for proper signal handling
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+
+# Default command
+CMD ["python3", "/opt/veloz/gateway/gateway.py"]
+
+# =============================================================================
+# Stage 5: Development image (optional)
+# =============================================================================
+FROM deps AS development
+
+# Install development tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gdb \
+    valgrind \
+    clang-format-16 \
+    clang-tidy-16 \
+    python3 \
+    python3-pip \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r -g 1000 veloz \
+    && useradd -r -u 1000 -g veloz -m -s /bin/bash veloz
+
+USER veloz
+WORKDIR /src
+
+CMD ["/bin/bash"]
+
+# =============================================================================
+# Stage 6: Security scanner image
+# =============================================================================
+FROM runtime AS scanner
+
+USER root
+
+# Install security scanning tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy scan scripts
+COPY --chown=root:root docker/security-scan.sh /opt/veloz/
+
+USER veloz
+
+# Run security scan on startup
+CMD ["/opt/veloz/security-scan.sh"]

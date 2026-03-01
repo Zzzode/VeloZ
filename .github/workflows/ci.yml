@@ -35,6 +35,46 @@ jobs:
       - name: Smoke run engine
         run: timeout 3s ./build/dev/apps/engine/veloz_engine || true
 
+  # Code coverage
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmakeVersion: 3.27.7
+
+      - name: Install coverage tools
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Configure (coverage)
+        run: cmake --preset coverage
+
+      - name: Build (coverage-all)
+        run: cmake --build --preset coverage-all -j$(nproc)
+
+      - name: Run all tests with coverage
+        run: ctest --preset coverage -j$(nproc)
+
+      - name: Generate coverage report
+        run: |
+          lcov --directory . --capture --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' '*/tests/*' '*/apps/gateway/*' '*/apps/ui/*' '*_test.cpp' '*_tests.cpp' --output-file coverage.info
+          lcov --list coverage.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: Zzzode/VeloZ
+          files: ./coverage.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: true
+          verbose: true
+
   # Release build
   release-build:
     runs-on: ubuntu-latest
@@ -146,3 +186,40 @@ jobs:
               flake8 "${targets[@]}" --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
             fi
           fi
+
+  # Database migration tests
+  migration-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install sqlalchemy alembic psycopg2-binary pytest
+
+      - name: Run migration tests
+        working-directory: apps/gateway
+        run: |
+          python -m pytest db/test_migrations.py -v
+
+      - name: Check migration can be applied
+        working-directory: apps/gateway
+        env:
+          VELOZ_DATABASE_URL: sqlite:///test_migrations.db
+        run: |
+          python -m db.migrate init
+          python -m db.migrate check
+          python -m db.migrate current
+
+      - name: Test migration rollback
+        working-directory: apps/gateway
+        env:
+          VELOZ_DATABASE_URL: sqlite:///test_migrations.db
+        run: |
+          python -m db.migrate downgrade base
+          python -m db.migrate upgrade head

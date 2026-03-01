@@ -22,31 +22,35 @@ RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest
   if (!check_order_rate()) {
     circuit_breaker_tripped_ = true;
     circuit_breaker_reset_time_ = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    add_risk_alert(RiskLevel::Critical, "Order rate limit exceeded"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    add_risk_alert(RiskLevel::Critical, "Order rate limit exceeded"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Order rate limit exceeded")};
   }
 
   // Check order size
   if (!check_order_size(req)) {
-    add_risk_alert(RiskLevel::High, "Order size exceeds limit"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    add_risk_alert(RiskLevel::High, "Order size exceeds limit"_kj, kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Order size exceeds limit")};
   }
 
   // Check available funds
   if (!check_available_funds(req)) {
-    add_risk_alert(RiskLevel::Critical, "Insufficient funds for order"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    add_risk_alert(RiskLevel::Critical, "Insufficient funds for order"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Insufficient funds")};
   }
 
   // Check max position
   if (!check_max_position(req)) {
-    add_risk_alert(RiskLevel::High, "Order size exceeds max position"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    add_risk_alert(RiskLevel::High, "Order size exceeds max position"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Order size exceeds max position")};
   }
 
   // Check price deviation
   if (!check_price_deviation(req)) {
-    add_risk_alert(RiskLevel::Medium, "Price deviation exceeds max"_kj, kj::StringPtr(req.symbol.value.c_str()));
+    add_risk_alert(RiskLevel::Medium, "Price deviation exceeds max"_kj,
+                   kj::StringPtr(req.symbol.value));
     return {false, kj::heapString("Price deviation exceeds max")};
   }
 
@@ -62,13 +66,15 @@ RiskCheckResult RiskEngine::check_pre_trade(const veloz::exec::PlaceOrderRequest
 RiskCheckResult RiskEngine::check_post_trade(const veloz::oms::Position& position) {
   // Check stop loss
   if (stop_loss_enabled_ && !check_stop_loss(position)) {
-    add_risk_alert(RiskLevel::Critical, "Stop loss triggered"_kj, kj::StringPtr(position.symbol().value.c_str()));
+    add_risk_alert(RiskLevel::Critical, "Stop loss triggered"_kj,
+                   kj::StringPtr(position.symbol().value));
     return {false, kj::heapString("Stop loss triggered")};
   }
 
   // Check take profit
   if (take_profit_enabled_ && !check_take_profit(position)) {
-    add_risk_alert(RiskLevel::High, "Take profit triggered"_kj, kj::StringPtr(position.symbol().value.c_str()));
+    add_risk_alert(RiskLevel::High, "Take profit triggered"_kj,
+                   kj::StringPtr(position.symbol().value));
     return {false, kj::heapString("Take profit triggered")};
   }
 
@@ -145,8 +151,7 @@ void RiskEngine::clear_risk_alerts() {
   risk_alerts_.clear();
 }
 
-void RiskEngine::add_risk_alert(RiskLevel level, kj::StringPtr message,
-                                kj::StringPtr symbol) {
+void RiskEngine::add_risk_alert(RiskLevel level, kj::StringPtr message, kj::StringPtr symbol) {
   RiskAlert alert;
   alert.level = level;
   alert.message = kj::heapString(message);
@@ -265,10 +270,11 @@ bool RiskEngine::check_take_profit(const veloz::oms::Position& position) const {
 
 void RiskEngine::update_position(const veloz::oms::Position& position) {
   // Use kj::HashMap upsert instead of operator[]
-  kj::String symbol_key = kj::str(position.symbol().value.c_str());
-  positions_.upsert(kj::mv(symbol_key), position, [](veloz::oms::Position& existing, veloz::oms::Position&& replacement) {
-    existing = kj::mv(replacement);
-  });
+  kj::String symbol_key = kj::str(position.symbol().value);
+  positions_.upsert(kj::mv(symbol_key), position,
+                    [](veloz::oms::Position& existing, veloz::oms::Position&& replacement) {
+                      existing = kj::mv(replacement);
+                    });
 }
 
 void RiskEngine::clear_positions() {
@@ -284,11 +290,12 @@ void RiskEngine::reset_circuit_breaker() {
 }
 
 bool RiskEngine::check_available_funds(const veloz::exec::PlaceOrderRequest& req) const {
-  KJ_IF_SOME (price, req.price) {
+  KJ_IF_SOME(price, req.price) {
     double notional = req.qty * price;
     double required_margin = notional / max_leverage_;
     return required_margin <= account_balance_;
-  } else {
+  }
+  else {
     return true; // Market orders checked elsewhere
   }
 }
@@ -300,7 +307,7 @@ bool RiskEngine::check_max_position(const veloz::exec::PlaceOrderRequest& req) c
 
   // Use kj::HashMap find with KJ_IF_SOME pattern
   double current_size = 0.0;
-  KJ_IF_SOME(position, positions_.find(kj::StringPtr(req.symbol.value.c_str()))) {
+  KJ_IF_SOME(position, positions_.find(kj::StringPtr(req.symbol.value))) {
     current_size = std::abs(position.size());
   }
   return (current_size + req.qty) <= max_position_size_;
@@ -311,10 +318,11 @@ bool RiskEngine::check_price_deviation(const veloz::exec::PlaceOrderRequest& req
     return true; // No reference price
   }
 
-  KJ_IF_SOME (price, req.price) {
+  KJ_IF_SOME(price, req.price) {
     double deviation = std::abs((price - reference_price_) / reference_price_);
     return deviation <= max_price_deviation_;
-  } else {
+  }
+  else {
     return true; // Market order
   }
 }
@@ -351,6 +359,59 @@ bool RiskEngine::check_stop_loss(const veloz::oms::Position& position) const {
   } else {
     return current_pnl_percentage > -stop_loss_percentage_;
   }
+}
+
+// ============================================================================
+// Dynamic Threshold Controller Integration
+// ============================================================================
+
+void RiskEngine::set_dynamic_threshold_controller(kj::Own<DynamicThresholdController> controller) {
+  dynamic_controller_ = kj::mv(controller);
+}
+
+DynamicThresholdController* RiskEngine::get_dynamic_threshold_controller() {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller.get();
+  }
+  return nullptr;
+}
+
+const DynamicThresholdController* RiskEngine::get_dynamic_threshold_controller() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller.get();
+  }
+  return nullptr;
+}
+
+void RiskEngine::update_market_condition(const MarketConditionState& state) {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    controller->update_market_condition(state);
+  }
+}
+
+bool RiskEngine::has_dynamic_thresholds() const {
+  return dynamic_controller_ != kj::none;
+}
+
+double RiskEngine::get_effective_max_position_size() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller->get_max_position_size();
+  }
+  return max_position_size_;
+}
+
+double RiskEngine::get_effective_max_leverage() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller->get_max_leverage();
+  }
+  return max_leverage_;
+}
+
+double RiskEngine::get_effective_stop_loss_pct() const {
+  KJ_IF_SOME(controller, dynamic_controller_) {
+    return controller->get_stop_loss_pct();
+  }
+  return stop_loss_percentage_;
 }
 
 } // namespace veloz::risk

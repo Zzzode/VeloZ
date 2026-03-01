@@ -30,24 +30,25 @@ target_link_libraries(veloz_backtest
         veloz_oms
         veloz_exec
         veloz_risk
-        veloz_common
-        GTest::gtest
-        GTest::gtest_main)
+        veloz_common)
 
-# Tests
+# Tests using KJ test framework
 if(VELOZ_BUILD_TESTS)
     add_executable(veloz_backtest_tests
         tests/test_backtest_engine.cpp
         tests/test_analyzer.cpp
         tests/test_optimizer.cpp
         tests/test_reporter.cpp
-        tests/test_data_source.cpp
         )
     target_link_libraries(veloz_backtest_tests
         PRIVATE
             veloz_backtest
-            GTest::gtest
-            GTest::gtest_main
+            kj-test
+            kj-async
     )
-    gtest_discover_tests(veloz_backtest_tests)
+    add_test(NAME veloz_backtest_tests COMMAND veloz_backtest_tests)
+    set_tests_properties(veloz_backtest_tests PROPERTIES
+        TIMEOUT ${VELOZ_TEST_TIMEOUT_DEFAULT}
+        LABELS "unit;backtest"
+    )
 endif()
