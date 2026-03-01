@@ -17,7 +17,7 @@ ctest --preset coverage -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null |
 
 echo "==> Generating coverage report..."
 lcov --directory . --capture --output-file coverage.info
-lcov --remove coverage.info '/usr/*' '*/tests/*' '*/apps/gateway/*' '*/apps/ui/*' '*_test.cpp' '*_tests.cpp' --output-file coverage.info
+lcov --remove coverage.info '/usr/*' '*/tests/*' '*/apps/ui/*' '*_test.cpp' '*_tests.cpp' --output-file coverage.info
 lcov --list coverage.info
 
 echo "==> Generating HTML report..."

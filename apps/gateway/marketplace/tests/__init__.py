@@ -1,3 +1,0 @@
-"""
-Strategy Marketplace Tests
-"""

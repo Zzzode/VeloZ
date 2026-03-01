@@ -258,13 +258,14 @@ Service mode endpoints:
 
 ### 4.4 Run Gateway and UI (Full Stack)
 
-The gateway uses Python stdlib to start an HTTP service and bridges to the engine via stdio:
+The gateway is a C++ HTTP service that bridges to the engine:
 
 ```bash
-# Terminal 1: Start gateway
-pip3 install -r apps/gateway/requirements.txt
+# Start gateway (builds automatically if needed)
 ./scripts/run_gateway.sh dev
 ```
+
+The gateway executable is at `build/dev/apps/gateway/veloz_gateway`.
 
 #### Dry Run Mode
 

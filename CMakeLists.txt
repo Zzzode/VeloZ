@@ -49,8 +49,8 @@ if(VELOZ_BUILD_BACKTEST)
     add_subdirectory(libs/backtest)
 endif()
 add_subdirectory(apps/engine)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/gateway_cpp/CMakeLists.txt")
-    add_subdirectory(apps/gateway_cpp)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/gateway/CMakeLists.txt")
+    add_subdirectory(apps/gateway)
 endif()
 
 # Integration tests

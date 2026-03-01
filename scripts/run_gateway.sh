@@ -36,9 +36,9 @@ if [[ "${dry_run}" -eq 1 ]]; then
   if [[ "${skip_cxx}" -eq 1 ]]; then
     echo "  2. Skip C++ build"
   else
-    echo "  2. Build C++ engine (cmake)"
+    echo "  2. Build C++ gateway (cmake)"
   fi
-  echo "  3. Execute: python3 apps/gateway/gateway.py"
+  echo "  3. Execute: build/${preset}/apps/gateway/veloz_gateway"
   exit 0
 fi
 
@@ -70,25 +70,25 @@ else
   fi
 fi
 
-# Step 2: Build C++ engine with preset
+# Step 2: Build C++ gateway with preset
 if [[ "${skip_cxx}" -eq 1 ]]; then
   echo "=== Step 2/3: Skipping C++ build ==="
 else
-  echo "=== Step 2/3: Building C++ engine ==="
+  echo "=== Step 2/3: Building C++ gateway ==="
   build_dir="build/${preset}"
   if [[ ! -f "${build_dir}/CMakeCache.txt" ]]; then
     cmake --preset "${preset}"
   fi
-  engine_bin="${build_dir}/apps/engine/veloz_engine"
+  gateway_bin="${build_dir}/apps/gateway/veloz_gateway"
   case "${preset}" in
     dev|release|asan)
       if [[ "${force_cxx}" -eq 1 ]]; then
-        cmake --build --preset "${preset}-engine" -j
+        cmake --build --preset "${preset}-all" -j
       else
-        if [[ -x "${engine_bin}" ]]; then
-          echo "Engine build artifacts present, skipping"
+        if [[ -x "${gateway_bin}" ]]; then
+          echo "Gateway build artifacts present, skipping"
         else
-          cmake --build --preset "${preset}-engine" -j
+          cmake --build --preset "${preset}-all" -j
         fi
       fi
       ;;
@@ -98,6 +98,12 @@ else
   esac
 fi
 
-# Step 3: Start gateway (includes UI dev server)
-echo "=== Step 3/3: Starting gateway ==="
-exec python3 apps/gateway/gateway.py
+# Step 3: Start gateway
+echo "=== Step 3/3: Starting C++ gateway ==="
+gateway_bin="build/${preset}/apps/gateway/veloz_gateway"
+if [[ ! -x "${gateway_bin}" ]]; then
+  echo "Error: C++ gateway not found at ${gateway_bin}"
+  echo "Build it with: cmake --build --preset ${preset}-all -j"
+  exit 1
+fi
+exec "${gateway_bin}"

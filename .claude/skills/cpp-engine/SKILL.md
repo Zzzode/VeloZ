@@ -1,13 +1,13 @@
 ---
 name: cpp-engine
-description: Use when editing C++ code in apps/engine, apps/gateway_cpp, or libs/* directories. Covers project structure, naming conventions, build system, and architecture. For KJ library rules, see kj-library skill.
+description: Use when editing C++ code in apps/engine, apps/gateway, or libs/* directories. Covers project structure, naming conventions, build system, and architecture. For KJ library rules, see kj-library skill.
 ---
 
 # C++ Engine and Libraries
 
 ## Overview
 
-VeloZ uses **C++23** with KJ library (from Cap'n Proto) as the default choice over std library. All C++ code in `apps/engine`, `apps/gateway_cpp`, and `libs/*` must follow these rules.
+VeloZ uses **C++23** with KJ library (from Cap'n Proto) as the default choice over std library. All C++ code in `apps/engine`, `apps/gateway`, and `libs/*` must follow these rules.
 
 **Core principle**: KJ-first, no raw pointers for ownership, event-driven async I/O.
 
@@ -27,8 +27,7 @@ Invoke this skill when:
 | Directory | Purpose |
 |-----------|---------|
 | `apps/engine` | C++ trading engine (stdio/HTTP modes) |
-| `apps/gateway_cpp` | HTTP gateway with REST API, SSE, auth, middleware |
-| `apps/gateway` | Python gateway (legacy) |
+| `apps/gateway` | C++ HTTP gateway with REST API, SSE, auth, middleware |
 | `apps/ui` | Static HTML UI (TypeScript/Vue) |
 
 ### Reusable Libraries (libs/)
@@ -201,7 +200,7 @@ Use KJ's thread-safe types for concurrent access.
 
 ### Handler Pattern
 ```cpp
-// apps/gateway_cpp/src/handlers/<name>_handler.h
+// apps/gateway/src/handlers/<name>_handler.h
 class MyHandler {
 public:
   explicit MyHandler(Dependency& dep);
@@ -221,7 +220,7 @@ private:
 
 ### Router Registration
 ```cpp
-// apps/gateway_cpp/src/router.h
+// apps/gateway/src/router.h
 router.addRoute("GET", "/api/resource", handler, middleware);
 router.addRoute("POST", "/api/resource", handler, middleware);
 ```

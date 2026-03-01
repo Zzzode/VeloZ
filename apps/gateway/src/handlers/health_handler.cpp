@@ -91,6 +91,22 @@ kj::Promise<void> HealthHandler::handleDetailedHealth(RequestContext& ctx) {
   }
 }
 
+kj::Promise<void> HealthHandler::handleExecutionPing(RequestContext& ctx) {
+  try {
+    bool engine_connected = bridge_.is_running();
+
+    auto builder = core::JsonBuilder::object();
+    builder.put("pong", true);
+    builder.put("engine_connected", engine_connected);
+
+    kj::String json_body = builder.build();
+    return ctx.sendJson(200, json_body);
+  } catch (const kj::Exception& e) {
+    KJ_LOG(ERROR, "Error in execution ping handler", e);
+    return ctx.sendError(500, "Internal Server Error"_kj);
+  }
+}
+
 // ============================================================================
 // Private Methods
 // ============================================================================

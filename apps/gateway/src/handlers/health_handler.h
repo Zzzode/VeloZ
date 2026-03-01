@@ -74,6 +74,23 @@ public:
    */
   kj::Promise<void> handleDetailedHealth(RequestContext& ctx);
 
+  /**
+   * @brief Handle GET /api/execution/ping
+   *
+   * Engine connectivity check - returns pong with engine connection status.
+   * No authentication required.
+   *
+   * Response format:
+   * {
+   *   "pong": true,
+   *   "engine_connected": true
+   * }
+   *
+   * @param ctx Request context
+   * @return Promise that completes when response is sent
+   */
+  kj::Promise<void> handleExecutionPing(RequestContext& ctx);
+
 private:
   bridge::EngineBridge& bridge_;
   kj::Date start_time_;

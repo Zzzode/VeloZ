@@ -81,7 +81,7 @@ if [[ ! -d "$BUILD_DIR" ]]; then
 fi
 
 # Check if benchmarks need to be built
-BENCHMARK_BIN="$BUILD_DIR/apps/gateway_cpp/veloz_gateway_benchmarks"
+BENCHMARK_BIN="$BUILD_DIR/apps/gateway/veloz_gateway_benchmarks"
 
 if [[ ! -f "$BENCHMARK_BIN" ]] || [[ ! -x "$BENCHMARK_BIN" ]]; then
   echo -e "${YELLOW}Benchmarks not built. Building now...${NC}"
@@ -136,7 +136,7 @@ fi
 
 # Check if Python is available
 if command -v python3 &> /dev/null; then
-  python3 "$PROJECT_ROOT/apps/gateway_cpp/benchmarks/benchmark_report.py" \
+  python3 "$PROJECT_ROOT/apps/gateway/benchmarks/benchmark_report.py" \
     --input "$INPUT_FILE" \
     --output "$REPORT_DIR" \
     --format all \

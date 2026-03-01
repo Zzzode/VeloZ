@@ -1,11 +1,11 @@
-# Prometheus Alert Rules for Gateway Migration
+# Prometheus Alert Rules for VeloZ Gateway
 # File: config/prometheus/alerts.yml
 
 groups:
-  - name: veloz_gateway_migration
+  - name: veloz_gateway
     interval: 30s
     rules:
-      # High error rate - immediate rollback trigger
+      # High error rate
       - alert: GatewayHighErrorRate
         expr: |
           (
@@ -16,13 +16,13 @@ groups:
         for: 5m
         labels:
           severity: critical
-          component: gateway_cpp
+          component: gateway
         annotations:
-          summary: "High error rate on C++ Gateway"
+          summary: "High error rate on Gateway"
           description: "Error rate is {{ $value | humanizePercentage }} for 5 minutes. Threshold is 1%."
-          runbook: "https://docs.veloz.example.com/runbooks/gateway-rollback"
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-errors"
 
-      # High P99 latency - immediate rollback trigger
+      # High P99 latency
       - alert: GatewayHighP99Latency
         expr: |
           histogram_quantile(0.99,
@@ -31,26 +31,26 @@ groups:
         for: 5m
         labels:
           severity: critical
-          component: gateway_cpp
+          component: gateway
         annotations:
-          summary: "High P99 latency on C++ Gateway"
+          summary: "High P99 latency on Gateway"
           description: "P99 latency is {{ $value | humanizeDuration }} for 5 minutes. Threshold is 5ms."
-          runbook: "https://docs.veloz.example.com/runbooks/gateway-rollback"
+          runbook: "https://docs.veloz.example.com/runbooks/gateway-performance"
 
       # Memory leak detection
       - alert: GatewayMemoryLeak
         expr: |
           (
-            process_resident_memory_bytes{job="veloz_gateway_cpp"}
+            process_resident_memory_bytes{job="veloz_gateway"}
             -
-            process_resident_memory_bytes{job="veloz_gateway_cpp"} offset 1h
+            process_resident_memory_bytes{job="veloz_gateway"} offset 1h
           ) > 52428800
         for: 10m
         labels:
           severity: warning
-          component: gateway_cpp
+          component: gateway
         annotations:
-          summary: "Possible memory leak in C++ Gateway"
+          summary: "Possible memory leak in Gateway"
           description: "Memory increased by >50MB in 1 hour. Current: {{ $value | humanize1024 }}B"
           runbook: "https://docs.veloz.example.com/runbooks/gateway-memory"
 
@@ -65,7 +65,7 @@ groups:
         for: 5m
         labels:
           severity: critical
-          component: gateway_cpp
+          component: gateway
         annotations:
           summary: "High authentication failure rate"
           description: "Auth failure rate is {{ $value | humanizePercentage }}. Threshold is 10%."
@@ -73,26 +73,26 @@ groups:
 
       # Health check failure
       - alert: GatewayHealthCheckFailed
-        expr: up{job="veloz_gateway_cpp"} == 0
+        expr: up{job="veloz_gateway"} == 0
         for: 1m
         labels:
           severity: critical
-          component: gateway_cpp
+          component: gateway
         annotations:
-          summary: "C++ Gateway health check failed"
+          summary: "Gateway health check failed"
           description: "Gateway is down for >1 minute. Immediate intervention required."
           runbook: "https://docs.veloz.example.com/runbooks/gateway-health"
 
       # High CPU usage
       - alert: GatewayHighCPU
         expr: |
-          rate(process_cpu_seconds_total{job="veloz_gateway_cpp"}[5m]) > 0.8
+          rate(process_cpu_seconds_total{job="veloz_gateway"}[5m]) > 0.8
         for: 30m
         labels:
           severity: warning
-          component: gateway_cpp
+          component: gateway
         annotations:
-          summary: "High CPU usage on C++ Gateway"
+          summary: "High CPU usage on Gateway"
           description: "CPU usage is {{ $value | humanizePercentage }} for 30 minutes."
           runbook: "https://docs.veloz.example.com/runbooks/gateway-performance"
 
@@ -103,7 +103,7 @@ groups:
         for: 5m
         labels:
           severity: warning
-          component: gateway_cpp
+          component: gateway
         annotations:
           summary: "High SSE connection drop rate"
           description: "{{ $value }} SSE connections/second are being dropped."
@@ -116,7 +116,7 @@ groups:
         for: 5m
         labels:
           severity: warning
-          component: gateway_cpp
+          component: gateway
         annotations:
           summary: "Order processing errors detected"
           description: "{{ $value }} order errors/second detected."
@@ -129,53 +129,8 @@ groups:
         for: 5m
         labels:
           severity: warning
-          component: gateway_cpp
+          component: gateway
         annotations:
           summary: "Slow health check response"
           description: "Health check taking {{ $value | humanizeDuration }}. Threshold is 100ms."
           runbook: "https://docs.veloz.example.com/runbooks/gateway-health"
-
-  - name: veloz_gateway_comparison
-    interval: 30s
-    rules:
-      # Compare error rates between Python and C++ Gateway
-      - alert: GatewayErrorRateDiscrepancy
-        expr: |
-          (
-            sum(rate(veloz_gateway_requests_total{status=~"5..",gateway="cpp"}[5m]))
-            /
-            sum(rate(veloz_gateway_requests_total{gateway="cpp"}[5m]))
-          )
-          >
-          (
-            sum(rate(veloz_gateway_requests_total{status=~"5..",gateway="python"}[5m]))
-            /
-            sum(rate(veloz_gateway_requests_total{gateway="python"}[5m]))
-          ) * 2
-        for: 10m
-        labels:
-          severity: warning
-          component: gateway_migration
-        annotations:
-          summary: "C++ Gateway error rate is 2x higher than Python"
-          description: "Consider investigating C++ Gateway errors or rollback."
-          runbook: "https://docs.veloz.example.com/runbooks/gateway-migration"
-
-      # Latency comparison
-      - alert: GatewayLatencyWorse
-        expr: |
-          histogram_quantile(0.99,
-            sum(rate(veloz_gateway_request_duration_seconds_bucket{gateway="cpp"}[5m])) by (le)
-          )
-          >
-          histogram_quantile(0.99,
-            sum(rate(veloz_gateway_request_duration_seconds_bucket{gateway="python"}[5m])) by (le)
-          ) * 1.5
-        for: 10m
-        labels:
-          severity: warning
-          component: gateway_migration
-        annotations:
-          summary: "C++ Gateway latency is worse than Python"
-          description: "P99 latency on C++ Gateway is 1.5x higher than Python."
-          runbook: "https://docs.veloz.example.com/runbooks/gateway-migration"

@@ -116,6 +116,12 @@ public:
   // DELETE /api/config/{key} - Delete configuration value
   kj::Promise<void> handleDeleteConfigKey(RequestContext& ctx);
 
+  // POST /api/settings/import - Import settings from JSON
+  kj::Promise<void> handleSettingsImport(RequestContext& ctx);
+
+  // GET /api/settings/export - Export settings as JSON
+  kj::Promise<void> handleSettingsExport(RequestContext& ctx);
+
   /**
    * @brief Initialize default configuration values
    */

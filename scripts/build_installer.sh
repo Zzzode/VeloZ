@@ -104,21 +104,19 @@ prepare_gateway() {
 
     mkdir -p "$GATEWAY_DEST"
 
-    # Copy gateway files
-    cp "$GATEWAY_SRC/gateway.py" "$GATEWAY_DEST/"
-    cp "$GATEWAY_SRC/rbac.py" "$GATEWAY_DEST/" 2>/dev/null || true
-    cp "$GATEWAY_SRC/audit.py" "$GATEWAY_DEST/" 2>/dev/null || true
-    cp "$GATEWAY_SRC/metrics.py" "$GATEWAY_DEST/" 2>/dev/null || true
-
-    # Create requirements.txt if it doesn't exist
-    if [ ! -f "$GATEWAY_DEST/requirements.txt" ]; then
-        cat > "$GATEWAY_DEST/requirements.txt" << EOF
-# VeloZ Gateway Dependencies
-# Note: Most dependencies are from the Python standard library
-EOF
+    # Copy gateway binary
+    if [ "$BUILD_TYPE" = "release" ]; then
+        GATEWAY_BIN="$PROJECT_ROOT/build/release/apps/gateway/veloz_gateway"
+    else
+        GATEWAY_BIN="$PROJECT_ROOT/build/dev/apps/gateway/veloz_gateway"
     fi
 
-    echo -e "${GREEN}Gateway prepared successfully${NC}"
+    if [ -f "$GATEWAY_BIN" ]; then
+        cp "$GATEWAY_BIN" "$GATEWAY_DEST/"
+        echo -e "${GREEN}Gateway prepared successfully${NC}"
+    else
+        echo -e "${YELLOW}Gateway binary not found, skipping${NC}"
+    fi
 }
 
 # Step 3: Build UI
