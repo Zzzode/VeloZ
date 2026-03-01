@@ -66,3 +66,6 @@ CHANGELOG.md
 
 ## Trae
 .trae
+veloz_keychain.json
+apps/ui/playwright-report/
+apps/ui/test-results/
