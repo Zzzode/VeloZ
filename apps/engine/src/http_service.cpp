@@ -108,8 +108,7 @@ kj::Promise<void> EngineHttpService::request(kj::HttpMethod method, kj::StringPt
 
     KJ_IF_SOME(pos, slashPos) {
       strategyId = kj::StringPtr(controlRemaining.begin(), pos);
-      action = kj::StringPtr(controlRemaining.begin() + pos + 1,
-                              controlRemaining.size() - pos - 1);
+      action = kj::StringPtr(controlRemaining.begin() + pos + 1, controlRemaining.size() - pos - 1);
     }
     else {
       strategyId = controlRemaining;

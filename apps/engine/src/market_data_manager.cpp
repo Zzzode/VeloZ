@@ -226,8 +226,9 @@ void MarketDataManager::on_market_event(const veloz::market::MarketEvent& event)
       auto tags = build_market_event_tags(event);
       auto priority = market_event_priority(event);
       auto copy = clone_market_event(event);
-      loop.post_with_tags([this, event = kj::mv(copy)]() mutable { emitter_.emit_market_event(event); },
-                          priority, kj::mv(tags));
+      loop.post_with_tags(
+          [this, event = kj::mv(copy)]() mutable { emitter_.emit_market_event(event); }, priority,
+          kj::mv(tags));
       return;
     }
   }

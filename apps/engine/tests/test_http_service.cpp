@@ -252,7 +252,7 @@ KJ_TEST("EngineHttpService: /api/control/status routes to status handler") {
   TestResponse response;
 
   auto promise = service.request(kj::HttpMethod::GET, "/api/control/status"_kj,
-                                kj::HttpHeaders(*headerTable), requestBody, response);
+                                 kj::HttpHeaders(*headerTable), requestBody, response);
   promise.wait(waitScope);
 
   KJ_EXPECT(response.statusCode == 200);
@@ -269,7 +269,7 @@ KJ_TEST("EngineHttpService: /api/control/health routes to health handler") {
   TestResponse response;
 
   auto promise = service.request(kj::HttpMethod::GET, "/api/control/health"_kj,
-                                kj::HttpHeaders(*headerTable), requestBody, response);
+                                 kj::HttpHeaders(*headerTable), requestBody, response);
   promise.wait(waitScope);
 
   KJ_EXPECT(response.statusCode == 200);
@@ -286,7 +286,7 @@ KJ_TEST("EngineHttpService: /api/control/config returns config payload") {
   TestResponse response;
 
   auto promise = service.request(kj::HttpMethod::GET, "/api/control/config"_kj,
-                                kj::HttpHeaders(*headerTable), requestBody, response);
+                                 kj::HttpHeaders(*headerTable), requestBody, response);
   promise.wait(waitScope);
 
   KJ_EXPECT(response.statusCode == 200);

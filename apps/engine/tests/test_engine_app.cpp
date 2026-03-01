@@ -32,13 +32,13 @@ struct EngineAppTestAccess {
 };
 
 struct MarketDataManagerTestAccess {
-  static kj::Vector<veloz::core::EventTag>
-  tags(const MarketDataManager& manager, const veloz::market::MarketEvent& event) {
+  static kj::Vector<veloz::core::EventTag> tags(const MarketDataManager& manager,
+                                                const veloz::market::MarketEvent& event) {
     return manager.build_market_event_tags(event);
   }
 
-  static veloz::core::EventPriority
-  priority(const MarketDataManager& manager, const veloz::market::MarketEvent& event) {
+  static veloz::core::EventPriority priority(const MarketDataManager& manager,
+                                             const veloz::market::MarketEvent& event) {
     return manager.market_event_priority(event);
   }
 };

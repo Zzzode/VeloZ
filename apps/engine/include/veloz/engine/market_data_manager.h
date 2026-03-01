@@ -100,8 +100,7 @@ private:
   void on_market_event(const veloz::market::MarketEvent& event);
   kj::Vector<veloz::core::EventTag>
   build_market_event_tags(const veloz::market::MarketEvent& event) const;
-  veloz::core::EventPriority
-  market_event_priority(const veloz::market::MarketEvent& event) const;
+  veloz::core::EventPriority market_event_priority(const veloz::market::MarketEvent& event) const;
   veloz::market::MarketEvent clone_market_event(const veloz::market::MarketEvent& event) const;
 
   // Get or create WebSocket for venue
