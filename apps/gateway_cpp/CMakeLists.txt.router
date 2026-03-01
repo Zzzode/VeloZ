@@ -1,0 +1,17 @@
+# Minimal CMakeLists.txt for testing router only
+cmake_minimum_required(VERSION 3.24)
+
+add_library(veloz_router_test
+  src/router.cpp
+)
+
+target_compile_features(veloz_router_test PUBLIC cxx_std_23)
+target_include_directories(veloz_router_test PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  /Users/bytedance/Develop/VeloZ/libs/core/src
+  /Users/bytedance/Develop/VeloZ/libs/common/src
+)
+
+target_link_libraries(veloz_router_test PUBLIC
+  kj kj-async kj-http
+)

@@ -1,4 +1,5 @@
 #include "gateway_server.h"
+#include "router.h"
 
 #include <kj/async-io.h>
 #include <kj/common.h>
@@ -27,11 +28,42 @@ public:
   kj::Maybe<uint64_t> expectedBodySize;
 };
 
+} // namespace
+
+KJ_TEST("gateway returns 404 for unknown route") {
+  auto headerTable = kj::heap<kj::HttpHeaderTable>();
+  veloz::gateway::Router router;
+  veloz::gateway::GatewayServer server(*headerTable, router);
+
+  kj::EventLoop eventLoop;
+  kj::WaitScope waitScope(eventLoop);
+  kj::NullStream requestBody;
+  TestResponse response;
+
+  auto promise = server.request(kj::HttpMethod::GET, "/api/control/health"_kj,
+                                kj::HttpHeaders(*headerTable), requestBody, response);
+  promise.wait(waitScope);
+
+  // With no routes registered, should return 404
+  KJ_EXPECT(response.statusCode == 404);
 }
 
-KJ_TEST("gateway responds to /api/control/health") {
+KJ_TEST("gateway routes to registered handler") {
   auto headerTable = kj::heap<kj::HttpHeaderTable>();
-  veloz::gateway::GatewayServer server(*headerTable);
+  veloz::gateway::Router router;
+
+  // Register a health check handler
+  router.add_route(kj::HttpMethod::GET, "/api/control/health",
+                   [&headerTable](veloz::gateway::RequestContext& ctx) -> kj::Promise<void> {
+                     kj::HttpHeaders responseHeaders(*headerTable);
+                     responseHeaders.setPtr(kj::HttpHeaderId::CONTENT_TYPE, "application/json"_kj);
+                     auto body = kj::str("{\"ok\":true}");
+                     auto stream = ctx.response.send(200, "OK"_kj, responseHeaders, body.size());
+                     auto writePromise = stream->write(body.asBytes());
+                     return writePromise.attach(kj::mv(stream), kj::mv(body));
+                   });
+
+  veloz::gateway::GatewayServer server(*headerTable, router);
 
   kj::EventLoop eventLoop;
   kj::WaitScope waitScope(eventLoop);
@@ -43,4 +75,33 @@ KJ_TEST("gateway responds to /api/control/health") {
   promise.wait(waitScope);
 
   KJ_EXPECT(response.statusCode == 200);
+}
+
+KJ_TEST("gateway returns 405 for wrong method") {
+  auto headerTable = kj::heap<kj::HttpHeaderTable>();
+  veloz::gateway::Router router;
+
+  // Register only GET for this path
+  router.add_route(kj::HttpMethod::GET, "/api/orders",
+                   [&headerTable](veloz::gateway::RequestContext& ctx) -> kj::Promise<void> {
+                     kj::HttpHeaders responseHeaders(*headerTable);
+                     auto body = kj::str("[]");
+                     auto stream = ctx.response.send(200, "OK"_kj, responseHeaders, body.size());
+                     auto writePromise = stream->write(body.asBytes());
+                     return writePromise.attach(kj::mv(stream), kj::mv(body));
+                   });
+
+  veloz::gateway::GatewayServer server(*headerTable, router);
+
+  kj::EventLoop eventLoop;
+  kj::WaitScope waitScope(eventLoop);
+  kj::NullStream requestBody;
+  TestResponse response;
+
+  // Try POST on a GET-only route
+  auto promise = server.request(kj::HttpMethod::POST, "/api/orders"_kj,
+                                kj::HttpHeaders(*headerTable), requestBody, response);
+  promise.wait(waitScope);
+
+  KJ_EXPECT(response.statusCode == 405);
 }
