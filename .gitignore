@@ -1,5 +1,6 @@
 ## Build outputs
 /build/
+build/dev
 /cmake-build-*/
 /out/
 /.test_output/

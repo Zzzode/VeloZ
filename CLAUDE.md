@@ -230,6 +230,24 @@ The following skills are automatically available to guide development:
 
 Skills are automatically invoked when relevant. Use `/skill-name` to invoke manually.
 
+## Code Quality
+
+- Always run tests after making code changes before committing
+- Verify TypeScript compilation passes before marking tasks complete
+- Ensure code passes formatting checks (`./scripts/format.sh`) before submission
+
+## Library Preferences
+
+- Use KJ library types exclusively (kj::String, kj::Vector, etc.) instead of std:: equivalents
+- No exceptions: do not retain std::string, std::vector, std::chrono in production code
+- Reference the KJ library section below for detailed guidance and acceptable std library usage
+
+## Git Commits
+
+- Create multiple small, logical commits instead of one large commit
+- Group changes by category (docs, bug fixes, features, tests, config)
+- Use descriptive commit messages that explain the "why" rather than just the "what"
+
 ## KJ Library Usage (CRITICAL - DEFAULT CHOICE)
 
 **VeloZ strictly uses KJ library from Cap'n Proto as the default choice over C++ standard library.** This is a project-wide architectural decision that applies to all new code.
