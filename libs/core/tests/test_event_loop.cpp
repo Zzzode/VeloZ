@@ -14,6 +14,23 @@ using namespace veloz::core;
 
 namespace {
 
+template <typename Condition>
+void run_until(EventLoop& loop, Condition&& condition, std::chrono::milliseconds timeout) {
+  EventLoop* loop_ptr = &loop;
+  {
+    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
+
+    while (!loop.is_running()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!condition() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    loop.stop();
+  }
+}
+
 // ============================================================================
 // Basic Task Posting Tests
 // ============================================================================
@@ -23,17 +40,7 @@ KJ_TEST("EventLoop: Post and run basic task") {
   bool task_executed = false;
 
   loop->post([&] { task_executed = true; });
-
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(*loop, [&] { return task_executed; }, std::chrono::milliseconds(200));
 
   KJ_EXPECT(task_executed);
 }
@@ -47,16 +54,7 @@ KJ_TEST("EventLoop: Post multiple tasks") {
     loop->post([&] { ++executed; });
   }
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(*loop, [&] { return executed.load() == task_count; }, std::chrono::milliseconds(200));
 
   KJ_EXPECT(executed.load() == task_count);
 }
@@ -77,13 +75,7 @@ KJ_TEST("EventLoop: Post delayed task") {
       },
       delay);
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    std::this_thread::sleep_for(delay + std::chrono::milliseconds(50));
-    loop->stop();
-  }
+  run_until(*loop, [&] { return task_executed.load(); }, delay + std::chrono::milliseconds(200));
 
   KJ_EXPECT(task_executed);
 }
@@ -104,16 +96,9 @@ KJ_TEST("EventLoop: Post with priority") {
 
   loop->post([&] { execution_order.lockExclusive()->add(4); }, EventPriority::High);
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(
+      *loop, [&] { return execution_order.lockShared()->size() == 4; },
+      std::chrono::milliseconds(200));
 
   // Critical should execute before High, before Normal, before Low
   {
@@ -129,26 +114,34 @@ KJ_TEST("EventLoop: Post with priority") {
 KJ_TEST("EventLoop: Post delayed with priority") {
   auto loop = kj::heap<EventLoop>();
   kj::MutexGuarded<kj::Vector<int>> execution_order;
+  std::atomic<bool> tasks_done{false};
   const auto delay = std::chrono::milliseconds(50);
 
   // Post delayed tasks with different priorities
-  loop->post_delayed([&] { execution_order.lockExclusive()->add(1); }, delay, EventPriority::Low);
+  loop->post_delayed(
+      [&] {
+        execution_order.lockExclusive()->add(1);
+        if (execution_order.lockShared()->size() == 2) {
+          tasks_done.store(true);
+        }
+      },
+      delay, EventPriority::Low);
 
-  loop->post_delayed([&] { execution_order.lockExclusive()->add(2); }, delay,
-                     EventPriority::Critical);
+  loop->post_delayed(
+      [&] {
+        execution_order.lockExclusive()->add(2);
+        if (execution_order.lockShared()->size() == 2) {
+          tasks_done.store(true);
+        }
+      },
+      delay, EventPriority::Critical);
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    std::this_thread::sleep_for(delay + std::chrono::milliseconds(50));
-    loop->stop();
-  }
+  run_until(*loop, [&] { return tasks_done.load(); }, std::chrono::milliseconds(500));
 
   // Both tasks should have executed
   {
     auto lock = execution_order.lockShared();
-    KJ_EXPECT(lock->size() == 2);
+    KJ_EXPECT(lock->size() == 2, "Expected 2 tasks to execute, got ", lock->size());
     // Note: Priority ordering for delayed tasks with same deadline is implementation-defined
     // Just verify both tasks executed (values 1 and 2 are present)
     bool has_1 = false, has_2 = false;
@@ -158,8 +151,8 @@ KJ_TEST("EventLoop: Post delayed with priority") {
       if ((*lock)[i] == 2)
         has_2 = true;
     }
-    KJ_EXPECT(has_1);
-    KJ_EXPECT(has_2);
+    KJ_EXPECT(has_1, "Expected task 1 to execute");
+    KJ_EXPECT(has_2, "Expected task 2 to execute");
   }
 }
 
@@ -174,17 +167,7 @@ KJ_TEST("EventLoop: Post with tags") {
   tags.add(kj::str("market"));
   tags.add(kj::str("binance"));
   loop->post_with_tags([&] {}, kj::mv(tags));
-
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(*loop, [&] { return loop->pending_tasks() == 0; }, std::chrono::milliseconds(200));
 
   // Tags are for filtering, we just verify they don't cause issues
   // Test passes if we get here without throwing
@@ -210,16 +193,9 @@ KJ_TEST("EventLoop: Add remove filter") {
   loop->post([&] { ++normal_executed; }, EventPriority::Normal);
   loop->post([&] { ++low_executed; }, EventPriority::Low);
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(
+      *loop, [&] { return normal_executed.load() == 1 && loop->pending_tasks() == 0; },
+      std::chrono::milliseconds(200));
 
   KJ_EXPECT(normal_executed.load() == 1);
   KJ_EXPECT(low_executed.load() == 0); // Should be filtered out
@@ -233,15 +209,9 @@ KJ_TEST("EventLoop: Add remove filter") {
   loop->post([&] { ++normal_executed; }, EventPriority::Normal);
   loop->post([&] { ++low_executed; }, EventPriority::Low);
 
-  {
-    kj::Thread worker2([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(
+      *loop, [&] { return normal_executed.load() == 1 && low_executed.load() == 1; },
+      std::chrono::milliseconds(200));
 
   KJ_EXPECT(normal_executed.load() == 1);
   KJ_EXPECT(low_executed.load() == 1); // Now should execute
@@ -264,16 +234,9 @@ KJ_TEST("EventLoop: Tag filter") {
   filtered_tags.add(kj::str("trace"));
   loop->post_with_tags([&] { ++filtered_executed; }, kj::mv(filtered_tags));
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(
+      *loop, [&] { return allowed_executed.load() == 1 && loop->pending_tasks() == 0; },
+      std::chrono::milliseconds(200));
 
   KJ_EXPECT(allowed_executed.load() == 1);
   KJ_EXPECT(filtered_executed.load() == 0);
@@ -294,16 +257,7 @@ KJ_TEST("EventLoop: Statistics tracking") {
   loop->post([&] {}, EventPriority::Low);
   loop->post([&] {}, EventPriority::High);
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(*loop, [&] { return loop->pending_tasks() == 0; }, std::chrono::milliseconds(200));
 
   const auto& stats = loop->stats();
   KJ_EXPECT(stats.total_events.load() > 0);
@@ -393,16 +347,8 @@ KJ_TEST("EventLoop: Set router") {
   route2_tags.add(kj::str("route2"));
   loop->post_with_tags([] {}, EventPriority::Normal, kj::mv(route2_tags));
 
-  EventLoop* loop_ptr = loop.get();
-  {
-    kj::Thread worker([loop_ptr] { loop_ptr->run(); });
-
-    // Wait for the loop to start running before stopping
-    while (!loop->is_running()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    loop->stop();
-  }
+  run_until(
+      *loop, [&] { return routes.lockShared()->size() == 2; }, std::chrono::milliseconds(200));
 
   {
     auto lock = routes.lockShared();

@@ -26,13 +26,15 @@ kj::String ClientOrderIdGenerator::generate() {
   static thread_local std::uniform_int_distribution<> dis(0, 15);
 
   // Build hex string using KJ
-  auto hex_builder = kj::heapArrayBuilder<char>(4);
+  // Allocate 5 bytes: 4 for hex chars + 1 for NUL terminator (required by kj::StringPtr)
+  auto hex_builder = kj::heapArrayBuilder<char>(5);
   static constexpr char hex_chars[] = "0123456789abcdef";
   for (int i = 0; i < 4; ++i) {
     hex_builder.add(hex_chars[dis(gen)]);
   }
+  hex_builder.add('\0'); // NUL terminator required by KJ StringPtr
   auto hex_array = hex_builder.finish();
-  kj::String hex_str = kj::str(kj::StringPtr(hex_array.begin(), hex_array.size()));
+  kj::String hex_str = kj::str(kj::StringPtr(hex_array.begin(), 4));
 
   return kj::str(strategy_id_, "-", timestamp, "-", sequence_, "-", hex_str);
 }

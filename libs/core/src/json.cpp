@@ -98,11 +98,15 @@ JsonDocument JsonDocument::parse_file(const kj::Path& path) {
   KJ_REQUIRE(size >= 0, "Failed to get file size", pathStr.cStr());
   file.seekg(0, std::ios::beg);
 
-  auto buf = kj::heapArray<char>(static_cast<size_t>(size));
+  // Allocate one extra byte for NUL terminator (required by kj::StringPtr)
+  auto buf = kj::heapArray<char>(static_cast<size_t>(size) + 1);
   file.read(buf.begin(), size);
   KJ_REQUIRE(file.good(), "Failed to read file", pathStr.cStr());
 
-  return parse(kj::StringPtr(buf.begin(), buf.size()));
+  // Add NUL terminator so kj::StringPtr can safely wrap the buffer
+  buf[static_cast<size_t>(size)] = '\0';
+
+  return parse(kj::StringPtr(buf.begin(), static_cast<size_t>(size)));
 }
 
 JsonValue JsonDocument::root() const {

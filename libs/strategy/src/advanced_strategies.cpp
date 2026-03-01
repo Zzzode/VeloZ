@@ -189,18 +189,18 @@ void RsiStrategy::on_event(const market::MarketEvent& event) {
           // Generate sell signal
           signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                                .side = exec::OrderSide::Sell,
+                                               .type = exec::OrderType::Market,
                                                .qty = current_position_.size(),
-                                               .price = trade_data.price,
-                                               .type = exec::OrderType::Market});
+                                               .price = trade_data.price});
         } else if (rsi < oversold_level_ && current_position_.size() == 0) {
           // Generate buy signal
           double quantity = config_.max_position_size *
                             get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
           signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                                .side = exec::OrderSide::Buy,
+                                               .type = exec::OrderType::Market,
                                                .qty = quantity,
-                                               .price = trade_data.price,
-                                               .type = exec::OrderType::Market});
+                                               .price = trade_data.price});
         }
       }
     }
@@ -260,15 +260,15 @@ void MacdStrategy::on_event(const market::MarketEvent& event) {
                           get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
+                                             .type = exec::OrderType::Market,
                                              .qty = quantity,
-                                             .price = price,
-                                             .type = exec::OrderType::Market});
+                                             .price = price});
       } else if (macd < signal && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
+                                             .type = exec::OrderType::Market,
                                              .qty = current_position_.size(),
-                                             .price = price,
-                                             .type = exec::OrderType::Market});
+                                             .price = price});
       }
     }
   }
@@ -321,15 +321,15 @@ void BollingerBandsStrategy::on_event(const market::MarketEvent& event) {
                           get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
+                                             .type = exec::OrderType::Market,
                                              .qty = quantity,
-                                             .price = price,
-                                             .type = exec::OrderType::Market});
+                                             .price = price});
       } else if (price >= upper && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
+                                             .type = exec::OrderType::Market,
                                              .qty = current_position_.size(),
-                                             .price = price,
-                                             .type = exec::OrderType::Market});
+                                             .price = price});
       }
     }
   }
@@ -384,15 +384,15 @@ void StochasticOscillatorStrategy::on_event(const market::MarketEvent& event) {
                           get_param_or_default(config_.parameters, "position_size"_kj, 1.0);
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Buy,
+                                             .type = exec::OrderType::Market,
                                              .qty = quantity,
-                                             .price = price,
-                                             .type = exec::OrderType::Market});
+                                             .price = price});
       } else if (k > overbought_level_ && d > overbought_level_ && current_position_.size() > 0) {
         signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                              .side = exec::OrderSide::Sell,
+                                             .type = exec::OrderType::Market,
                                              .qty = current_position_.size(),
-                                             .price = price,
-                                             .type = exec::OrderType::Market});
+                                             .price = price});
       }
     }
   }
@@ -436,15 +436,15 @@ void MarketMakingHFTStrategy::on_event(const market::MarketEvent& event) {
 
       signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Buy,
+                                           .type = exec::OrderType::Limit,
                                            .qty = order_size_,
-                                           .price = bid_price,
-                                           .type = exec::OrderType::Limit});
+                                           .price = bid_price});
 
       signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Sell,
+                                           .type = exec::OrderType::Limit,
                                            .qty = order_size_,
-                                           .price = ask_price,
-                                           .type = exec::OrderType::Limit});
+                                           .price = ask_price});
 
       last_order_time_ = current_time;
     }
@@ -505,16 +505,16 @@ void CrossExchangeArbitrageStrategy::on_event(const market::MarketEvent& event) 
       // Generate sell signal on best bid venue
       signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Sell,
+                                           .type = exec::OrderType::Limit,
                                            .qty = config_.max_position_size,
-                                           .price = best_bid,
-                                           .type = exec::OrderType::Limit});
+                                           .price = best_bid});
 
       // Generate buy signal on best ask venue
       signals_.add(exec::PlaceOrderRequest{.symbol = "BTCUSDT"_kj,
                                            .side = exec::OrderSide::Buy,
+                                           .type = exec::OrderType::Limit,
                                            .qty = config_.max_position_size,
-                                           .price = best_ask,
-                                           .type = exec::OrderType::Limit});
+                                           .price = best_ask});
     }
   }
 }

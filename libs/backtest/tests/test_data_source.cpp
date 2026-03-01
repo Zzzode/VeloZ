@@ -836,6 +836,9 @@ KJ_TEST("BinanceDataSource: DownloadMultipleSymbols_EmptyList") {
 KJ_TEST("BinanceDataSource: FetchKlinesChunk_NoNetwork") {
   // This test verifies that fetch_klines_chunk handles network unavailability gracefully
   // In a real test environment without network, this should return empty results
+  if (!should_run_network_tests()) {
+    return;
+  }
   auto binance_data_source = kj::rc<BinanceDataSource>();
 
   // Use a very short time range that would only need one chunk
