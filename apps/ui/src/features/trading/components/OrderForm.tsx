@@ -10,22 +10,23 @@ import { usePlaceOrder } from '../hooks';
 import type { OrderSide } from '@/shared/api/types';
 
 export function OrderForm() {
-  const {
-    selectedSymbol,
-    orderFormSide,
-    orderFormPrice,
-    orderFormQty,
-    orderBook,
-    setOrderFormSide,
-    setOrderFormPrice,
-    setOrderFormQty,
-  } = useTradingStore();
+  const selectedSymbol = useTradingStore((state) => state.selectedSymbol);
+  const orderFormSide = useTradingStore((state) => state.orderFormSide);
+  const orderFormPrice = useTradingStore((state) => state.orderFormPrice);
+  const orderFormQty = useTradingStore((state) => state.orderFormQty);
+  // Removed orderBook subscription to prevent re-renders on every tick
+  const setOrderFormSide = useTradingStore((state) => state.setOrderFormSide);
+  const setOrderFormPrice = useTradingStore((state) => state.setOrderFormPrice);
+  const setOrderFormQty = useTradingStore((state) => state.setOrderFormQty);
 
   const { placeOrder, isLoading } = usePlaceOrder();
 
   const handleSideChange = useCallback(
     (side: OrderSide) => {
       setOrderFormSide(side);
+      // Get latest order book from state directly without subscribing
+      const orderBook = useTradingStore.getState().orderBook;
+
       // Auto-fill price from order book
       if (side === 'BUY' && orderBook.asks.length > 0) {
         setOrderFormPrice(orderBook.asks[0].price.toString());
@@ -33,7 +34,7 @@ export function OrderForm() {
         setOrderFormPrice(orderBook.bids[0].price.toString());
       }
     },
-    [orderBook, setOrderFormSide, setOrderFormPrice]
+    [setOrderFormSide, setOrderFormPrice]
   );
 
   const handleSubmit = useCallback(

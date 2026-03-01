@@ -3,11 +3,10 @@
  */
 import { Card } from '@/shared/components';
 import { formatPrice, formatQuantity, formatTime } from '@/shared/utils';
-import { useMarketStore } from '../store';
+import { useMarketStore, selectCurrentTrades } from '../store';
 
 export function RecentTrades() {
-  const selectedSymbol = useMarketStore((state) => state.selectedSymbol);
-  const trades = useMarketStore((state) => state.recentTrades[selectedSymbol] ?? []);
+  const trades = useMarketStore(selectCurrentTrades);
 
   return (
     <Card title="Recent Trades" subtitle="Last 50 trades">

@@ -40,7 +40,9 @@ function OrderBookRow({ price, qty, total, side, maxTotal }: OrderBookRowProps) 
 }
 
 export function OrderBook() {
-  const { selectedSymbol, orderBook, wsConnectionState } = useTradingStore();
+  const selectedSymbol = useTradingStore((state) => state.selectedSymbol);
+  const orderBook = useTradingStore((state) => state.orderBook);
+  const wsConnectionState = useTradingStore((state) => state.wsConnectionState);
 
   // Start WebSocket stream
   useOrderBookStream();

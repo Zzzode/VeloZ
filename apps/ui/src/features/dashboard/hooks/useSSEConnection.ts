@@ -13,11 +13,9 @@ export function useSSEConnection() {
   const clientRef = useRef<VelozSSEClient | null>(null);
   const queryClient = useQueryClient();
 
-  const {
-    sseConnectionState,
-    setConnectionState,
-    updatePrice,
-  } = useDashboardStore();
+  const sseConnectionState = useDashboardStore((state) => state.sseConnectionState);
+  const setConnectionState = useDashboardStore((state) => state.setConnectionState);
+  const updatePrice = useDashboardStore((state) => state.updatePrice);
 
   const handleMarketEvent = useCallback(
     (event: { symbol: string; price: number; ts_ns: number }) => {

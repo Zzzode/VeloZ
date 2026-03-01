@@ -178,8 +178,8 @@ export interface ConfigResponse {
 /** Market data response */
 export interface MarketDataResponse {
   symbol: string;
-  price: number;
-  ts_ns: number;
+  price: number | null;
+  ts_ns: number | null;
 }
 
 /** Trade data (WebSocket) */

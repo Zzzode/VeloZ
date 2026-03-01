@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createChart, CandlestickSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, CandlestickData, Time } from 'lightweight-charts';
 import { Card, Spinner } from '@/shared/components';
-import { useMarketStore } from '../store';
+import { useMarketStore, selectCurrentPrice } from '../store';
 
 // Mock candlestick data generator for demo
 function generateMockCandles(symbol: string, count: number): CandlestickData<Time>[] {
@@ -59,7 +59,7 @@ export function PriceChart({ height = 400 }: PriceChartProps) {
 
   const selectedSymbol = useMarketStore((state) => state.selectedSymbol);
   const selectedTimeframe = useMarketStore((state) => state.selectedTimeframe);
-  const currentPrice = useMarketStore((state) => state.prices[selectedSymbol]);
+  const currentPrice = useMarketStore(selectCurrentPrice);
 
   // Initialize chart
   useEffect(() => {

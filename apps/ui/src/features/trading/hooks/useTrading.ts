@@ -50,13 +50,11 @@ function getMarketWsClient(): VelozMarketWsClient {
 // =============================================================================
 
 export function useOrders() {
-  const {
-    orders,
-    isLoadingOrders,
-    setOrders,
-    setIsLoadingOrders,
-    setError,
-  } = useTradingStore();
+  const orders = useTradingStore((state) => state.orders);
+  const isLoadingOrders = useTradingStore((state) => state.isLoadingOrders);
+  const setOrders = useTradingStore((state) => state.setOrders);
+  const setIsLoadingOrders = useTradingStore((state) => state.setIsLoadingOrders);
+  const setError = useTradingStore((state) => state.setError);
 
   const fetchOrders = useCallback(async () => {
     setIsLoadingOrders(true);
@@ -85,13 +83,11 @@ export function useOrders() {
 // =============================================================================
 
 export function usePositions() {
-  const {
-    positions,
-    isLoadingPositions,
-    setPositions,
-    setIsLoadingPositions,
-    setError,
-  } = useTradingStore();
+  const positions = useTradingStore((state) => state.positions);
+  const isLoadingPositions = useTradingStore((state) => state.isLoadingPositions);
+  const setPositions = useTradingStore((state) => state.setPositions);
+  const setIsLoadingPositions = useTradingStore((state) => state.setIsLoadingPositions);
+  const setError = useTradingStore((state) => state.setError);
 
   const fetchPositions = useCallback(async () => {
     setIsLoadingPositions(true);
@@ -120,8 +116,10 @@ export function usePositions() {
 // =============================================================================
 
 export function usePlaceOrder() {
-  const { isPlacingOrder, setIsPlacingOrder, setError, resetOrderForm } =
-    useTradingStore();
+  const isPlacingOrder = useTradingStore((state) => state.isPlacingOrder);
+  const setIsPlacingOrder = useTradingStore((state) => state.setIsPlacingOrder);
+  const setError = useTradingStore((state) => state.setError);
+  const resetOrderForm = useTradingStore((state) => state.resetOrderForm);
 
   const placeOrder = useCallback(
     async (request: PlaceOrderRequest) => {
@@ -155,7 +153,7 @@ export function usePlaceOrder() {
 // =============================================================================
 
 export function useCancelOrder() {
-  const { setError } = useTradingStore();
+  const setError = useTradingStore((state) => state.setError);
 
   const cancelOrder = useCallback(
     async (request: CancelOrderRequest) => {
@@ -182,13 +180,10 @@ export function useCancelOrder() {
 // =============================================================================
 
 export function useOrderBookStream() {
-  const {
-    selectedSymbol,
-    orderBook,
-    wsConnectionState,
-    updateOrderBook,
-    setWSConnectionState,
-  } = useTradingStore();
+  const selectedSymbol = useTradingStore((state) => state.selectedSymbol);
+  const wsConnectionState = useTradingStore((state) => state.wsConnectionState);
+  const updateOrderBook = useTradingStore((state) => state.updateOrderBook);
+  const setWSConnectionState = useTradingStore((state) => state.setWSConnectionState);
 
   const connectedRef = useRef(false);
 
@@ -224,7 +219,6 @@ export function useOrderBookStream() {
   }, [selectedSymbol, updateOrderBook, setWSConnectionState]);
 
   return {
-    orderBook,
     connectionState: wsConnectionState,
   };
 }
@@ -234,12 +228,10 @@ export function useOrderBookStream() {
 // =============================================================================
 
 export function useOrderUpdates() {
-  const {
-    sseConnectionState,
-    updateOrder,
-    setSSEConnectionState,
-    setOrders,
-  } = useTradingStore();
+  const sseConnectionState = useTradingStore((state) => state.sseConnectionState);
+  const updateOrder = useTradingStore((state) => state.updateOrder);
+  const setSSEConnectionState = useTradingStore((state) => state.setSSEConnectionState);
+  const setOrders = useTradingStore((state) => state.setOrders);
 
   const connectedRef = useRef(false);
 

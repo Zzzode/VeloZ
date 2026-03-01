@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { MainLayout, LoadingSpinner } from '@/shared/components';
+import { RouteError } from '@/shared/components';
 import { ProtectedRoute, Login } from '@/features/auth';
 
 // Lazy load feature modules
@@ -21,6 +22,7 @@ const router = createBrowserRouter([
   },
   {
     path: '/',
+    errorElement: <RouteError />,
     element: (
       <ProtectedRoute>
         <MainLayout />

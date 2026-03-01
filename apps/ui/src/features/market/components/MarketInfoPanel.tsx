@@ -4,12 +4,12 @@
 import { TrendingUp, TrendingDown, Wifi, WifiOff } from 'lucide-react';
 import { Card } from '@/shared/components';
 import { formatPrice, formatQuantity } from '@/shared/utils';
-import { useMarketStore } from '../store';
+import { useMarketStore, selectCurrentPrice, selectCurrentBookTop } from '../store';
 
 export function MarketInfoPanel() {
   const selectedSymbol = useMarketStore((state) => state.selectedSymbol);
-  const currentPrice = useMarketStore((state) => state.prices[selectedSymbol]);
-  const bookTop = useMarketStore((state) => state.bookTops[selectedSymbol]);
+  const currentPrice = useMarketStore(selectCurrentPrice);
+  const bookTop = useMarketStore(selectCurrentBookTop);
   const connectionState = useMarketStore((state) => state.wsConnectionState);
 
   const isConnected = connectionState === 'connected';

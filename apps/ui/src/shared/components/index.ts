@@ -22,5 +22,7 @@ export type { Toast, ToastType } from './Toast';
 
 export { ErrorBoundary, withErrorBoundary } from './ErrorBoundary';
 
+export { RouteError } from './RouteError';
+
 // Layout Components
 export { MainLayout, Header, Sidebar, Footer } from './Layout';
